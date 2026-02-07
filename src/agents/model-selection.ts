@@ -218,6 +218,20 @@ export function resolveConfiguredModelRef(params: {
       return resolved.ref;
     }
   }
+  return resolveDefaultModelRef({
+    defaultProvider: params.defaultProvider,
+    defaultModel: params.defaultModel,
+  });
+}
+
+function resolveDefaultModelRef(params: {
+  defaultProvider: string;
+  defaultModel: string;
+}): ModelRef {
+  const parsed = parseModelRef(params.defaultModel, params.defaultProvider);
+  if (parsed) {
+    return parsed;
+  }
   return { provider: params.defaultProvider, model: params.defaultModel };
 }
 
@@ -246,11 +260,23 @@ export function resolveDefaultModelForAgent(params: {
           },
         }
       : params.cfg;
-  return resolveConfiguredModelRef({
+  const configured = resolveConfiguredModelRef({
     cfg,
     defaultProvider: DEFAULT_PROVIDER,
     defaultModel: DEFAULT_MODEL,
   });
+  // If the resolved model is exactly the default, make sure we re-parse it
+  // in case DEFAULT_MODEL itself contained a provider prefix (e.g. openrouter/...)
+  if (
+    configured.provider === DEFAULT_PROVIDER &&
+    configured.model === DEFAULT_MODEL
+  ) {
+    return resolveDefaultModelRef({
+      defaultProvider: DEFAULT_PROVIDER,
+      defaultModel: DEFAULT_MODEL,
+    });
+  }
+  return configured;
 }
 
 export function buildAllowedModelSet(params: {
