@@ -35,6 +35,8 @@ deployments work at a high level.
 Remote access: [Gateway remote](/gateway/remote)  
 Platforms hub: [Platforms](/platforms)
 
+Coding workflow design: [Coding automation pipeline](/automation/coding-pipeline)
+
 ## Using nodes with a VPS
 
 You can keep the Gateway in the cloud and pair **nodes** on your local devices

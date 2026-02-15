@@ -23,6 +23,11 @@ Today, complex workflows require many back-and-forth tool calls. Each call costs
 - **Approvals built in**: Side effects (send email, post comment) halt the workflow until explicitly approved.
 - **Resumable**: Halted workflows return a token; approve and resume without re-running everything.
 
+If you like this pattern, see OpenAI's harness-first framing for AI systems design:
+
+- https://openai.com/index/harness-engineering/
+- https://developers.openai.com/blog/skills-shell-tips
+
 ## Why a DSL instead of plain programs?
 
 Lobster is intentionally small. The goal is not "a new language," it's a predictable, AI-friendly pipeline spec with first-class approvals and resume tokens.

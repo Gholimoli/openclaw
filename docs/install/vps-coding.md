@@ -11,6 +11,13 @@ read_when:
 
 This guide describes a hardened VPS setup that keeps the Gateway private and runs coding automation through a sandboxed agent session.
 
+This setup is designed for a common pattern:
+
+- You talk to OpenClaw over Telegram.
+- OpenClaw orchestrates approvals and routing.
+- Actual coding work is executed by CLI tools (for example Codex CLI, Gemini CLI, CodeRabbit CLI) inside a sandbox.
+- The Gateway stays private (loopback bind) and is accessed remotely via Tailscale, not a public reverse proxy.
+
 High-level goals:
 
 - No public Gateway exposure (bind loopback).
@@ -24,16 +31,26 @@ Related:
 - Remote access: [Remote access](/gateway/remote)
 - Telegram: [Telegram](/channels/telegram)
 - Sandbox: [Sandboxing](/gateway/sandboxing)
-- Lobster: [Lobster](/tools/lobster)
-- Work plugin: [Work plugin](/plugins/work)
+  - Lobster: [Lobster](/tools/lobster)
+  - Work plugin: [Work plugin](/plugins/work)
 
 ## Architecture
 
+Decisions:
+
 - One Ubuntu 24.04 VPS runs the OpenClaw Gateway.
 - The Gateway binds to `127.0.0.1` only (`gateway.bind: "loopback"`).
-- The Control UI is exposed privately via Tailscale Serve (optional).
-- Tool execution for coding runs in a Docker sandbox (a `coder` agent).
+- The Control UI is reachable only over a private network (Tailscale Serve recommended).
+- Telegram is the primary interface (DM pairing, groups disabled).
+- Coding tool execution happens in a Docker sandbox (a dedicated `coder` agent).
 - Multi-step automation uses Lobster workflows with resumable approval tokens.
+- Risky steps are approval-gated: commits, pushes, PR creation, merges (and any custom "side effect" step you add later).
+
+Rationale (why this shape works well):
+
+- Loopback bind drastically reduces attack surface for the Gateway HTTP endpoints and Control UI. See [Gateway security](/gateway/security).
+- A dedicated sandboxed `coder` agent lets you keep the chat-facing agent minimal while still enabling robust automation. See [Sandboxing](/gateway/sandboxing) and [Tool policy mental model](/gateway/sandbox-vs-tool-policy-vs-elevated).
+- Lobster keeps orchestration deterministic and token-efficient: a single tool call can execute a whole pipeline with explicit approvals. See [Lobster](/tools/lobster).
 
 ## Host requirements
 
@@ -51,6 +68,11 @@ At minimum, ensure:
 - UFW is enabled with an allow rule for your SSH port.
 - Tailscale is installed (for private access).
 
+Recommended:
+
+- Prefer the hardened installer: [Ansible](/install/ansible).
+- Enable provider snapshots (daily) so you can recover quickly.
+
 ## Install prerequisites
 
 You need these on the VPS:
@@ -60,7 +82,9 @@ You need these on the VPS:
 - Docker (for sandboxing)
 - Lobster CLI (for workflow execution)
 
-If you are working from a source checkout, this repo includes a bootstrap script:
+Recommended: use [Ansible](/install/ansible) for a production-grade install (firewall-first + Tailscale + systemd hardening).
+
+If you are working from a source checkout, this repo also includes a bootstrap script (useful for experimentation and forks):
 
 ```bash
 sudo bash ops/vps/bootstrap-ubuntu24.sh
@@ -86,13 +110,17 @@ TELEGRAM_BOT_TOKEN="..."
 OPENCLAW_GATEWAY_TOKEN="..."
 
 GH_TOKEN="..."
-OPENAI_API_KEY="..."
-GEMINI_API_KEY="..."
 CODERABBIT_API_KEY="..."
 
 GIT_AUTHOR_NAME="Your Name"
 GIT_AUTHOR_EMAIL="you@example.com"
 ```
+
+Notes:
+
+- `OPENCLAW_GATEWAY_TOKEN` is required if you use `/tools/invoke` from automation (for example via the Work plugin).
+- For Codex CLI and Gemini CLI, you can often rely on their own auth flows (subscription/OAuth credentials on disk) instead of API keys. If you do use API keys, treat them as coding-environment secrets and keep them out of repos.
+- If you run coding CLIs inside a sandbox, those credentials must be available inside the sandbox (typically via env vars or read-only mounts).
 
 ## Configure the Gateway
 
@@ -130,6 +158,11 @@ If you maintain your own image:
 - install the coding CLIs in the image
 - ensure they are on `PATH` for the sandbox user
 - pass API keys into the sandbox via `agents.list[].sandbox.docker.env`
+
+Security notes:
+
+- Keep the chat-facing `main` agent tool policy minimal and route all execution to the `coder` agent. This limits the blast radius of prompt injection in chat.
+- Keep `tools.elevated.enabled=false` unless you have a specific operational need. See [Elevated mode](/tools/elevated).
 
 ## Join Tailscale (recommended)
 
@@ -185,6 +218,18 @@ Resume from Telegram:
 
 Details: [Work plugin](/plugins/work).
 
+## Railway to VPS cutover
+
+If you are migrating from Railway (or another PaaS):
+
+1. Export your state and workspace (if you have meaningful state).
+   - Railway export endpoint: `https://<your-domain>/setup/export` (see [Railway](/install/railway)).
+2. Bring up the VPS Gateway first and verify Telegram works.
+3. Restore state if needed. See [Migrating](/install/migrating).
+4. Decommission the PaaS service after the VPS is stable.
+
+If your deployment is a fresh fork with minimal state, starting clean on the VPS is usually simpler.
+
 ## Acceptance checks
 
 Security:
@@ -197,3 +242,9 @@ Workflow:
 
 - `/work new demo-repo` scaffolds a repo and (after approval) pushes to GitHub.
 - `/work task ...` creates a `work/*` branch, runs coding CLIs, runs checks, runs CodeRabbit review, then (after approval) commits and opens a PR.
+
+## Further reading
+
+- Threat model and hardening checklist: [Gateway security](/gateway/security)
+- Deterministic orchestration with approvals: [Lobster](/tools/lobster)
+- CLI-first coding automation contract: [Work plugin](/plugins/work)

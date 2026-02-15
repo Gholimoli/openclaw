@@ -39,6 +39,19 @@ Then open:
 - Persistent storage via Railway Volume (`/data`) so config/credentials/workspace survive redeploys
 - Backup export at `/setup/export` to migrate off Railway later
 
+## When Railway is not a fit
+
+Railway is a great zero-ops starter, but it is not the best match when you want:
+
+- a Gateway that is not publicly reachable (loopback-only with private access)
+- a long-running, CLI-heavy coding automation pipeline that depends on local binaries and local credential stores
+- strict operator-only controls (Tailscale access, host-level hardening, custom sandboxes)
+
+For those cases, prefer a private VPS Gateway:
+
+- Secure setup guide: [VPS coding automation](/install/vps-coding)
+- Pipeline design: [Coding automation pipeline](/automation/coding-pipeline)
+
 ## Required Railway settings
 
 ### Public Networking

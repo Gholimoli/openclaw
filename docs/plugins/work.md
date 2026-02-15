@@ -20,6 +20,8 @@ Use it to drive a CLI-first pipeline from chat:
 
 If you want a security-first VPS setup for this, see [VPS coding automation](/install/vps-coding).
 
+If you want the end-to-end pipeline design (bounded review loop, CI gates, context hygiene), see [Coding automation pipeline](/automation/coding-pipeline).
+
 ## How it works
 
 The plugin runs as part of the Gateway process and follows this pattern:
@@ -40,6 +42,17 @@ Related:
 - Tools Invoke API: [Tools Invoke API](/gateway/tools-invoke-http-api)
 - Sandboxing: [Sandboxing](/gateway/sandboxing)
 - Exec approvals: [Exec approvals](/tools/exec-approvals)
+
+## Safety model
+
+`/work` is designed to be "safe by default" for a single operator:
+
+- The command is deterministic and does not rely on the LLM for orchestration.
+- Side effects (commit, push, PR creation, merge) are approval-gated.
+- You are expected to route execution through a sandboxed `coder` agent session key.
+- You can keep the chat-facing agent minimal (deny shell and write tools) so prompt injection in chat has limited blast radius.
+
+For the full mental model of why something is blocked, see [Sandbox vs tool policy vs elevated](/gateway/sandbox-vs-tool-policy-vs-elevated).
 
 ## Requirements
 
@@ -173,6 +186,12 @@ For `task` and `fix`:
 5. Run a CodeRabbit review pass.
 6. Stop after `maxFixLoops` if checks remain failing, and return a report.
 
+Practical tips:
+
+- Treat the loop as bounded automation, not an infinite agent. If it fails repeatedly, stop and ask for a human decision.
+- Keep the coding agent prompt template strict (no secrets exfiltration, stop on unclear requirements, ask before risky changes).
+- Keep checks deterministic and fast. Prefer format, lint, typecheck, unit tests. Avoid flaky e2e tests in the loop.
+
 ### approvals and resume
 
 If a workflow pauses, you get:
@@ -186,6 +205,16 @@ Resume from chat:
 /work resume <token> --approve yes
 /work resume <token> --approve no
 ```
+
+## CI and merge policy
+
+Recommended approach:
+
+- Local `/work` loop makes the change clean before pushing.
+- GitHub Actions remains the merge gate (format, lint, typecheck, tests, build, security checks).
+- CodeRabbit is best treated as a PR signal (comments) and as a local loop input. Avoid making it a hard merge blocker if its output is nondeterministic for your repos.
+
+See [CI](/ci) and [Coding automation pipeline](/automation/coding-pipeline) for a reference gate template.
 
 ## Troubleshooting
 

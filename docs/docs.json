@@ -1009,6 +1009,8 @@
               {
                 "group": "Automation",
                 "pages": [
+                  "automation/coding-pipeline",
+                  "automation/context-repositories",
                   "automation/hooks",
                   "automation/cron-jobs",
                   "automation/cron-vs-heartbeat",

@@ -656,6 +656,18 @@ Common use cases:
 - Family/work agent: sandboxed + read-only tools
 - Public agent: sandboxed + no filesystem/shell tools
 
+If you are building a coding automation setup, a common pattern is:
+
+- `main` chat agent: minimal tools (no shell, no filesystem mutation)
+- `coder` agent: sandboxed, narrow tool allowlist
+- deterministic workflow runner (Lobster) plus explicit approvals
+
+Docs:
+
+- [VPS coding automation](/install/vps-coding)
+- [Coding automation pipeline](/automation/coding-pipeline)
+- [Work plugin](/plugins/work)
+
 ### Example: full access (no sandbox)
 
 ```json5
