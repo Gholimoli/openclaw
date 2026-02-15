@@ -4,6 +4,10 @@ RUN corepack enable
 
 WORKDIR /app
 
+# Avoid downloading large test browser bundles during image builds.
+# (The Control UI has Playwright as a devDependency; browsers are not needed at runtime.)
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
 ARG OPENCLAW_DOCKER_APT_PACKAGES=""
 RUN if [ -n "$OPENCLAW_DOCKER_APT_PACKAGES" ]; then \
       apt-get update && \
@@ -24,6 +28,12 @@ RUN pnpm build
 # Force pnpm for UI build (Bun may fail on ARM/Synology architectures)
 ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm ui:build
+
+# Reduce final image size: drop devDependencies and caches after building.
+# The runtime uses dist/ + production dependencies only.
+RUN pnpm prune --prod && \
+    pnpm store prune || true
+RUN rm -rf /root/.cache /root/.npm /root/.local/share/pnpm/store /root/.pnpm-store /ms-playwright || true
 
 ENV NODE_ENV=production
 
