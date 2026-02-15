@@ -483,6 +483,25 @@ export function createGatewayHttpServer(opts: {
       const configSnapshot = loadConfig();
       const trustedProxies = configSnapshot.gateway?.trustedProxies ?? [];
       const requestPath = new URL(req.url ?? "/", "http://localhost").pathname;
+
+      // Public health check endpoint (PaaS friendly).
+      // Keep this unauthenticated and fast: it is used by platforms like Railway.
+      if (requestPath === "/health") {
+        if (req.method === "HEAD") {
+          res.statusCode = 200;
+          res.end();
+          return;
+        }
+        if (req.method !== "GET") {
+          res.statusCode = 405;
+          res.setHeader("Allow", "GET, HEAD");
+          res.setHeader("Content-Type", "text/plain; charset=utf-8");
+          res.end("Method Not Allowed");
+          return;
+        }
+        sendJson(res, 200, { ok: true });
+        return;
+      }
       if (await handleHooksRequest(req, res)) {
         return;
       }
