@@ -16,14 +16,19 @@ RUN if [ -n "$OPENCLAW_DOCKER_APT_PACKAGES" ]; then \
       rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*; \
     fi
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-COPY ui/package.json ./ui/package.json
-COPY patches ./patches
-COPY scripts ./scripts
+# Avoid a late `chown -R` over a huge tree (expensive and increases layer size).
+# Make /app owned by the `node` user early, then copy files with --chown.
+RUN chown -R node:node /app
+USER node
+
+COPY --chown=node:node package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY --chown=node:node ui/package.json ./ui/package.json
+COPY --chown=node:node patches ./patches
+COPY --chown=node:node scripts ./scripts
 
 RUN pnpm install --frozen-lockfile
 
-COPY . .
+COPY --chown=node:node . .
 RUN pnpm build
 # Force pnpm for UI build (Bun may fail on ARM/Synology architectures)
 ENV OPENCLAW_PREFER_PNPM=1
@@ -33,12 +38,11 @@ RUN pnpm ui:build
 # The runtime uses dist/ + production dependencies only.
 RUN CI=true pnpm prune --prod
 RUN pnpm store prune || true
-RUN rm -rf /root/.cache /root/.npm /root/.local/share/pnpm/store /root/.pnpm-store /ms-playwright || true
+RUN rm -rf /home/node/.cache /home/node/.npm /home/node/.local/share/pnpm/store /home/node/.pnpm-store /ms-playwright || true
 
 ENV NODE_ENV=production
 
-# Allow non-root user to write temp files during runtime/tests.
-RUN chown -R node:node /app
+USER root
 
 # Start gateway server (optionally bootstrapping config for VPS/PaaS platforms).
 #
