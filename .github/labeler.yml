@@ -220,6 +220,10 @@
   - changed-files:
       - any-glob-to-any-file:
           - "extensions/lobster/**"
+"extensions: work":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "extensions/work/**"
 "extensions: memory-core":
   - changed-files:
       - any-glob-to-any-file:

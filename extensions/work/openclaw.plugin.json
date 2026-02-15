@@ -1,0 +1,35 @@
+{
+  "id": "work",
+  "name": "Work",
+  "description": "Deterministic coding workflows (new/task/review/fix/ship/merge) executed via Lobster with approval gates.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "lobsterPath": {
+        "type": "string",
+        "description": "Absolute path to the lobster binary. Omit to use PATH."
+      },
+      "workRoot": {
+        "type": "string",
+        "description": "Directory where repos are cloned/created (default: ~/work)."
+      },
+      "defaultBase": {
+        "type": "string",
+        "description": "Default base branch name (default: main)."
+      },
+      "coderSessionKey": {
+        "type": "string",
+        "description": "Session key used for sandboxed exec via /tools/invoke (default: agent:coder:main)."
+      },
+      "maxFixLoops": {
+        "type": "number",
+        "description": "Max fix loops for /work task and /work fix (default: 3)."
+      },
+      "timeoutMs": {
+        "type": "number",
+        "description": "Default Lobster run timeout for work workflows (default: 1800000)."
+      }
+    }
+  }
+}

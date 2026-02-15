@@ -74,6 +74,7 @@ IDENTITY.md
 USER.md
 .tgz
 .idea
+.cursor/
 
 # local tooling
 .serena/

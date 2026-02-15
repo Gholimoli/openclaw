@@ -1,0 +1,45 @@
+# Coder sandbox image: includes the CLIs needed for /work workflows.
+#
+# Base: openclaw-sandbox-common (ships with Node/npm/pnpm/bun/brew and common build tools)
+# This image is intentionally "batteries included" to avoid runtime installs in locked-down sandboxes.
+#
+# Build (on VPS):
+#   docker build -t openclaw-sandbox-coder:bookworm -f ops/vps/Dockerfile.openclaw-sandbox-coder .
+
+ARG BASE_IMAGE=openclaw-sandbox-common:bookworm-slim
+FROM ${BASE_IMAGE}
+
+USER root
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# GitHub CLI + core tooling
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    gh \
+    openssh-client \
+    ca-certificates \
+    curl \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install coding CLIs.
+# Notes:
+# - Keep these pinned in production (exact versions) once you settle on a known-good set.
+# - This Dockerfile uses npm for portability.
+RUN npm install -g \
+  @openai/codex \
+  @google/gemini-cli \
+  && npm cache clean --force
+
+# CodeRabbit CLI (install script)
+RUN curl -fsSL https://cli.coderabbit.ai/install.sh | sh \
+  && (command -v coderabbit >/dev/null 2>&1 || (echo "coderabbit not on PATH after install" >&2 && exit 1)) \
+  && CODERABBIT_BIN="$(command -v coderabbit)" \
+  && cp "$CODERABBIT_BIN" /usr/local/bin/coderabbit \
+  && chmod +x /usr/local/bin/coderabbit \
+  && /usr/local/bin/coderabbit --version >/dev/null 2>&1 || true
+
+USER sandbox
+WORKDIR /home/sandbox
+
+CMD ["sleep", "infinity"]

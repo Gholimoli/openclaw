@@ -1,0 +1,133 @@
+// Secure VPS config focused on deterministic coding automation.
+// Location: ~/.openclaw/openclaw.json (or $OPENCLAW_STATE_DIR/openclaw.json)
+{
+  // Keep the gateway private. Use Tailscale to access the Control UI.
+  gateway: {
+    mode: "local",
+    bind: "loopback", // do not expose publicly
+    port: 18789,
+    auth: {
+      mode: "token",
+      token: "${OPENCLAW_GATEWAY_TOKEN}",
+    },
+    // Harden /tools/invoke: keep the default hard-deny list and add more.
+    tools: {
+      deny: ["gateway", "sessions_send", "sessions_spawn", "whatsapp_login", "browser"],
+    },
+  },
+
+  // Environment: put secrets in ~/.openclaw/.env so the daemon can read them.
+  env: {
+    // Optional: import missing vars from login shell (useful on VPS if you manage env in ~/.profile).
+    shellEnv: { enabled: false },
+  },
+
+  // Telegram: pairing-only DMs, groups disabled, and block channel-initiated config writes.
+  channels: {
+    telegram: {
+      enabled: true,
+      botToken: "${TELEGRAM_BOT_TOKEN}",
+      dmPolicy: "pairing",
+      groupPolicy: "disabled",
+      configWrites: false,
+    },
+  },
+
+  // Secure DM mode so multi-user accidents don't cross-contaminate context.
+  session: {
+    dmScope: "per-channel-peer",
+  },
+
+  // Enable bundled plugins explicitly.
+  plugins: {
+    entries: {
+      work: {
+        enabled: true,
+        config: {
+          // Prefer absolute lobsterPath in production (reduces PATH hijack risk).
+          // lobsterPath: "/usr/local/bin/lobster",
+          workRoot: "~/work",
+          defaultBase: "main",
+          coderSessionKey: "agent:coder:main",
+          maxFixLoops: 3,
+          timeoutMs: 1800000, // 30m
+        },
+      },
+    },
+  },
+
+  // Global tool baseline: keep it tight; let the workflow run tools via /tools/invoke
+  // against the coder agent session, not your main chat surface.
+  tools: {
+    profile: "minimal",
+    elevated: { enabled: false },
+  },
+
+  agents: {
+    defaults: {
+      // Main agent should not have shell access.
+      tools: {
+        profile: "minimal",
+        deny: ["exec", "process", "write", "edit", "apply_patch", "browser", "canvas", "nodes"],
+      },
+    },
+    list: [
+      {
+        id: "main",
+        workspace: "~/.openclaw/workspace/main",
+      },
+      {
+        id: "coder",
+        workspace: "~/work",
+        // Run all tool execution for this agent in Docker.
+        sandbox: {
+          mode: "all",
+          scope: "agent",
+          workspaceAccess: "rw",
+          docker: {
+            image: "openclaw-sandbox-coder:bookworm",
+            network: "bridge",
+            readOnlyRoot: false,
+            user: "1000:1000",
+            env: {
+              LANG: "C.UTF-8",
+              // Auth for CLI tools inside the sandbox:
+              GH_TOKEN: "${GH_TOKEN}",
+              OPENAI_API_KEY: "${OPENAI_API_KEY}",
+              GEMINI_API_KEY: "${GEMINI_API_KEY}",
+              CODERABBIT_API_KEY: "${CODERABBIT_API_KEY}",
+              // Git identity (required for commits):
+              GIT_AUTHOR_NAME: "${GIT_AUTHOR_NAME}",
+              GIT_AUTHOR_EMAIL: "${GIT_AUTHOR_EMAIL}",
+              GIT_COMMITTER_NAME: "${GIT_AUTHOR_NAME}",
+              GIT_COMMITTER_EMAIL: "${GIT_AUTHOR_EMAIL}",
+            },
+            // Keep sandbox bounded.
+            pidsLimit: 256,
+            memory: "4g",
+            cpus: 2,
+          },
+        },
+        // Allow only what the workflow needs inside sandbox.
+        tools: {
+          profile: "minimal",
+          allow: ["exec", "process", "read", "write", "edit", "apply_patch"],
+          deny: [
+            "browser",
+            "canvas",
+            "nodes",
+            "cron",
+            "gateway",
+            "sessions_spawn",
+            "sessions_send",
+          ],
+        },
+      },
+      {
+        id: "ops",
+        workspace: "~/.openclaw/workspace/ops",
+        tools: { profile: "minimal", deny: ["exec", "process"] },
+      },
+    ],
+  },
+}

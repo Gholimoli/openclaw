@@ -1,0 +1,35 @@
+name: work-task
+args:
+  repo:
+    description: "Repo name or owner/name"
+  repoDir:
+    description: "Resolved local repo directory"
+  message:
+    description: "Task description"
+  workctlPath:
+    description: "Absolute path to workctl script"
+  coderSessionKey:
+    description: "Session key used for sandboxed exec via /tools/invoke"
+  workRoot:
+    description: "Base directory for repos"
+  base:
+    default: "main"
+  maxFixLoops:
+    default: 3
+steps:
+  - id: ensure_repo
+    command: node "$workctlPath" ensure-repo --repo "$repo" --work-root "$workRoot" --base "$base" --session-key "$coderSessionKey" --json
+  - id: implement
+    command: node "$workctlPath" task --repo-dir "$repoDir" --base "$base" --message "$message" --max-fix-loops "$maxFixLoops" --session-key "$coderSessionKey" --json
+  - id: approve_commit
+    command: node "$workctlPath" approve --prompt "Commit changes for $repo?" --json
+    approval: required
+  - id: commit
+    command: node "$workctlPath" commit --repo-dir "$repoDir" --base "$base" --session-key "$coderSessionKey" --json
+    condition: $approve_commit.approved
+  - id: approve_push
+    command: node "$workctlPath" approve --prompt "Push branch + open PR for $repo?" --json
+    approval: required
+  - id: push_pr
+    command: node "$workctlPath" push-pr --repo-dir "$repoDir" --base "$base" --session-key "$coderSessionKey" --json
+    condition: $approve_push.approved

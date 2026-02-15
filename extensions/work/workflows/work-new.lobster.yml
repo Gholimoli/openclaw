@@ -1,0 +1,23 @@
+name: work-new
+args:
+  name:
+    description: "New repo name"
+  workctlPath:
+    description: "Absolute path to workctl script"
+  coderSessionKey:
+    description: "Session key used for sandboxed exec via /tools/invoke"
+  workRoot:
+    description: "Base directory for repos"
+  base:
+    default: "main"
+  maxFixLoops:
+    default: 3
+steps:
+  - id: init_local
+    command: node "$workctlPath" new --name "$name" --work-root "$workRoot" --base "$base" --session-key "$coderSessionKey" --json
+  - id: approve_remote
+    command: node "$workctlPath" approve --prompt "Create GitHub repo and push initial scaffold?" --json
+    approval: required
+  - id: push_remote
+    command: node "$workctlPath" new --name "$name" --work-root "$workRoot" --base "$base" --push --session-key "$coderSessionKey" --json
+    condition: $approve_remote.approved

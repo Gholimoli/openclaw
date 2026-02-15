@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          check-latest: true
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Detect Node project
+        id: nodeproj
+        run: |
+          if [ -f package.json ]; then
+            echo "is_node=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_node=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install deps (pnpm)
+        if: steps.nodeproj.outputs.is_node == 'true' && hashFiles('pnpm-lock.yaml') != ''
+        run: |
+          corepack prepare pnpm@10.23.0 --activate
+          pnpm -v
+          pnpm install --frozen-lockfile
+
+      - name: Install deps (npm)
+        if: steps.nodeproj.outputs.is_node == 'true' && hashFiles('pnpm-lock.yaml') == ''
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Lint / typecheck / format (best-effort)
+        if: steps.nodeproj.outputs.is_node == 'true'
+        run: |
+          set -euo pipefail
+          if [ -f pnpm-lock.yaml ]; then
+            if pnpm -s run | grep -qE '^check '; then pnpm check; fi
+            if pnpm -s run | grep -qE '^lint '; then pnpm lint; fi
+            if pnpm -s run | grep -qE '^typecheck '; then pnpm typecheck; fi
+            if pnpm -s run | grep -qE '^format:check '; then pnpm format:check; fi
+          else
+            if npm run -s | grep -qE '^check$'; then npm run check; fi
+            if npm run -s | grep -qE '^lint$'; then npm run lint; fi
+            if npm run -s | grep -qE '^typecheck$'; then npm run typecheck; fi
+            if npm run -s | grep -qE '^format:check$'; then npm run format:check; fi
+          fi
+
+      - name: Test (best-effort)
+        if: steps.nodeproj.outputs.is_node == 'true'
+        run: |
+          set -euo pipefail
+          if [ -f pnpm-lock.yaml ]; then
+            if pnpm -s run | grep -qE '^test '; then pnpm test; fi
+          else
+            if npm run -s | grep -qE '^test$'; then npm test; fi
+          fi

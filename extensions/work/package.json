@@ -1,0 +1,15 @@
+{
+  "name": "@openclaw/work",
+  "version": "2026.2.15",
+  "private": true,
+  "description": "Workflows for coding automation (Codex/Gemini/CodeRabbit) via Lobster (approval-gated, resumable).",
+  "type": "module",
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

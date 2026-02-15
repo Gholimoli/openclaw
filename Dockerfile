@@ -39,10 +39,8 @@ RUN chown -R node:node /app
 # This reduces the attack surface by preventing container escape via root privileges
 USER node
 
-# Start gateway server with default config.
-# Binds to loopback (127.0.0.1) by default for security.
+# Start gateway server (optionally bootstrapping config for VPS/PaaS platforms).
 #
-# For container platforms requiring external health checks:
-#   1. Set OPENCLAW_GATEWAY_TOKEN or OPENCLAW_GATEWAY_PASSWORD env var
-#   2. Override CMD: ["node","openclaw.mjs","gateway","--allow-unconfigured","--bind","lan"]
-CMD ["node", "openclaw.mjs", "gateway", "--allow-unconfigured"]
+# The bootstrap script is idempotent and only writes a minimal, secure baseline
+# config when needed (and can enforce model defaults). It does not print secrets.
+CMD ["bash", "-lc", "node ops/railway/bootstrap-config.mjs || true; node openclaw.mjs gateway --allow-unconfigured"]

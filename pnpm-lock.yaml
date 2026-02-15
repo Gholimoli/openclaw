@@ -538,6 +538,12 @@ importers:
         specifier: workspace:*
         version: link:../..
 
+  extensions/work:
+    devDependencies:
+      openclaw:
+        specifier: workspace:*
+        version: link:../..
+
   extensions/zalo:
     dependencies:
       undici:

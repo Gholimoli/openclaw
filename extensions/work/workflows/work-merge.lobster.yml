@@ -1,0 +1,25 @@
+name: work-merge
+args:
+  repo:
+    description: "Repo name or owner/name"
+  pr:
+    description: "PR number"
+  repoDir:
+    description: "Resolved local repo directory"
+  workctlPath:
+    description: "Absolute path to workctl script"
+  coderSessionKey:
+    description: "Session key used for sandboxed exec via /tools/invoke"
+  workRoot:
+    description: "Base directory for repos"
+  base:
+    default: "main"
+steps:
+  - id: ensure_repo
+    command: node "$workctlPath" ensure-repo --repo "$repo" --work-root "$workRoot" --base "$base" --session-key "$coderSessionKey" --json
+  - id: approve_merge
+    command: node "$workctlPath" approve --prompt "Merge $repo#$pr if CI is green?" --json
+    approval: required
+  - id: merge
+    command: node "$workctlPath" merge --repo-dir "$repoDir" --repo "$repo" --pr "$pr" --session-key "$coderSessionKey" --json
+    condition: $approve_merge.approved
