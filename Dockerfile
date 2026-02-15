@@ -31,8 +31,8 @@ RUN pnpm ui:build
 
 # Reduce final image size: drop devDependencies and caches after building.
 # The runtime uses dist/ + production dependencies only.
-RUN pnpm prune --prod && \
-    pnpm store prune || true
+RUN CI=true pnpm prune --prod
+RUN pnpm store prune || true
 RUN rm -rf /root/.cache /root/.npm /root/.local/share/pnpm/store /root/.pnpm-store /ms-playwright || true
 
 ENV NODE_ENV=production
