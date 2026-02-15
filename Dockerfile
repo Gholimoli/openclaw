@@ -40,13 +40,11 @@ ENV NODE_ENV=production
 # Allow non-root user to write temp files during runtime/tests.
 RUN chown -R node:node /app
 
-# Security hardening: Run as non-root user
-# The node:22-bookworm image includes a 'node' user (uid 1000)
-# This reduces the attack surface by preventing container escape via root privileges
-USER node
-
 # Start gateway server (optionally bootstrapping config for VPS/PaaS platforms).
 #
 # The bootstrap script is idempotent and only writes a minimal, secure baseline
 # config when needed (and can enforce model defaults). It does not print secrets.
-CMD ["bash", "-lc", "node ops/railway/bootstrap-config.mjs || true; node openclaw.mjs gateway --allow-unconfigured"]
+#
+# Railway volumes at /data can be root-owned on first boot. We fix perms as root,
+# then drop privileges for the actual Gateway process.
+CMD ["bash", "-lc", "set -euo pipefail; if [ -d /data ]; then mkdir -p /data/.openclaw /data/workspace; chown -R node:node /data/.openclaw /data/workspace || true; fi; exec su -p -s /bin/bash node -c \"node ops/railway/bootstrap-config.mjs || true; node openclaw.mjs gateway --allow-unconfigured\""]
