@@ -122,6 +122,7 @@ Notes:
 - `/reasoning` (and `/verbose`) are risky in group settings: they may reveal internal reasoning or tool output you did not intend to expose. Prefer leaving them off, especially in group chats.
 - **Fast path:** command-only messages from allowlisted senders are handled immediately (bypass queue + model).
 - **Group mention gating:** command-only messages from allowlisted senders bypass mention requirements.
+- **Plugin commands:** plugins can register additional `/...` commands. Example: the [Work plugin](/plugins/work) adds `/work` for deterministic, approval-gated coding workflows.
 - **Inline shortcuts (allowlisted senders only):** certain commands also work when embedded in a normal message and are stripped before the model sees the remaining text.
   - Example: `hey /status` triggers a status reply, and the remaining text continues through the normal flow.
 - Currently: `/help`, `/commands`, `/status`, `/whoami` (`/id`).

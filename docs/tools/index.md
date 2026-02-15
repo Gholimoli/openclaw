@@ -174,6 +174,7 @@ Optional plugin tools:
 
 - [Lobster](/tools/lobster): typed workflow runtime with resumable approvals (requires the Lobster CLI on the gateway host).
 - [LLM Task](/tools/llm-task): JSON-only LLM step for structured workflow output (optional schema validation).
+- [Work plugin](/plugins/work): deterministic `/work` coding workflows built on Lobster plus a sandboxed coder agent session.
 
 ## Tool inventory
 

@@ -154,6 +154,9 @@ The **installer script** is the recommended way to install OpenClaw. It handles 
   <Card title="Bun" href="/install/bun" icon="zap">
     CLI-only usage via the Bun runtime.
   </Card>
+  <Card title="VPS coding automation" href="/install/vps-coding" icon="shield">
+    Loopback-only gateway plus Tailscale Serve, Telegram pairing, and approval-gated /work workflows.
+  </Card>
 </CardGroup>
 
 ## After install

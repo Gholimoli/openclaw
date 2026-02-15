@@ -86,6 +86,32 @@ To help group policies resolve context, you can optionally set:
 - `x-openclaw-message-channel: <channel>` (example: `slack`, `telegram`)
 - `x-openclaw-account-id: <accountId>` (when multiple accounts exist)
 
+## Pattern: run exec in a sandboxed agent session
+
+`/tools/invoke` becomes more useful when you target a session key that maps to a dedicated sandboxed agent (for example, a `coder` agent).
+
+Example request:
+
+```json
+{
+  "tool": "exec",
+  "args": {
+    "command": "git status --porcelain",
+    "workdir": ".",
+    "timeout": 120
+  },
+  "sessionKey": "agent:coder:main"
+}
+```
+
+Benefits:
+
+- Tool policy and sandboxing apply as usual for that agent.
+- You can keep the chat-facing surface minimal while still enabling robust automation.
+- You can make approvals and side effects explicit in code (for example, via [Lobster](/tools/lobster)).
+
+If you are building a deterministic pipeline that runs multiple tools, the [Work plugin](/plugins/work) demonstrates this pattern.
+
 ## Responses
 
 - `200` → `{ ok: true, result }`

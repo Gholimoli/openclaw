@@ -68,6 +68,16 @@ If the pipeline requests approval, resume with the token:
 
 AI triggers the workflow; Lobster executes the steps. Approval gates keep side effects explicit and auditable.
 
+## Example: deterministic coding workflows
+
+If you want coding automation that is CLI-first and approval-gated, a useful pattern is:
+
+- Chat command routes to a plugin (no LLM orchestration).
+- Plugin runs a Lobster workflow file.
+- Workflow steps call a helper that invokes tools via [Tools Invoke API](/gateway/tools-invoke-http-api) against a sandboxed `coder` session key.
+
+See [Work plugin](/plugins/work) for a concrete example.
+
 Example: map input items into tool calls:
 
 ```bash
