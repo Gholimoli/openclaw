@@ -1,0 +1,14 @@
+{
+  "name": "openclaw-railway-standby",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "openclaw": "2026.2.15"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
