@@ -206,6 +206,7 @@ After pairing your Telegram DM (see [Telegram](/channels/telegram)), use:
 ```text
 /work new demo-repo
 /work task demo-repo add endpoint X
+/work upstream Gholimoli/openclaw --upstream openclaw/openclaw
 ```
 
 When a workflow needs approval, it returns a resume token.
@@ -242,6 +243,7 @@ Workflow:
 
 - `/work new demo-repo` scaffolds a repo and (after approval) pushes to GitHub.
 - `/work task ...` creates a `work/*` branch, runs coding CLIs, runs checks, runs CodeRabbit review, then (after approval) commits and opens a PR.
+- `/work upstream ...` prepares a sync branch from upstream and, after approval, pushes and opens/updates a sync PR.
 
 ## Further reading
 

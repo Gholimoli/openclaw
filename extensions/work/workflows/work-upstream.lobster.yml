@@ -1,0 +1,29 @@
+name: work-upstream
+args:
+  repo:
+    description: "Repo name or owner/name"
+  repoDir:
+    description: "Resolved local repo directory"
+  upstreamRepo:
+    description: "Upstream owner/name to sync from"
+  syncBranch:
+    description: "Sync branch name"
+  keepWorkflowFiles:
+    default: true
+  workctlPath:
+    description: "Absolute path to workctl script"
+  coderSessionKey:
+    description: "Session key used for sandboxed exec via /tools/invoke"
+  workRoot:
+    description: "Base directory for repos"
+  base:
+    default: "main"
+steps:
+  - id: prepare_sync
+    command: node "$workctlPath" upstream-sync --repo "$repo" --work-root "$workRoot" --base "$base" --upstream-repo "$upstreamRepo" --sync-branch "$syncBranch" --keep-workflow-files "$keepWorkflowFiles" --session-key "$coderSessionKey" --json
+  - id: approve_publish
+    command: node "$workctlPath" approve --prompt "Push $syncBranch and open/update a PR into $base?" --json
+    approval: required
+  - id: publish_pr
+    command: node "$workctlPath" upstream-publish --repo-dir "$repoDir" --base "$base" --upstream-repo "$upstreamRepo" --sync-branch "$syncBranch" --session-key "$coderSessionKey" --json
+    condition: $approve_publish.approved

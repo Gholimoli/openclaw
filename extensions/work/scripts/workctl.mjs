@@ -175,6 +175,36 @@ function repoDirFor(workRoot, repo) {
   return path.join(workRoot, n.name);
 }
 
+function validateGitRefName(value, label) {
+  const v = String(value || "").trim();
+  if (!v || !/^[A-Za-z0-9._/-]+$/.test(v) || v.startsWith("-") || v.includes("..")) {
+    die(`invalid ${label}`, { value: v });
+  }
+  return v;
+}
+
+function validateRepoSlug(value, label) {
+  const v = String(value || "").trim();
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(v)) {
+    die(`invalid ${label}`, { value: v });
+  }
+  return v;
+}
+
+async function runRequiredExec({ sessionKey, cwd, command, timeout = 600, pty = false, error }) {
+  const res = await execViaGateway({
+    sessionKey,
+    command,
+    workdir: cwd,
+    timeout,
+    pty,
+  });
+  if (res.status !== "completed" || (typeof res.exitCode === "number" && res.exitCode !== 0)) {
+    die(error || "command failed", { command, tail: res.tail, exitCode: res.exitCode });
+  }
+  return res;
+}
+
 async function gitStatusPorcelain(sessionKey, cwd) {
   const res = await execViaGateway({
     sessionKey,
@@ -402,7 +432,7 @@ function initContext(cwd) {
   writeIfMissing("context/CONSTRAINTS.md", "# Constraints\n\n## Security\n\n## Cost\n\n");
 }
 
-async function ensureRepo({ sessionKey, repo, workRoot, base }) {
+async function ensureRepo({ sessionKey, repo, workRoot, base, createWorkBranch: createBranch }) {
   const info = normalizeRepoName(repo);
   if (!info) die("invalid repo");
   const dir = repoDirFor(workRoot, repo);
@@ -442,9 +472,325 @@ async function ensureRepo({ sessionKey, repo, workRoot, base }) {
     timeout: 600,
   });
   await ensureClean(sessionKey, dir);
+  const shouldCreateBranch = createBranch !== false;
+  if (!shouldCreateBranch) {
+    return { repoDir: dir };
+  }
   const branch = await createWorkBranch(sessionKey, dir);
   initContext(dir);
   return { repoDir: dir, branch };
+}
+
+async function prepareUpstreamSync({
+  sessionKey,
+  repo,
+  workRoot,
+  base,
+  upstreamRepo,
+  syncBranch,
+  keepWorkflowFiles,
+}) {
+  const safeBase = validateGitRefName(base, "base branch");
+  const safeSyncBranch = validateGitRefName(syncBranch, "sync branch");
+  const safeUpstreamRepo = validateRepoSlug(upstreamRepo, "upstream repo");
+  const keepWorkflows = keepWorkflowFiles !== false;
+
+  const ensured = await ensureRepo({
+    sessionKey,
+    repo,
+    workRoot,
+    base: safeBase,
+    createWorkBranch: false,
+  });
+  const repoDir = String(ensured.repoDir || "").trim();
+  if (!repoDir) {
+    die("failed to resolve repo dir");
+  }
+  await ensureClean(sessionKey, repoDir);
+
+  await execViaGateway({
+    sessionKey,
+    command: "git remote remove upstream || true",
+    workdir: repoDir,
+    timeout: 120,
+  });
+  await runRequiredExec({
+    sessionKey,
+    cwd: repoDir,
+    command: `git remote add upstream ${JSON.stringify(`https://github.com/${safeUpstreamRepo}.git`)}`,
+    timeout: 120,
+    error: "git remote add upstream failed",
+  });
+  await runRequiredExec({
+    sessionKey,
+    cwd: repoDir,
+    command: `git fetch --no-tags origin ${JSON.stringify(safeBase)} --prune`,
+    timeout: 600,
+    error: "git fetch origin failed",
+  });
+  await runRequiredExec({
+    sessionKey,
+    cwd: repoDir,
+    command: `git fetch --no-tags upstream ${JSON.stringify(safeBase)} --prune`,
+    timeout: 600,
+    error: "git fetch upstream failed",
+  });
+
+  const counts = await runRequiredExec({
+    sessionKey,
+    cwd: repoDir,
+    command:
+      "git rev-list --left-right --count " +
+      JSON.stringify(`origin/${safeBase}...upstream/${safeBase}`),
+    timeout: 120,
+    error: "git rev-list failed",
+  });
+  const [localOnlyRaw, upstreamOnlyRaw] = String(counts.tail || "")
+    .trim()
+    .split(/\s+/g);
+  const localOnly = Number.parseInt(localOnlyRaw || "0", 10) || 0;
+  const upstreamOnly = Number.parseInt(upstreamOnlyRaw || "0", 10) || 0;
+
+  if (upstreamOnly === 0) {
+    return {
+      status: "already_synced",
+      repoDir,
+      base: safeBase,
+      syncBranch: safeSyncBranch,
+      upstreamRepo: safeUpstreamRepo,
+      localOnly,
+      upstreamOnly,
+    };
+  }
+
+  await runRequiredExec({
+    sessionKey,
+    cwd: repoDir,
+    command: `git checkout -B ${JSON.stringify(safeSyncBranch)} ${JSON.stringify(`origin/${safeBase}`)}`,
+    timeout: 120,
+    error: "git checkout sync branch failed",
+  });
+
+  const merge = await execViaGateway({
+    sessionKey,
+    command: `git merge --no-ff --no-commit ${JSON.stringify(`upstream/${safeBase}`)}`,
+    workdir: repoDir,
+    timeout: 300,
+  });
+  if (
+    merge.status !== "completed" ||
+    (typeof merge.exitCode === "number" && merge.exitCode !== 0)
+  ) {
+    const conflicts = await execViaGateway({
+      sessionKey,
+      command: "git diff --name-only --diff-filter=U",
+      workdir: repoDir,
+      timeout: 120,
+    });
+    await execViaGateway({
+      sessionKey,
+      command: "git merge --abort || true",
+      workdir: repoDir,
+      timeout: 120,
+    });
+    await execViaGateway({
+      sessionKey,
+      command: `git checkout ${JSON.stringify(safeBase)}`,
+      workdir: repoDir,
+      timeout: 120,
+    });
+    return {
+      status: "conflicts",
+      repoDir,
+      base: safeBase,
+      syncBranch: safeSyncBranch,
+      upstreamRepo: safeUpstreamRepo,
+      localOnly,
+      upstreamOnly,
+      conflicts: String(conflicts.tail || "")
+        .split("\n")
+        .map((x) => x.trim())
+        .filter(Boolean),
+    };
+  }
+
+  if (keepWorkflows) {
+    await execViaGateway({
+      sessionKey,
+      command:
+        "git restore --source " +
+        JSON.stringify(`origin/${safeBase}`) +
+        " --staged --worktree .github/workflows || true",
+      workdir: repoDir,
+      timeout: 120,
+    });
+  }
+
+  const noDelta = await execViaGateway({
+    sessionKey,
+    command: "git diff --cached --quiet && git diff --quiet",
+    workdir: repoDir,
+    timeout: 120,
+  });
+  if (noDelta.status === "completed" && (noDelta.exitCode === 0 || noDelta.exitCode === null)) {
+    await execViaGateway({
+      sessionKey,
+      command: "git merge --abort || true",
+      workdir: repoDir,
+      timeout: 120,
+    });
+    await execViaGateway({
+      sessionKey,
+      command: `git checkout ${JSON.stringify(safeBase)}`,
+      workdir: repoDir,
+      timeout: 120,
+    });
+    return {
+      status: "no_delta_after_keep_rules",
+      repoDir,
+      base: safeBase,
+      syncBranch: safeSyncBranch,
+      upstreamRepo: safeUpstreamRepo,
+      localOnly,
+      upstreamOnly,
+    };
+  }
+
+  await runRequiredExec({
+    sessionKey,
+    cwd: repoDir,
+    command: `git commit -m ${JSON.stringify(`chore: sync upstream ${safeBase}`)}`,
+    timeout: 240,
+    error: "git commit failed",
+  });
+
+  const commitSummary = await execViaGateway({
+    sessionKey,
+    command:
+      "git log --oneline --no-merges --max-count 80 " + JSON.stringify(`origin/${safeBase}..HEAD`),
+    workdir: repoDir,
+    timeout: 120,
+  });
+
+  return {
+    status: "ready_to_publish",
+    repoDir,
+    base: safeBase,
+    syncBranch: safeSyncBranch,
+    upstreamRepo: safeUpstreamRepo,
+    localOnly,
+    upstreamOnly,
+    keepWorkflowFiles: keepWorkflows,
+    commitSummary: String(commitSummary.tail || "")
+      .split("\n")
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .slice(0, 80),
+  };
+}
+
+async function publishUpstreamSync({ sessionKey, repoDir, base, syncBranch, upstreamRepo }) {
+  const safeBase = validateGitRefName(base, "base branch");
+  const safeSyncBranch = validateGitRefName(syncBranch, "sync branch");
+  const safeUpstreamRepo = validateRepoSlug(upstreamRepo, "upstream repo");
+
+  await runRequiredExec({
+    sessionKey,
+    cwd: repoDir,
+    command: `git checkout ${JSON.stringify(safeSyncBranch)}`,
+    timeout: 120,
+    error: "git checkout sync branch failed",
+  });
+
+  const hasDelta = await execViaGateway({
+    sessionKey,
+    command: "git diff --quiet " + JSON.stringify(`origin/${safeBase}...HEAD`),
+    workdir: repoDir,
+    timeout: 120,
+  });
+  if (hasDelta.status === "completed" && (hasDelta.exitCode === 0 || hasDelta.exitCode === null)) {
+    return {
+      status: "no_publish_needed",
+      reason: `No delta between ${safeSyncBranch} and origin/${safeBase}.`,
+      syncBranch: safeSyncBranch,
+      base: safeBase,
+      upstreamRepo: safeUpstreamRepo,
+    };
+  }
+
+  await runRequiredExec({
+    sessionKey,
+    cwd: repoDir,
+    command: `git push --force-with-lease origin ${JSON.stringify(safeSyncBranch)}`,
+    timeout: 600,
+    error: "git push failed",
+  });
+
+  const title = `chore: sync upstream ${safeBase}`;
+  const body =
+    `Automated upstream sync from ${safeUpstreamRepo}:${safeBase}.\n\n` +
+    "- Prepared by /work upstream (Lobster + approval gates).\n" +
+    "- This PR is never auto-merged.\n";
+  const findPr = await execViaGateway({
+    sessionKey,
+    command:
+      "gh pr list --head " +
+      JSON.stringify(safeSyncBranch) +
+      " --base " +
+      JSON.stringify(safeBase) +
+      " --state open --json number --jq '.[0].number // empty'",
+    workdir: repoDir,
+    timeout: 120,
+  });
+  const prNumber = String(findPr.tail || "").trim();
+
+  if (prNumber) {
+    await runRequiredExec({
+      sessionKey,
+      cwd: repoDir,
+      command:
+        "gh pr edit " +
+        JSON.stringify(prNumber) +
+        " --title " +
+        JSON.stringify(title) +
+        " --body " +
+        JSON.stringify(body),
+      pty: true,
+      timeout: 600,
+      error: "gh pr edit failed",
+    });
+    return {
+      status: "pr_updated",
+      prNumber,
+      syncBranch: safeSyncBranch,
+      base: safeBase,
+      upstreamRepo: safeUpstreamRepo,
+    };
+  }
+
+  const created = await runRequiredExec({
+    sessionKey,
+    cwd: repoDir,
+    command:
+      "gh pr create --title " +
+      JSON.stringify(title) +
+      " --body " +
+      JSON.stringify(body) +
+      " --base " +
+      JSON.stringify(safeBase) +
+      " --head " +
+      JSON.stringify(safeSyncBranch),
+    pty: true,
+    timeout: 600,
+    error: "gh pr create failed",
+  });
+  return {
+    status: "pr_created",
+    pr: String(created.tail || "").trim(),
+    syncBranch: safeSyncBranch,
+    base: safeBase,
+    upstreamRepo: safeUpstreamRepo,
+  };
 }
 
 async function main() {
@@ -463,6 +809,8 @@ async function main() {
         "commit",
         "push-pr",
         "merge",
+        "upstream-sync",
+        "upstream-publish",
         "approve",
       ],
     });
@@ -539,6 +887,55 @@ async function main() {
     const sessionKey = String(args["session-key"] || args.sessionKey || "agent:coder:main").trim();
     if (!repo) die("--repo required");
     const res = await ensureRepo({ sessionKey, repo, workRoot, base });
+    ok(res, { json: res });
+    return;
+  }
+
+  if (cmd === "upstream-sync") {
+    const repo = String(args.repo || "").trim();
+    const workRoot = resolveWorkRoot(String(args["work-root"] || args.workRoot || "~/work"));
+    const base = String(args.base || "main");
+    const upstreamRepo = String(args["upstream-repo"] || args.upstreamRepo || "").trim();
+    const syncBranch = String(args["sync-branch"] || args.syncBranch || "").trim();
+    const keepWorkflowFilesRaw = String(
+      args["keep-workflow-files"] || args.keepWorkflowFiles || "true",
+    )
+      .trim()
+      .toLowerCase();
+    const keepWorkflowFiles = !["0", "false", "no", "off"].includes(keepWorkflowFilesRaw);
+    const sessionKey = String(args["session-key"] || args.sessionKey || "agent:coder:main").trim();
+    if (!repo) die("--repo required");
+    if (!upstreamRepo) die("--upstream-repo required");
+    if (!syncBranch) die("--sync-branch required");
+    const res = await prepareUpstreamSync({
+      sessionKey,
+      repo,
+      workRoot,
+      base,
+      upstreamRepo,
+      syncBranch,
+      keepWorkflowFiles,
+    });
+    ok(res, { json: res });
+    return;
+  }
+
+  if (cmd === "upstream-publish") {
+    const repoDir = String(args["repo-dir"] || args.repoDir || "").trim();
+    const base = String(args.base || "main");
+    const upstreamRepo = String(args["upstream-repo"] || args.upstreamRepo || "").trim();
+    const syncBranch = String(args["sync-branch"] || args.syncBranch || "").trim();
+    const sessionKey = String(args["session-key"] || args.sessionKey || "agent:coder:main").trim();
+    if (!repoDir) die("--repo-dir required");
+    if (!upstreamRepo) die("--upstream-repo required");
+    if (!syncBranch) die("--sync-branch required");
+    const res = await publishUpstreamSync({
+      sessionKey,
+      repoDir,
+      base,
+      syncBranch,
+      upstreamRepo,
+    });
     ok(res, { json: res });
     return;
   }

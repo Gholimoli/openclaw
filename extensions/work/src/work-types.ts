@@ -15,4 +15,12 @@ export type WorkEnvelope =
       error: { type?: string; message: string };
     };
 
-export type WorkAction = "new" | "task" | "review" | "fix" | "ship" | "merge" | "resume";
+export type WorkAction =
+  | "new"
+  | "task"
+  | "review"
+  | "fix"
+  | "ship"
+  | "merge"
+  | "upstream"
+  | "resume";

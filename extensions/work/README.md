@@ -36,6 +36,8 @@ Optional config:
           coderSessionKey: "agent:coder:main",
           maxFixLoops: 3,
           timeoutMs: 1800000, // 30m
+          defaultUpstreamRepo: "openclaw/openclaw",
+          keepWorkflowFiles: true,
         },
       },
     },
@@ -54,6 +56,7 @@ Command syntax (Telegram, Slack, etc.):
 /work fix <repo|owner/name> [--base main]
 /work ship <repo|owner/name> [--base main]
 /work merge <repo|owner/name>#<prNumber>
+/work upstream <repo|owner/name> [--base main] [--upstream owner/name] [--sync-branch branch]
 /work resume <resumeToken> --approve yes|no
 ```
 
@@ -63,6 +66,7 @@ Notes:
 - Side effects are gated by Lobster approvals (you’ll get a resume token).
 - `workctl` calls the Gateway HTTP API (`POST /tools/invoke`) to run `exec` in the configured session (via `coderSessionKey`).
 - `workctl` needs gateway auth in env: `OPENCLAW_GATEWAY_TOKEN` (or `OPENCLAW_GATEWAY_PASSWORD`).
+- `/work upstream` prepares sync locally first, then asks approval before push/PR.
 - Coding CLIs must be available in the _execution environment_ for that session key:
   - Recommended: install inside the `coder` Docker sandbox image (`codex`, `gemini`, `coderabbit`, `gh`, `git`).
   - Alternative: run without sandboxing and install them on the gateway host (not the default in the VPS pack).

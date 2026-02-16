@@ -1,7 +1,7 @@
 {
   "id": "work",
   "name": "Work",
-  "description": "Deterministic coding workflows (new/task/review/fix/ship/merge) executed via Lobster with approval gates.",
+  "description": "Deterministic coding workflows (new/task/review/fix/ship/merge/upstream) executed via Lobster with approval gates.",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -29,6 +29,14 @@
       "timeoutMs": {
         "type": "number",
         "description": "Default Lobster run timeout for work workflows (default: 1800000)."
+      },
+      "defaultUpstreamRepo": {
+        "type": "string",
+        "description": "Default upstream owner/name for /work upstream (default: openclaw/openclaw)."
+      },
+      "keepWorkflowFiles": {
+        "type": "boolean",
+        "description": "Keep local .github/workflows authoritative during upstream sync (default: true)."
       }
     }
   }

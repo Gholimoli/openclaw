@@ -177,6 +177,13 @@ jobs:
             echo "$body"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Fail run when sync PR creation fails
+        if: steps.sync.outputs.has_updates == 'true' && steps.create_pr.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          echo "Sync branch updated, but PR creation failed."
+          exit 1
+
       - name: Close stale sync PR when no upstream delta
         if: steps.sync.outputs.has_updates != 'true' && steps.sync.outputs.has_conflicts != 'true'
         run: |

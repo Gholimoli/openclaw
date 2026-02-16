@@ -42,6 +42,7 @@ function usage() {
     "/work fix <repo|owner/name> [--base main]",
     "/work ship <repo|owner/name> [--base main]",
     "/work merge <repo|owner/name>#<prNumber>",
+    "/work upstream <repo|owner/name> [--base main] [--upstream owner/name] [--sync-branch branch]",
     "/work resume <resumeToken> --approve yes|no",
   ].join("\n");
 }
@@ -49,7 +50,8 @@ function usage() {
 export function registerWorkCommand(api: OpenClawPluginApi) {
   api.registerCommand({
     name: "work",
-    description: "Run deterministic coding workflows (new/task/review/fix/ship/merge) via Lobster.",
+    description:
+      "Run deterministic coding workflows (new/task/review/fix/ship/merge/upstream) via Lobster.",
     acceptsArgs: true,
     requireAuth: true,
     handler: async (ctx: PluginCommandContext) => {
@@ -145,6 +147,24 @@ export function registerWorkCommand(api: OpenClawPluginApi) {
             repo,
             message,
             base: baseFlag,
+          });
+          return { text: formatEnvelope(result.details) };
+        }
+
+        if (sub === "upstream") {
+          const repo = rest[0] ?? "";
+          if (!repo) {
+            return { text: usage() };
+          }
+          const upstream = typeof flags.upstream === "string" ? String(flags.upstream) : undefined;
+          const syncBranch =
+            typeof flags["sync-branch"] === "string" ? String(flags["sync-branch"]) : undefined;
+          const result = await tool.execute("work", {
+            action: "upstream",
+            repo,
+            base: baseFlag,
+            upstream,
+            syncBranch,
           });
           return { text: formatEnvelope(result.details) };
         }

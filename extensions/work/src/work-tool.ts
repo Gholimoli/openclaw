@@ -51,6 +51,15 @@ function resolveTimeoutMs(api: OpenClawPluginApi): number {
   return Math.min(Math.max(10_000, n), 2 * 60 * 60_000);
 }
 
+function resolveDefaultUpstreamRepo(api: OpenClawPluginApi): string {
+  return resolveConfigString(api.pluginConfig?.defaultUpstreamRepo) ?? "openclaw/openclaw";
+}
+
+function resolveKeepWorkflowFiles(api: OpenClawPluginApi): boolean {
+  const raw = api.pluginConfig?.keepWorkflowFiles;
+  return typeof raw === "boolean" ? raw : true;
+}
+
 function jsonResult(envelope: WorkEnvelope): AgentToolResult<WorkEnvelope> {
   return {
     content: [{ type: "text", text: JSON.stringify(envelope, null, 2) }],
@@ -63,17 +72,23 @@ export function createWorkTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolCo
     name: "work",
     label: "Work",
     description:
-      "Run deterministic coding workflows (new/task/review/fix/ship/merge) via Lobster with resumable approvals.",
+      "Run deterministic coding workflows (new/task/review/fix/ship/merge/upstream) via Lobster with resumable approvals.",
     parameters: Type.Object({
       action: Type.Unsafe<WorkAction>({
         type: "string",
-        enum: ["new", "task", "review", "fix", "ship", "merge", "resume"],
+        enum: ["new", "task", "review", "fix", "ship", "merge", "upstream", "resume"],
       }),
       repo: Type.Optional(Type.String({ description: "Repo name or owner/name." })),
       name: Type.Optional(Type.String({ description: "New repo name (for action=new)." })),
       message: Type.Optional(Type.String({ description: "Task description (for action=task)." })),
       base: Type.Optional(Type.String({ description: "Base branch (default: main)." })),
       pr: Type.Optional(Type.Number({ description: "PR number (for action=merge)." })),
+      upstream: Type.Optional(
+        Type.String({ description: "Upstream repo owner/name (for action=upstream)." }),
+      ),
+      syncBranch: Type.Optional(
+        Type.String({ description: "Sync branch name (for action=upstream)." }),
+      ),
       token: Type.Optional(Type.String({ description: "Resume token (for action=resume)." })),
       approve: Type.Optional(Type.Boolean({ description: "Approve resume? (for action=resume)." })),
       timeoutMs: Type.Optional(Type.Number()),
@@ -158,6 +173,20 @@ export function createWorkTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolCo
           throw new Error("pr required");
         }
         args.pr = pr;
+      }
+
+      if (action === "upstream") {
+        const upstream =
+          typeof params.upstream === "string" && params.upstream.trim()
+            ? params.upstream.trim()
+            : resolveDefaultUpstreamRepo(api);
+        const syncBranch =
+          typeof params.syncBranch === "string" && params.syncBranch.trim()
+            ? params.syncBranch.trim()
+            : `chore/sync-upstream-${base}`;
+        args.upstreamRepo = upstream;
+        args.syncBranch = syncBranch;
+        args.keepWorkflowFiles = resolveKeepWorkflowFiles(api);
       }
 
       const argsJson = JSON.stringify(args);

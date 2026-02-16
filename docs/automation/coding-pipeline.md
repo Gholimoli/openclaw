@@ -45,8 +45,41 @@ The recommended user-facing interface is `/work` (a deterministic plugin command
 - `/work fix <repo>`: apply a bounded remediation loop to resolve failures.
 - `/work ship <repo>`: (after approval) push branch and open a PR.
 - `/work merge <repo>#<prNumber>`: (after approval) merge only if CI is green.
+- `/work upstream <repo>`: prepare upstream sync on a dedicated branch, then (after approval) push and open/update a sync PR.
 
 See [Work plugin](/plugins/work) for the exact command syntax.
+
+## Agent operator loop (proactive but bounded)
+
+If you want one agent to operate your pipeline proactively, use this split:
+
+- `main` agent: chat, intent routing, and approvals only.
+- `coder` agent: sandboxed tool execution only.
+- `ops` agent: disabled by default; enabled only for maintenance windows.
+
+Recommended proactive loop:
+
+1. Trigger daily or every few days (cron or heartbeat).
+2. Run `/work upstream <repo>` for fork maintenance.
+3. Run `/work review <repo>` against active feature branches.
+4. If checks or review fail, run `/work fix <repo>` up to bounded limits.
+5. Send structured status back to chat with:
+   - what changed
+   - what failed
+   - whether approval is required
+
+Self-healing boundaries:
+
+- Allowed automatically:
+  - retry transient network failures with capped attempts
+  - rerun deterministic local checks
+  - open/update non-merge PRs
+- Never automatic:
+  - direct merge to base
+  - token/secret changes
+  - policy broadening (tool allowlists, sandbox disable, elevated enable)
+
+This gives adaptive behavior without losing operator control.
 
 ## The bounded review loop
 

@@ -17,6 +17,7 @@ Use it to drive a CLI-first pipeline from chat:
 - Implement a task on a `work/*` branch.
 - Run local checks and a CodeRabbit review pass.
 - Commit, push, open a PR, and merge only after approvals.
+- Sync your fork from upstream with approval-gated push and PR publication.
 
 If you want a security-first VPS setup for this, see [VPS coding automation](/install/vps-coding).
 
@@ -101,6 +102,8 @@ Enable and configure under `plugins.entries.work`:
 
           maxFixLoops: 3,
           timeoutMs: 1800000, // 30m
+          defaultUpstreamRepo: "openclaw/openclaw",
+          keepWorkflowFiles: true,
         },
       },
     },
@@ -116,6 +119,8 @@ Config keys:
 - `coderSessionKey` (optional): session key for tool execution (default `agent:coder:main`).
 - `maxFixLoops` (optional): bounded remediation loops for check failures (default 3).
 - `timeoutMs` (optional): Lobster execution timeout (default 30 minutes).
+- `defaultUpstreamRepo` (optional): default owner/name for `/work upstream` (default `openclaw/openclaw`).
+- `keepWorkflowFiles` (optional): keep local `.github/workflows` authoritative during upstream sync (default `true`).
 
 ## Recommended policy and sandbox setup
 
@@ -161,6 +166,7 @@ See [Sandboxing](/gateway/sandboxing) and [Tool policy](/gateway/sandbox-vs-tool
 /work fix <repo|owner/name> [--base main]
 /work ship <repo|owner/name> [--base main]
 /work merge <repo|owner/name>#<prNumber>
+/work upstream <repo|owner/name> [--base main] [--upstream owner/name] [--sync-branch branch]
 /work resume <resumeToken> --approve yes|no
 ```
 
@@ -172,6 +178,22 @@ Behavior notes:
   - opening a PR
   - merging a PR
 - Work branches use the prefix `work/` and commits are refused outside those branches.
+
+### upstream sync workflow
+
+`/work upstream` is the agent-operated maintenance path for keeping a fork current without auto-merging to your base branch:
+
+1. Ensure local clone exists and fetch `origin/<base>` and `upstream/<base>`.
+2. Prepare sync commit on a dedicated sync branch (default `chore/sync-upstream-<base>`).
+3. Keep local `.github/workflows` authoritative by default.
+4. Pause for approval.
+5. After approval, push sync branch and create or update a PR into `<base>`.
+
+Stop conditions:
+
+- If already in sync: returns `already_synced`.
+- If conflicts exist: returns `conflicts` with a file list.
+- If delta is empty after keep rules: returns `no_delta_after_keep_rules`.
 
 ## Workflow behavior
 
