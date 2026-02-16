@@ -93,23 +93,23 @@ jobs:
           fi
 
           body="$(cat <<EOF
-Automated upstream sync from \`openclaw/openclaw:${BASE_BRANCH}\`.
+          Automated upstream sync from \`openclaw/openclaw:${BASE_BRANCH}\`.
 
-- Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-- Generated at: $(date -u '+%Y-%m-%d %H:%M UTC')
-- Upstream-only commits detected: ${{ steps.sync.outputs.upstream_only }}
-- Local-only commits already on fork base: ${{ steps.sync.outputs.local_only }}
+          - Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Generated at: $(date -u '+%Y-%m-%d %H:%M UTC')
+          - Upstream-only commits detected: ${{ steps.sync.outputs.upstream_only }}
+          - Local-only commits already on fork base: ${{ steps.sync.outputs.local_only }}
 
-Safety:
-- This workflow never merges into \`${BASE_BRANCH}\` automatically.
-- Review and merge manually after required checks are green.
+          Safety:
+          - This workflow never merges into \`${BASE_BRANCH}\` automatically.
+          - Review and merge manually after required checks are green.
 
-Included commits:
-\`\`\`
-${commit_summary}
-\`\`\`
-EOF
-)"
+          Included commits:
+          \`\`\`
+          ${commit_summary}
+          \`\`\`
+          EOF
+          )"
 
           pr_number="$(gh pr list --head "$SYNC_BRANCH" --base "$BASE_BRANCH" --state open --json number --jq '.[0].number // empty')"
           if [ -n "$pr_number" ]; then
@@ -134,24 +134,24 @@ EOF
 
           issue_title="Upstream sync conflict on ${BASE_BRANCH}"
           issue_body="$(cat <<EOF
-Automated upstream sync could not be applied cleanly.
+          Automated upstream sync could not be applied cleanly.
 
-- Upstream repository: \`openclaw/openclaw\`
-- Base branch: \`${BASE_BRANCH}\`
-- Sync branch: \`${SYNC_BRANCH}\`
-- Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Upstream repository: \`openclaw/openclaw\`
+          - Base branch: \`${BASE_BRANCH}\`
+          - Sync branch: \`${SYNC_BRANCH}\`
+          - Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
-Conflicting files:
-\`\`\`
-${{ steps.sync.outputs.conflict_files }}
-\`\`\`
+          Conflicting files:
+          \`\`\`
+          ${{ steps.sync.outputs.conflict_files }}
+          \`\`\`
 
-Action required:
-1. Create/update \`${SYNC_BRANCH}\` locally from \`${BASE_BRANCH}\`.
-2. Merge \`upstream/${BASE_BRANCH}\` manually and resolve conflicts.
-3. Push \`${SYNC_BRANCH}\` and continue with the sync PR.
-EOF
-)"
+          Action required:
+          1. Create/update \`${SYNC_BRANCH}\` locally from \`${BASE_BRANCH}\`.
+          2. Merge \`upstream/${BASE_BRANCH}\` manually and resolve conflicts.
+          3. Push \`${SYNC_BRANCH}\` and continue with the sync PR.
+          EOF
+          )"
 
           issue_number="$(gh issue list --state open --search "\"${issue_title}\" in:title" --json number --jq '.[0].number // empty')"
           if [ -n "$issue_number" ]; then
