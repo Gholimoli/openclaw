@@ -63,7 +63,7 @@ jobs:
           git checkout -B "$SYNC_BRANCH" "origin/$BASE_BRANCH"
 
           set +e
-          git merge --no-ff --no-edit "upstream/$BASE_BRANCH"
+          git merge --no-ff --no-commit "upstream/$BASE_BRANCH"
           merge_status=$?
           set -e
 
@@ -81,6 +81,16 @@ jobs:
           # Keep this fork's workflow files authoritative.
           # GitHub Actions' default token cannot push workflow-file updates unless elevated.
           git restore --source "origin/$BASE_BRANCH" --staged --worktree .github/workflows || true
+
+          # If upstream changes were workflow-only (or fully neutralized by fork keep rules),
+          # abort the in-progress merge and exit cleanly.
+          if git diff --cached --quiet && git diff --quiet; then
+            git merge --abort || true
+            echo "No sync delta remains after applying fork keep rules."
+            exit 0
+          fi
+
+          git commit -m "chore: sync upstream ${BASE_BRANCH}"
 
           if git diff --quiet "origin/$BASE_BRANCH...HEAD"; then
             echo "No sync delta remains after applying fork keep rules."
