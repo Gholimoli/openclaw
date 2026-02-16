@@ -1,0 +1,86 @@
+---
+title: "Railway Standby (Active/Standby Telegram Failover)"
+summary: "Run a cheap standby OpenClaw gateway on Railway with a second Telegram bot token and a heartbeat-based failover alert."
+read_when:
+  - You want a cheap backup gateway for Telegram when your primary gateway is down or unresponsive
+---
+
+# Railway Standby (Active/Standby Telegram Failover)
+
+Telegram long polling cannot be safely shared across multiple processes for the **same bot token**. A practical failover design is:
+
+- **Primary** gateway (secure VPS): Telegram bot `A` (your normal bot)
+- **Standby** gateway (Railway): Telegram bot `B` (backup bot)
+
+When the primary is unresponsive, you can immediately message the standby bot. Optionally, the standby can alert you when the primary stops sending heartbeats.
+
+<Warning>
+  This guide assumes you trust Railway with your *standby* bot token and provider API keys used for
+  OpenClaw orchestration. Do not store repo secrets in code; use Railway environment variables.
+</Warning>
+
+## What you deploy
+
+This repo includes a minimal Railway service under `deploy/railway-standby/`:
+
+- Runs OpenClaw with Telegram long polling.
+- Keeps the OpenClaw Gateway bound to loopback (not publicly exposed).
+- Exposes a tiny HTTP server on `$PORT`:
+  - `GET /healthz` for Railway health checks
+  - `POST /heartbeat` for primary heartbeat pings (optional)
+
+## Step 1: Create a backup Telegram bot
+
+1. Open Telegram and chat with `@BotFather`.
+2. Run `/newbot` and create a new bot (this is bot `B`).
+3. Save the token for Railway.
+
+Keep your existing primary bot token for the VPS (bot `A`).
+
+## Step 2: Create the Railway service
+
+1. Create a new Railway service in your project.
+2. Set the **Root Directory** to `deploy/railway-standby`.
+3. Deploy.
+
+If your Railway UI does not expose Root Directory, create a separate repo that contains only the contents of `deploy/railway-standby/` and deploy that repo instead.
+
+## Step 3: Set Railway environment variables
+
+Set these in the Railway service settings:
+
+- `TELEGRAM_BOT_TOKEN`: token for the **backup** bot `B`
+- `OPENCLAW_GATEWAY_TOKEN`: random secret used to protect the (loopback) gateway RPC
+- `OPENCLAW_HEARTBEAT_SECRET`: random secret used to authenticate `/heartbeat`
+- `OPERATOR_TELEGRAM_CHAT_ID`: your numeric Telegram user id (used for alerts and to lock down DMs), for example `1234567890`
+- `OPENROUTER_API_KEY`: for model calls (standby orchestration)
+
+Optional:
+
+- `HEARTBEAT_TTL_MS`: how long to wait before considering the primary down (default `180000` = 3 minutes)
+
+The standby service generates its OpenClaw config at runtime and uses `OPERATOR_TELEGRAM_CHAT_ID` to lock Telegram DMs to the operator.
+
+## Step 5: Send primary heartbeats (optional but recommended)
+
+On your primary gateway host (VPS), send a heartbeat ping every minute to the Railway standby:
+
+- URL: `https://<your-railway-service>.up.railway.app/heartbeat`
+- Header: `x-openclaw-heartbeat-secret: <OPENCLAW_HEARTBEAT_SECRET>`
+
+If the standby stops receiving heartbeats, it will DM you:
+
+> "primary heartbeat is missing… use this standby bot now."
+
+## How to use failover in practice
+
+1. Normal operation: message the primary bot `A`.
+2. If primary bot is unresponsive:
+   - message the standby bot `B`
+   - investigate the primary host (`systemctl status openclaw`, `journalctl -u openclaw`)
+
+## Related docs
+
+- [Telegram](/channels/telegram)
+- [Model failover](/concepts/model-failover)
+- [VPS coding setup](/install/vps-coding)

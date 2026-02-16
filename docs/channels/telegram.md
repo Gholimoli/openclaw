@@ -218,6 +218,17 @@ curl "https://api.telegram.org/bot<bot_token>/getUpdates"
 - Long polling uses grammY runner with per-chat/per-thread sequencing. Overall runner sink concurrency uses `agents.defaults.maxConcurrent`.
 - Telegram Bot API has no read-receipt support (`sendReadReceipts` does not apply).
 
+## Active/Standby failover (two bots)
+
+Telegram long polling is designed for a single consumer per bot token. If you want cheap failover, run a second gateway with a **second Telegram bot token**:
+
+- Primary gateway: bot `A`
+- Standby gateway: bot `B` (separate token)
+
+If the primary bot is unresponsive, you can immediately message the standby bot. For a heartbeat-based alert (standby DM when the primary stops sending heartbeats), see:
+
+- [Railway Standby](/install/railway-standby)
+
 ## Feature reference
 
 <AccordionGroup>
