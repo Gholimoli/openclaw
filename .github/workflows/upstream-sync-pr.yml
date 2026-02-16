@@ -106,7 +106,7 @@ jobs:
           set -euo pipefail
 
           title="chore: sync upstream ${BASE_BRANCH}"
-          commit_summary="$(git log --oneline --no-merges "origin/${BASE_BRANCH}..${SYNC_BRANCH}" | head -n 80)"
+          commit_summary="$(git log --oneline --no-merges --max-count 80 "origin/${BASE_BRANCH}..${SYNC_BRANCH}")"
           if [ -z "$commit_summary" ]; then
             commit_summary="(no non-merge commits listed)"
           fi
