@@ -25,7 +25,7 @@ jobs:
       BASE_BRANCH: main
       SYNC_BRANCH: chore/sync-upstream-main
       UPSTREAM_REPO: https://github.com/openclaw/openclaw.git
-      GH_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -101,6 +101,8 @@ jobs:
           echo "has_updates=true" >> "$GITHUB_OUTPUT"
 
       - name: Create or update sync PR
+        id: create_pr
+        continue-on-error: true
         if: steps.sync.outputs.has_updates == 'true'
         run: |
           set -euo pipefail
@@ -136,6 +138,44 @@ jobs:
           else
             gh pr create --title "$title" --body "$body" --base "$BASE_BRANCH" --head "$SYNC_BRANCH"
           fi
+
+      - name: Report PR creation permissions issue
+        if: steps.sync.outputs.has_updates == 'true' && steps.create_pr.outcome == 'failure'
+        run: |
+          set -euo pipefail
+
+          body="$(cat <<EOF
+          Upstream sync pushed branch \`${SYNC_BRANCH}\`, but PR creation/update failed.
+
+          - Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Likely cause: GitHub Actions token cannot create PRs in this repo.
+
+          Fix options:
+          1. Enable repo setting: **Settings -> Actions -> General -> Workflow permissions**
+             - Set to **Read and write permissions**
+             - Enable **Allow GitHub Actions to create and approve pull requests**
+          2. Add a fine-grained PAT secret named \`UPSTREAM_SYNC_TOKEN\` with:
+             - Repository contents: Read and write
+             - Pull requests: Read and write
+
+          After applying either fix, re-run this workflow via \`workflow_dispatch\`.
+          EOF
+          )"
+
+          # Best-effort issue reporting; do not fail if issue APIs are restricted too.
+          issue_title="Upstream sync PR creation blocked by token permissions"
+          issue_number="$(gh issue list --state open --search "\"${issue_title}\" in:title" --json number --jq '.[0].number // empty' || true)"
+          if [ -n "${issue_number:-}" ]; then
+            gh issue comment "$issue_number" --body "$body" || true
+          else
+            gh issue create --title "$issue_title" --body "$body" || true
+          fi
+
+          {
+            echo "### Upstream Sync Needs Permission Fix"
+            echo
+            echo "$body"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Close stale sync PR when no upstream delta
         if: steps.sync.outputs.has_updates != 'true' && steps.sync.outputs.has_conflicts != 'true'
