@@ -68,6 +68,7 @@ Create `~/.openclaw/.env` with:
 
 ```bash
 TELEGRAM_BOT_TOKEN="..."
+TELEGRAM_OWNER_ID="123456789"
 OPENCLAW_GATEWAY_TOKEN="..."
 
 GH_TOKEN="..."
@@ -85,6 +86,8 @@ Notes:
 
 - Keep file permissions tight: `chmod 600 ~/.openclaw/.env`
 - `OPENCLAW_GATEWAY_TOKEN` is required because `workctl` uses the Gateway HTTP API (`POST /tools/invoke`).
+- `TELEGRAM_OWNER_ID` is your numeric Telegram user id. If you don't know it yet, message the bot once and check:
+  `openclaw channels status --probe`.
 
 OpenClaw reference: `docs/gateway/tools-invoke-http-api.md`.
 
@@ -100,7 +103,7 @@ cp ops/vps/openclaw.vps-coding.json5 ~/.openclaw/openclaw.json
 Key decisions in this config:
 
 - `gateway.bind: "loopback"` (private by default)
-- Telegram DMs use pairing; groups disabled; channel-initiated config writes disabled
+- Telegram DMs use an owner allowlist; groups disabled; channel-initiated config writes disabled; no partial streaming
 - `main` agent: no shell/tooling access
 - `coder` agent: all tool execution runs inside Docker sandbox (network enabled)
 - `power` agent: browser + shell access (approval-gated), file mutation tools disabled

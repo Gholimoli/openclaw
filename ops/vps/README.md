@@ -9,7 +9,7 @@ This folder is the “implementation bundle” for the secure VPS setup + `/work
 ## What this gives you
 
 - Gateway binds to **loopback** by default (no public exposure). If you want the Control UI remotely, expose it privately over **Tailscale Serve**.
-- Telegram is the primary interface with **DM pairing** and **groups disabled**.
+- Telegram is the primary interface with **owner-allowlisted DMs** and **groups disabled**.
 - A `coder` agent runs tool execution inside Docker sandbox with network enabled (for `git`, `gh`, `codex`, `gemini`, `coderabbit`).
 - A `/work` command (plugin `work`) runs **Lobster workflows** with approval gates for commit/push/merge.
 

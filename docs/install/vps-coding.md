@@ -1,6 +1,6 @@
 ---
 title: "VPS Coding Automation"
-summary: "Security-first VPS setup: loopback Gateway, Telegram pairing, Tailscale Serve, and deterministic /work coding workflows."
+summary: "Security-first VPS setup: loopback Gateway, Telegram allowlist DMs, Tailscale Serve, and deterministic /work coding workflows."
 read_when:
   - You want an always-on Gateway on a VPS without public exposure
   - You want Telegram as the primary interface with strict approvals
@@ -22,7 +22,7 @@ High-level goals:
 
 - No public Gateway exposure (bind loopback).
 - Private remote access via Tailscale.
-- Telegram bot DMs with pairing and no groups by default.
+- Telegram bot DMs locked down (owner allowlist by default) and no groups by default.
 - Deterministic workflows with explicit approvals (commit, push, merge).
 
 Related:
@@ -41,7 +41,7 @@ Decisions:
 - One Ubuntu 24.04 VPS runs the OpenClaw Gateway.
 - The Gateway binds to `127.0.0.1` only (`gateway.bind: "loopback"`).
 - The Control UI is reachable only over a private network (Tailscale Serve recommended).
-- Telegram is the primary interface (DM pairing, groups disabled).
+- Telegram is the primary interface (DM owner allowlist, groups disabled).
 - Coding tool execution happens in a Docker sandbox (a dedicated `coder` agent).
 - Multi-step automation uses Lobster workflows with resumable approval tokens.
 - Risky steps are approval-gated: commits, pushes, PR creation, merges (and any custom "side effect" step you add later).
@@ -107,6 +107,7 @@ Common env vars for the coding pipeline:
 
 ```bash
 TELEGRAM_BOT_TOKEN="..."
+TELEGRAM_OWNER_ID="123456789"
 OPENCLAW_GATEWAY_TOKEN="..."
 
 GH_TOKEN="..."
@@ -119,6 +120,8 @@ GIT_AUTHOR_EMAIL="you@example.com"
 Notes:
 
 - `OPENCLAW_GATEWAY_TOKEN` is required if you use `/tools/invoke` from automation (for example via the Work plugin).
+- `TELEGRAM_OWNER_ID` is your numeric Telegram user id. If you don't know it yet, message the bot once and check:
+  `openclaw channels status --probe`.
 - For Codex CLI and Gemini CLI, you can often rely on their own auth flows (subscription/OAuth credentials on disk) instead of API keys. If you do use API keys, treat them as coding-environment secrets and keep them out of repos.
 - If you run coding CLIs inside a sandbox, those credentials must be available inside the sandbox (typically via env vars or read-only mounts).
 
@@ -135,7 +138,7 @@ cp ops/vps/openclaw.vps-coding.json5 ~/.openclaw/openclaw.json
 Key decisions in that config:
 
 - `gateway.bind: "loopback"` and token auth
-- Telegram DM pairing, groups disabled, `configWrites: false`
+- Telegram DM owner allowlist, groups disabled, `configWrites: false`, and `streamMode: "off"`
 - `main` agent denies shell and write tools
 - `coder` agent runs tools in a Docker sandbox
 - `work` plugin enabled and wired to the `coder` session key

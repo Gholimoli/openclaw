@@ -22,14 +22,21 @@
     shellEnv: { enabled: false },
   },
 
-  // Telegram: pairing-only DMs, groups disabled, and block channel-initiated config writes.
+  // Telegram: owner-allowlisted DMs, groups disabled, and block channel-initiated config writes.
   channels: {
     telegram: {
       enabled: true,
       botToken: "${TELEGRAM_BOT_TOKEN}",
-      dmPolicy: "pairing",
+      // For single-operator setups, prefer allowlisting your numeric Telegram user ID.
+      // This avoids pairing-code friction while keeping DMs locked down.
+      // Find your ID by messaging the bot once, then check:
+      //   openclaw channels status --probe
+      dmPolicy: "allowlist",
+      allowFrom: ["${TELEGRAM_OWNER_ID}"],
       groupPolicy: "disabled",
       configWrites: false,
+      // Never stream partial drafts to Telegram. Only send final replies.
+      streamMode: "off",
     },
   },
 
@@ -91,32 +98,44 @@
     },
   },
 
-  agents: {
-    defaults: {
-      // Voice replies: use tagged or inbound to avoid accidental voice spam.
-      // - inbound: reply with voice only after you send a voice note
+  // Voice replies live at the top-level (not per-agent). Keep it gated to avoid voice spam.
+  messages: {
+    tts: {
       // - tagged: only reply with voice when the model emits [[tts:...]]
+      // - inbound: reply with voice only after you send a voice note
       // - always: reply with voice for every message (not recommended)
-      messages: {
-        tts: {
-          auto: "inbound",
-          provider: "openai",
-          openai: {
-            model: "gpt-4o-mini-tts",
-            voice: "alloy",
-          },
-        },
-      },
-      // Main agent should not have shell access.
-      tools: {
-        profile: "minimal",
-        deny: ["exec", "process", "write", "edit", "apply_patch", "browser", "canvas", "nodes"],
+      auto: "tagged",
+      provider: "openai",
+      openai: {
+        model: "gpt-4o-mini-tts",
+        voice: "alloy",
       },
     },
+  },
+
+  agents: {
     list: [
       {
         id: "main",
         workspace: "~/.openclaw/workspace/main",
+        // Orchestrator only: no shell, no browser, no file mutation.
+        tools: {
+          profile: "minimal",
+          deny: [
+            "exec",
+            "process",
+            "browser",
+            "write",
+            "edit",
+            "apply_patch",
+            "canvas",
+            "nodes",
+            "cron",
+            "gateway",
+            "sessions_spawn",
+            "sessions_send",
+          ],
+        },
       },
       {
         id: "coder",
@@ -192,5 +211,15 @@
         tools: { profile: "minimal", deny: ["exec", "process"] },
       },
     ],
+  },
+
+  // Forward exec approvals to your Telegram DM (for the power agent only).
+  approvals: {
+    exec: {
+      enabled: true,
+      mode: "targets",
+      agentFilter: ["power"],
+      targets: [{ channel: "telegram", to: "${TELEGRAM_OWNER_ID}" }],
+    },
   },
 }
