@@ -29,6 +29,17 @@ If your gateway runs multiple agents, prefer a VidClaw build that supports an ag
 
 This lets you inspect and operate on `main` vs `coder` vs `power` workspaces without manually changing paths.
 
+### API patterns (recommended)
+
+If you fork VidClaw, add an explicit `agentId` query parameter to agent-scoped endpoints, for example:
+
+- `GET /api/agents`
+- `GET /api/usage?agentId=<id>`
+- `GET /api/files?agentId=<id>&path=/`
+- `GET /api/workspace-file?agentId=<id>&path=/context/PROJECT.md`
+
+If `agentId` is omitted, the dashboard should use a safe default (for example the OpenClaw default agent id).
+
 ## Install (Linux VPS)
 
 Example install location:
@@ -59,3 +70,16 @@ If you want an agent to send you periodic “control center” updates:
 3. Send only the minimal status text to Telegram (avoid including raw logs or secrets).
 
 This keeps the UI private while still giving you visibility in chat.
+
+## OpenClaw skill (optional)
+
+If you want an agent to produce “control center” status reports without exposing the dashboard, install a simple skill that calls VidClaw on loopback:
+
+- list agents: `curl -fsSL http://127.0.0.1:3333/api/agents`
+- usage for an agent: `curl -fsSL "http://127.0.0.1:3333/api/usage?agentId=main"`
+- task board: `curl -fsSL http://127.0.0.1:3333/api/tasks`
+
+Security rules for the skill:
+
+- only call `http://127.0.0.1:3333`
+- never paste secrets into chat (tokens, API keys, raw env vars)

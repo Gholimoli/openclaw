@@ -179,6 +179,12 @@ Actions:
 You can forward exec approval prompts to any chat channel (including plugin channels) and approve
 them with `/approve`. This uses the normal outbound delivery pipeline.
 
+Recommended pattern for multi-agent setups:
+
+- Keep your chat-facing agent (for example `main`) minimal and **deny** host exec.
+- Create a dedicated “super powers” agent (for example `power`) that is allowed to request host exec.
+- Set `approvals.exec.agentFilter` to only that agent so approvals cannot be triggered accidentally from other agents.
+
 Config:
 
 ```json5
@@ -187,7 +193,7 @@ Config:
     exec: {
       enabled: true,
       mode: "session", // "session" | "targets" | "both"
-      agentFilter: ["main"],
+      agentFilter: ["power"],
       sessionFilter: ["discord"], // substring or regex
       targets: [
         { channel: "slack", to: "U12345678" },

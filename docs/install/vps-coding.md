@@ -204,7 +204,7 @@ See [Remote access](/gateway/remote).
 
 ## Run the coding workflows from Telegram
 
-After pairing your Telegram DM (see [Telegram](/channels/telegram)), use:
+After your Telegram DM is allowed (see [Telegram](/channels/telegram)), use:
 
 ```text
 /work new demo-repo
@@ -232,8 +232,14 @@ OpenClaw can be configured to send Telegram voice notes and to automate a real b
 Recommendations:
 
 - Keep your chat-facing `main` agent minimal.
-- Route “power tool” work to a dedicated agent with a tighter allowlist and explicit approvals.
+- Route “power tool” work to a dedicated agent (for example `power`) with a tighter allowlist and explicit approvals.
 - Prefer sandboxed execution where possible. See [Sandboxing](/gateway/sandboxing).
+
+Operational pattern:
+
+- Your Telegram DM talks to the default agent (`main`).
+- When you ask for “power tool” work (browser, host exec), `main` should spawn a separate run under the `power` agent.
+- Exec approvals are forwarded back to your Telegram DM (so you can approve without opening the Control UI).
 
 ### Telegram voice notes (TTS)
 
