@@ -121,7 +121,7 @@ Notes:
 
 - `OPENCLAW_GATEWAY_TOKEN` is required if you use `/tools/invoke` from automation (for example via the Work plugin).
 - `TELEGRAM_OWNER_ID` is your numeric Telegram user id. If you don't know it yet, message the bot once and check:
-  `openclaw channels status --probe`.
+  the bot's onboarding reply (it prints your user id). Then set `TELEGRAM_OWNER_ID` and restart the gateway.
 - For Codex CLI and Gemini CLI, you can often rely on their own auth flows (subscription/OAuth credentials on disk) instead of API keys. If you do use API keys, treat them as coding-environment secrets and keep them out of repos.
 - If you run coding CLIs inside a sandbox, those credentials must be available inside the sandbox (typically via env vars or read-only mounts).
 

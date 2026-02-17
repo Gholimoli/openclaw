@@ -87,7 +87,7 @@ Notes:
 - Keep file permissions tight: `chmod 600 ~/.openclaw/.env`
 - `OPENCLAW_GATEWAY_TOKEN` is required because `workctl` uses the Gateway HTTP API (`POST /tools/invoke`).
 - `TELEGRAM_OWNER_ID` is your numeric Telegram user id. If you don't know it yet, message the bot once and check:
-  `openclaw channels status --probe`.
+  the bot's onboarding reply (it prints your user id). Then set `TELEGRAM_OWNER_ID` and restart the gateway.
 
 OpenClaw reference: `docs/gateway/tools-invoke-http-api.md`.
 
