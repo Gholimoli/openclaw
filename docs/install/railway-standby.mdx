@@ -53,10 +53,10 @@ Set these in the Railway service settings:
 - `OPENCLAW_GATEWAY_TOKEN`: random secret used to protect the (loopback) gateway RPC
 - `OPENCLAW_HEARTBEAT_SECRET`: random secret used to authenticate `/heartbeat`
 - `OPERATOR_TELEGRAM_CHAT_ID`: your numeric Telegram user id (used for alerts and to lock down DMs), for example `1234567890`
-- `OPENROUTER_API_KEY`: for model calls (standby orchestration)
 
 Optional:
 
+- `OPENROUTER_API_KEY`: required only if you enable the full standby gateway (used for model calls)
 - `HEARTBEAT_TTL_MS`: how long to wait before considering the primary down (default `180000` = 3 minutes)
 - `OPENCLAW_STANDBY_ENABLE_GATEWAY`: set to `1` to also start a full OpenClaw Gateway in the standby container (default `0`)
 
