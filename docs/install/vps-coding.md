@@ -219,6 +219,49 @@ Resume from Telegram:
 
 Details: [Work plugin](/plugins/work).
 
+## Power tools (voice notes and browser automation)
+
+OpenClaw can be configured to send Telegram voice notes and to automate a real browser, but you should treat these as **high-risk capabilities**:
+
+- Voice generation can leak sensitive content if enabled indiscriminately.
+- Browsers can be abused for credential phishing and prompt injection.
+
+Recommendations:
+
+- Keep your chat-facing `main` agent minimal.
+- Route “power tool” work to a dedicated agent with a tighter allowlist and explicit approvals.
+- Prefer sandboxed execution where possible. See [Sandboxing](/gateway/sandboxing).
+
+### Telegram voice notes (TTS)
+
+OpenClaw can send Telegram-compatible Opus voice notes (the “round bubble” UX). See:
+
+- [Text-to-speech (TTS)](/tts)
+
+Operational pattern:
+
+- Set TTS to `tagged` so audio is only generated when you explicitly request it, or when the model emits a `[[tts:...]]` directive.
+- For Telegram, use the `[[audio_as_voice]]` tag (or the channel action’s `asVoice: true`) to send a voice note rather than an audio file. See [Telegram audio notes](/channels/telegram#audio-video-and-stickers).
+
+### Browser automation (Playwright-style)
+
+If you want the agent to browse the web, use the built-in browser tool and keep it isolated:
+
+- [Browser tool](/tools/browser)
+- [Browser Linux troubleshooting](/tools/browser-linux-troubleshooting)
+
+Security notes:
+
+- Use a dedicated browser profile for OpenClaw, not your personal profile.
+- Treat any page content as untrusted input. Prefer deterministic scrapers and allowlisted domains for automation.
+
+## Active/standby failover (optional)
+
+If you want a cheap backup Telegram bot, deploy a Railway standby and have your VPS send periodic heartbeats:
+
+- [Railway Standby](/install/railway-standby)
+- [Gateway heartbeat](/gateway/heartbeat)
+
 ## Railway to VPS cutover
 
 If you are migrating from Railway (or another PaaS):
