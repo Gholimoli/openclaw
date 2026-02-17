@@ -23,8 +23,8 @@ When the primary is unresponsive, you can immediately message the standby bot. O
 
 This repo includes a minimal Railway service under `deploy/railway-standby/`:
 
-- Runs OpenClaw with Telegram long polling.
-- Keeps the OpenClaw Gateway bound to loopback (not publicly exposed).
+- Runs a standby Telegram bot using long polling (no inbound webhook exposure).
+- Optionally runs an OpenClaw Gateway bound to loopback (not publicly exposed).
 - Exposes a tiny HTTP server on `$PORT`:
   - `GET /healthz` for Railway health checks
   - `POST /heartbeat` for primary heartbeat pings (optional)
@@ -58,8 +58,30 @@ Set these in the Railway service settings:
 Optional:
 
 - `HEARTBEAT_TTL_MS`: how long to wait before considering the primary down (default `180000` = 3 minutes)
+- `OPENCLAW_STANDBY_ENABLE_GATEWAY`: set to `1` to also start a full OpenClaw Gateway in the standby container (default `0`)
 
 The standby service generates its OpenClaw config at runtime and uses `OPERATOR_TELEGRAM_CHAT_ID` to lock Telegram DMs to the operator.
+
+## Step 4: Choose standby mode (recommended)
+
+Railway free tiers often do not have enough RAM to run a full OpenClaw gateway reliably.
+
+Recommended default (cheap, robust):
+
+- Leave `OPENCLAW_STANDBY_ENABLE_GATEWAY` unset (or set it to `0`).
+- The standby service runs a minimal Telegram bot that:
+  - responds to `/status` and `/help`
+  - alerts you when the primary heartbeat stops
+
+If you want the standby bot to be a full OpenClaw gateway:
+
+- Set `OPENCLAW_STANDBY_ENABLE_GATEWAY=1`
+- Use a Railway plan with enough RAM to avoid OOM restarts
+
+Important:
+
+- Telegram long polling cannot be shared across two processes for the same bot token.
+  The standby service automatically avoids running its own polling loop when the OpenClaw gateway is enabled.
 
 ## Step 5: Send primary heartbeats (optional but recommended)
 
