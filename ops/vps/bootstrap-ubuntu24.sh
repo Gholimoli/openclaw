@@ -81,6 +81,10 @@ docker build -t openclaw-sandbox-coder:bookworm -f ops/vps/Dockerfile.openclaw-s
 
 echo "Next steps (manual)"
 cat <<'EOF'
+Optional power tools:
+
+   sudo bash ops/vps/install-power-tools-ubuntu24.sh
+
 0) Connect Tailscale (pick one):
    tailscale up
    tailscale up --ssh
@@ -92,6 +96,7 @@ cat <<'EOF'
    OPENAI_API_KEY=
    GEMINI_API_KEY=
    CODERABBIT_API_KEY=
+   WHISPER_CPP_MODEL=
    GIT_AUTHOR_NAME=
    GIT_AUTHOR_EMAIL=
 

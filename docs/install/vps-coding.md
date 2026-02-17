@@ -255,6 +255,21 @@ Security notes:
 - Use a dedicated browser profile for OpenClaw, not your personal profile.
 - Treat any page content as untrusted input. Prefer deterministic scrapers and allowlisted domains for automation.
 
+### Speech-to-text (STT) for inbound voice notes
+
+OpenClaw can transcribe inbound audio attachments (for example Telegram voice notes) using either:
+
+- a provider model (cloud), or
+- a local CLI (offline)
+
+Configuration lives under `tools.media.audio`.
+
+If you want offline STT on Linux, the most reliable path is to install Whisper.cpp and provide a model:
+
+- install `whisper-cli`
+- set `WHISPER_CPP_MODEL=/path/to/ggml-*.bin` in the gateway environment
+- configure `tools.media.audio.models` to use `whisper-cli` (and optionally add a provider fallback)
+
 ## Active/standby failover (optional)
 
 If you want a cheap backup Telegram bot, deploy a Railway standby and have your VPS send periodic heartbeats:

@@ -12,7 +12,7 @@
     },
     // Harden /tools/invoke: keep the default hard-deny list and add more.
     tools: {
-      deny: ["gateway", "sessions_send", "sessions_spawn", "whatsapp_login", "browser"],
+      deny: ["gateway", "sessions_send", "sessions_spawn", "whatsapp_login"],
     },
   },
 
@@ -61,10 +61,52 @@
   tools: {
     profile: "minimal",
     elevated: { enabled: false },
+    // Speech-to-text: enable audio transcription for inbound voice notes.
+    // Recommendation (privacy/cost): prefer local Whisper.cpp, fall back to a provider if needed.
+    media: {
+      audio: {
+        enabled: true,
+        maxBytes: 20971520, // 20MB
+        timeoutSeconds: 120,
+        models: [
+          // Local Whisper.cpp (install whisper-cli and set WHISPER_CPP_MODEL in ~/.openclaw/.env)
+          {
+            type: "cli",
+            command: "whisper-cli",
+            args: [
+              "-m",
+              "${WHISPER_CPP_MODEL}",
+              "-otxt",
+              "-of",
+              "{{OutputBase}}",
+              "-np",
+              "-nt",
+              "{{MediaPath}}",
+            ],
+          },
+          // Fallback to an OpenAI-compatible provider if local STT is unavailable.
+          { provider: "openai", model: "gpt-4o-mini-transcribe" },
+        ],
+      },
+    },
   },
 
   agents: {
     defaults: {
+      // Voice replies: use tagged or inbound to avoid accidental voice spam.
+      // - inbound: reply with voice only after you send a voice note
+      // - tagged: only reply with voice when the model emits [[tts:...]]
+      // - always: reply with voice for every message (not recommended)
+      messages: {
+        tts: {
+          auto: "inbound",
+          provider: "openai",
+          openai: {
+            model: "gpt-4o-mini-tts",
+            voice: "alloy",
+          },
+        },
+      },
       // Main agent should not have shell access.
       tools: {
         profile: "minimal",
@@ -114,6 +156,27 @@
           allow: ["exec", "process", "read", "write", "edit", "apply_patch"],
           deny: [
             "browser",
+            "canvas",
+            "nodes",
+            "cron",
+            "gateway",
+            "sessions_spawn",
+            "sessions_send",
+          ],
+        },
+      },
+      {
+        // "Super powers" agent: browser + shell access with strict approvals/allowlists.
+        // Keep file mutation tools disabled; use approvals-gated exec for any side effects.
+        id: "power",
+        workspace: "~/.openclaw/workspace/power",
+        tools: {
+          profile: "minimal",
+          allow: ["browser", "exec", "process", "read"],
+          deny: [
+            "write",
+            "edit",
+            "apply_patch",
             "canvas",
             "nodes",
             "cron",

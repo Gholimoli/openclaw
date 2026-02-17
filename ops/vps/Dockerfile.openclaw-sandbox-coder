@@ -31,6 +31,12 @@ RUN npm install -g \
   @google/gemini-cli \
   && npm cache clean --force
 
+# Optional: summarize (compact diffs/logs into fix lists).
+# This is installed via Homebrew because the official distribution is shipped as a brew formula.
+# If you don't need it, remove this block to speed up builds.
+RUN brew install steipete/tap/summarize \
+  && (command -v summarize >/dev/null 2>&1 || (echo "summarize not on PATH after install" >&2 && exit 1))
+
 # CodeRabbit CLI (install script)
 RUN curl -fsSL https://cli.coderabbit.ai/install.sh | sh \
   && (command -v coderabbit >/dev/null 2>&1 || (echo "coderabbit not on PATH after install" >&2 && exit 1)) \

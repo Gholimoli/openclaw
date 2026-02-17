@@ -40,6 +40,17 @@ This installs:
 - Tailscale (installed, but not joined)
 - `openclaw-sandbox-coder:bookworm` Docker image used by the `coder` agent
 
+Optional (recommended if you want voice-note UX and browsing):
+
+```bash
+sudo bash ops/vps/install-power-tools-ubuntu24.sh
+```
+
+This installs:
+
+- Google Chrome stable (recommended for the Browser tool on Linux)
+- `whisper-cli` + a Whisper.cpp model (local STT for inbound voice notes)
+
 ## 3. Join Tailscale
 
 Pick one:
@@ -63,6 +74,8 @@ GH_TOKEN="..."
 OPENAI_API_KEY="..."
 GEMINI_API_KEY="..."
 CODERABBIT_API_KEY="..."
+
+WHISPER_CPP_MODEL="/opt/openclaw/models/whisper-cpp/ggml-base.en.bin"
 
 GIT_AUTHOR_NAME="Your Name"
 GIT_AUTHOR_EMAIL="you@example.com"
@@ -90,6 +103,7 @@ Key decisions in this config:
 - Telegram DMs use pairing; groups disabled; channel-initiated config writes disabled
 - `main` agent: no shell/tooling access
 - `coder` agent: all tool execution runs inside Docker sandbox (network enabled)
+- `power` agent: browser + shell access (approval-gated), file mutation tools disabled
 - `work` plugin enabled with `coderSessionKey: "agent:coder:main"`
 
 OpenClaw reference:
