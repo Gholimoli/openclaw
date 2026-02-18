@@ -20,6 +20,22 @@ VidClaw is a self-hosted dashboard designed to run next to an OpenClaw gateway. 
 
 Treat it as an admin UI: it can read and write workspace files and can run `openclaw` CLI commands.
 
+## UI access (recommended)
+
+VidClaw is a web UI.
+
+Default local URL on the gateway host:
+
+- `http://127.0.0.1:3333/`
+
+Remote access should be private (do not expose VidClaw publicly). The safest default is an SSH port-forward:
+
+```bash
+ssh -N -L 3333:127.0.0.1:3333 user@gateway-host
+```
+
+Then open `http://127.0.0.1:3333/` locally.
+
 ## Multi-agent support
 
 If your gateway runs multiple agents, prefer a VidClaw build that supports an agent selector:
@@ -83,3 +99,15 @@ Security rules for the skill:
 
 - only call `http://127.0.0.1:3333`
 - never paste secrets into chat (tokens, API keys, raw env vars)
+
+## Making agents aware of VidClaw (recommended)
+
+Agents are not automatically "aware" of external dashboards.
+
+For reliable behavior:
+
+1. Install a `vidclaw` skill on the gateway host (loopback-only `curl`).
+2. Add a short per-agent `systemPrompt` hint (for example on your chat-facing agent) that says:
+   - VidClaw is available on `http://127.0.0.1:3333/` (loopback-only)
+   - how to tunnel it (SSH/Tailscale)
+   - how to request a status report (spawn a `power` agent run if shell is denied)

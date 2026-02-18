@@ -264,6 +264,20 @@ Security notes:
 - Use a dedicated browser profile for OpenClaw, not your personal profile.
 - Treat any page content as untrusted input. Prefer deterministic scrapers and allowlisted domains for automation.
 
+## VidClaw (optional control center UI)
+
+If you run VidClaw next to your gateway (recommended bind: `127.0.0.1:3333`), access it privately:
+
+```bash
+ssh -N -L 3333:127.0.0.1:3333 user@gateway-host
+```
+
+Then open:
+
+- `http://127.0.0.1:3333/`
+
+VidClaw is an admin UI. Keep it private (loopback + tunnel). See [VidClaw](/tools/vidclaw).
+
 ### Speech-to-text (STT) for inbound voice notes
 
 OpenClaw can transcribe inbound audio attachments (for example Telegram voice notes) using either:

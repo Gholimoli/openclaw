@@ -922,6 +922,7 @@
                 "group": "Fundamentals",
                 "pages": [
                   "concepts/architecture",
+                  "concepts/system-architecture",
                   "concepts/agent",
                   "concepts/agent-loop",
                   "concepts/system-prompt",

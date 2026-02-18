@@ -119,6 +119,8 @@
         id: "main",
         workspace: "~/.openclaw/workspace/main",
         // Orchestrator only: no shell, no browser, no file mutation.
+        // Allow it to spawn limited sub-agent runs into worker agents.
+        subagents: { allowAgents: ["coder", "power"] },
         tools: {
           profile: "minimal",
           deny: [
