@@ -278,6 +278,12 @@ Then open:
 
 VidClaw is an admin UI. Keep it private (loopback + tunnel). See [VidClaw](/tools/vidclaw).
 
+### Make VidClaw discoverable to the agent
+
+If you want your chat-facing agent to reliably remember that VidClaw exists and how to access it, inject an `AGENTS.md` file into the system prompt using the bundled hook `bootstrap-extra-files`.
+
+Docs: [Hooks](/automation/hooks).
+
 ### Speech-to-text (STT) for inbound voice notes
 
 OpenClaw can transcribe inbound audio attachments (for example Telegram voice notes) using either:

@@ -292,6 +292,17 @@ Then open:
 
 - `http://127.0.0.1:3333/`
 
+### Making agents aware of VidClaw
+
+Agents are not automatically aware of external dashboards.
+
+Recommended pattern:
+
+- Put operator notes in `<workspace>/AGENTS.md` (for example: VidClaw URL, "loopback-only" rule, and the tunnel command).
+- Enable the bundled hook `bootstrap-extra-files` to inject `AGENTS.md` into the system prompt during `agent:bootstrap`.
+
+Docs: [Hooks](/automation/hooks).
+
 ## How to "best use" a VPS setup
 
 The stable, safe way to use OpenClaw on a VPS is to keep the Gateway private and treat remote access like admin access.

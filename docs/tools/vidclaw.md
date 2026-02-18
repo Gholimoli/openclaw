@@ -107,7 +107,33 @@ Agents are not automatically "aware" of external dashboards.
 For reliable behavior:
 
 1. Install a `vidclaw` skill on the gateway host (loopback-only `curl`).
-2. Add a short per-agent `systemPrompt` hint (for example on your chat-facing agent) that says:
-   - VidClaw is available on `http://127.0.0.1:3333/` (loopback-only)
-   - how to tunnel it (SSH/Tailscale)
-   - how to request a status report (spawn a `power` agent run if shell is denied)
+2. Add the VidClaw operating notes to your agent bootstrap files and inject them into the system prompt.
+
+Recommended pattern:
+
+- Put your operator notes in `<workspace>/AGENTS.md`.
+- Enable the bundled hook `bootstrap-extra-files` and configure it to inject `AGENTS.md` at `agent:bootstrap`.
+
+Example config:
+
+```json5
+{
+  hooks: {
+    internal: {
+      enabled: true,
+      entries: {
+        "bootstrap-extra-files": {
+          enabled: true,
+          paths: ["AGENTS.md"],
+        },
+      },
+    },
+  },
+}
+```
+
+In `AGENTS.md`, include:
+
+- VidClaw URL (`http://127.0.0.1:3333/`) and the rule to keep it loopback-only
+- how to tunnel it (SSH/Tailscale)
+- how to request a status report (delegate to a `power` agent if shell is denied)
