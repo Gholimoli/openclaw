@@ -7,6 +7,7 @@ import {
 } from "../auto-reply/commands-registry.js";
 import { resetInboundDedupe } from "../auto-reply/reply/inbound-dedupe.js";
 import { createTelegramBot } from "./bot.js";
+import { buildExecApprovalCallbackData } from "./exec-approval-buttons.js";
 
 let replyModule: typeof import("../auto-reply/reply.js");
 const { listSkillCommandsForAgents } = vi.hoisted(() => ({
@@ -341,6 +342,229 @@ describe("createTelegramBot", () => {
 
     expect(replySpy).not.toHaveBeenCalled();
     expect(answerCallbackQuerySpy).toHaveBeenCalledWith("cbq-2");
+  });
+
+  it("routes allow-once approval callbacks to /approve and clears buttons", async () => {
+    onSpy.mockReset();
+    editMessageTextSpy.mockReset();
+    const replySpy = replyModule.__replySpy as unknown as ReturnType<typeof vi.fn>;
+    replySpy.mockReset();
+
+    createTelegramBot({ token: "tok" });
+    const callbackHandler = onSpy.mock.calls.find((call) => call[0] === "callback_query")?.[1] as (
+      ctx: Record<string, unknown>,
+    ) => Promise<void>;
+    expect(callbackHandler).toBeDefined();
+
+    const callbackData = buildExecApprovalCallbackData({
+      approvalId: "approval-123",
+      action: "allow-once",
+    });
+    expect(callbackData).toBeTruthy();
+
+    await callbackHandler({
+      callbackQuery: {
+        id: "cbq-approve-once",
+        data: callbackData ?? "",
+        from: { id: 9, first_name: "Ada", username: "ada_bot" },
+        message: {
+          chat: { id: 1234, type: "private" },
+          date: 1736380800,
+          message_id: 30,
+          text: "Approval prompt",
+        },
+      },
+      me: { username: "openclaw_bot" },
+      getFile: async () => ({ download: async () => new Uint8Array() }),
+    });
+
+    expect(editMessageTextSpy).toHaveBeenCalledTimes(1);
+    expect(editMessageTextSpy.mock.calls[0]?.[3]).toEqual({
+      reply_markup: { inline_keyboard: [] },
+    });
+    expect(replySpy).toHaveBeenCalledTimes(1);
+    const payload = replySpy.mock.calls[0]?.[0];
+    expect(payload.Body).toContain("/approve approval-123 allow-once");
+  });
+
+  it("routes deny approval callbacks to /approve and clears buttons", async () => {
+    onSpy.mockReset();
+    editMessageTextSpy.mockReset();
+    const replySpy = replyModule.__replySpy as unknown as ReturnType<typeof vi.fn>;
+    replySpy.mockReset();
+
+    createTelegramBot({ token: "tok" });
+    const callbackHandler = onSpy.mock.calls.find((call) => call[0] === "callback_query")?.[1] as (
+      ctx: Record<string, unknown>,
+    ) => Promise<void>;
+    expect(callbackHandler).toBeDefined();
+
+    const callbackData = buildExecApprovalCallbackData({
+      approvalId: "approval-234",
+      action: "deny",
+    });
+    expect(callbackData).toBeTruthy();
+
+    await callbackHandler({
+      callbackQuery: {
+        id: "cbq-approve-deny",
+        data: callbackData ?? "",
+        from: { id: 9, first_name: "Ada", username: "ada_bot" },
+        message: {
+          chat: { id: 1234, type: "private" },
+          date: 1736380800,
+          message_id: 31,
+          text: "Approval prompt",
+        },
+      },
+      me: { username: "openclaw_bot" },
+      getFile: async () => ({ download: async () => new Uint8Array() }),
+    });
+
+    expect(editMessageTextSpy).toHaveBeenCalledTimes(1);
+    expect(editMessageTextSpy.mock.calls[0]?.[3]).toEqual({
+      reply_markup: { inline_keyboard: [] },
+    });
+    expect(replySpy).toHaveBeenCalledTimes(1);
+    const payload = replySpy.mock.calls[0]?.[0];
+    expect(payload.Body).toContain("/approve approval-234 deny");
+  });
+
+  it("routes confirm-always approval callbacks to /approve allow-always", async () => {
+    onSpy.mockReset();
+    editMessageTextSpy.mockReset();
+    const replySpy = replyModule.__replySpy as unknown as ReturnType<typeof vi.fn>;
+    replySpy.mockReset();
+
+    createTelegramBot({ token: "tok" });
+    const callbackHandler = onSpy.mock.calls.find((call) => call[0] === "callback_query")?.[1] as (
+      ctx: Record<string, unknown>,
+    ) => Promise<void>;
+    expect(callbackHandler).toBeDefined();
+
+    const callbackData = buildExecApprovalCallbackData({
+      approvalId: "approval-567",
+      action: "confirm-always",
+    });
+    expect(callbackData).toBeTruthy();
+
+    await callbackHandler({
+      callbackQuery: {
+        id: "cbq-approve-confirm-always",
+        data: callbackData ?? "",
+        from: { id: 9, first_name: "Ada", username: "ada_bot" },
+        message: {
+          chat: { id: 1234, type: "private" },
+          date: 1736380800,
+          message_id: 34,
+          text: "Approval prompt",
+        },
+      },
+      me: { username: "openclaw_bot" },
+      getFile: async () => ({ download: async () => new Uint8Array() }),
+    });
+
+    expect(editMessageTextSpy).toHaveBeenCalledTimes(1);
+    expect(editMessageTextSpy.mock.calls[0]?.[3]).toEqual({
+      reply_markup: { inline_keyboard: [] },
+    });
+    expect(replySpy).toHaveBeenCalledTimes(1);
+    const payload = replySpy.mock.calls[0]?.[0];
+    expect(payload.Body).toContain("/approve approval-567 allow-always");
+  });
+
+  it("switches to confirm keyboard for always-allow callbacks", async () => {
+    onSpy.mockReset();
+    editMessageTextSpy.mockReset();
+    const replySpy = replyModule.__replySpy as unknown as ReturnType<typeof vi.fn>;
+    replySpy.mockReset();
+
+    createTelegramBot({ token: "tok" });
+    const callbackHandler = onSpy.mock.calls.find((call) => call[0] === "callback_query")?.[1] as (
+      ctx: Record<string, unknown>,
+    ) => Promise<void>;
+    expect(callbackHandler).toBeDefined();
+
+    const callbackData = buildExecApprovalCallbackData({
+      approvalId: "approval-345",
+      action: "always",
+    });
+    expect(callbackData).toBeTruthy();
+
+    await callbackHandler({
+      callbackQuery: {
+        id: "cbq-approve-always",
+        data: callbackData ?? "",
+        from: { id: 9, first_name: "Ada", username: "ada_bot" },
+        message: {
+          chat: { id: 1234, type: "private" },
+          date: 1736380800,
+          message_id: 32,
+          text: "Approval prompt",
+        },
+      },
+      me: { username: "openclaw_bot" },
+      getFile: async () => ({ download: async () => new Uint8Array() }),
+    });
+
+    expect(replySpy).not.toHaveBeenCalled();
+    expect(editMessageTextSpy).toHaveBeenCalledTimes(1);
+    const params = editMessageTextSpy.mock.calls[0]?.[3] as
+      | {
+          reply_markup?: {
+            inline_keyboard?: Array<Array<{ text: string; callback_data: string }>>;
+          };
+        }
+      | undefined;
+    expect(params?.reply_markup?.inline_keyboard?.[0]?.[0]?.text).toContain("Confirm");
+    expect(params?.reply_markup?.inline_keyboard?.[1]?.[0]?.text).toBe("Back");
+  });
+
+  it("restores default keyboard when approval back callback is tapped", async () => {
+    onSpy.mockReset();
+    editMessageTextSpy.mockReset();
+    const replySpy = replyModule.__replySpy as unknown as ReturnType<typeof vi.fn>;
+    replySpy.mockReset();
+
+    createTelegramBot({ token: "tok" });
+    const callbackHandler = onSpy.mock.calls.find((call) => call[0] === "callback_query")?.[1] as (
+      ctx: Record<string, unknown>,
+    ) => Promise<void>;
+    expect(callbackHandler).toBeDefined();
+
+    const callbackData = buildExecApprovalCallbackData({
+      approvalId: "approval-456",
+      action: "back",
+    });
+    expect(callbackData).toBeTruthy();
+
+    await callbackHandler({
+      callbackQuery: {
+        id: "cbq-approve-back",
+        data: callbackData ?? "",
+        from: { id: 9, first_name: "Ada", username: "ada_bot" },
+        message: {
+          chat: { id: 1234, type: "private" },
+          date: 1736380800,
+          message_id: 33,
+          text: "Approval prompt",
+        },
+      },
+      me: { username: "openclaw_bot" },
+      getFile: async () => ({ download: async () => new Uint8Array() }),
+    });
+
+    expect(replySpy).not.toHaveBeenCalled();
+    expect(editMessageTextSpy).toHaveBeenCalledTimes(1);
+    const params = editMessageTextSpy.mock.calls[0]?.[3] as
+      | {
+          reply_markup?: {
+            inline_keyboard?: Array<Array<{ text: string; callback_data: string }>>;
+          };
+        }
+      | undefined;
+    expect(params?.reply_markup?.inline_keyboard?.[0]?.[0]?.text).toBe("Allow once");
+    expect(params?.reply_markup?.inline_keyboard?.[0]?.[1]?.text).toBe("Always allow");
   });
 
   it("edits commands list for pagination callbacks", async () => {

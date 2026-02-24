@@ -207,10 +207,18 @@ Config:
 Reply in chat:
 
 ```
+/approve
 /approve <id> allow-once
 /approve <id> allow-always
 /approve <id> deny
 ```
+
+- `/approve` (no args) lists pending approvals for the current session and prints copyable commands.
+- Telegram DM forwarding can include tap-to-approve buttons.
+  - One tap: **Allow once** or **Deny**
+  - Two taps: **Always allow** (confirm step)
+  - Final decisions clear buttons immediately
+- Telegram group targets stay text-only for approvals.
 
 ### macOS IPC flow
 

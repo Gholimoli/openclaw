@@ -394,6 +394,15 @@ If the primary bot is unresponsive, you can immediately message the standby bot.
     Callback clicks are passed to the agent as text:
     `callback_data: <value>`
 
+    Exec approval forwarding uses inline buttons in Telegram DMs:
+
+    - approval prompts can include **Allow once**, **Always allow**, and **Deny**
+    - **Always allow** requires a second confirmation tap
+    - final decisions clear buttons immediately to prevent duplicate taps
+    - group chats still receive text-only approval prompts
+
+    Related docs: [Exec approvals](/tools/exec-approvals)
+
   </Accordion>
 
   <Accordion title="Telegram message actions for agents and automation">

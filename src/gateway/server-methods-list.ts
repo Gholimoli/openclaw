@@ -25,6 +25,7 @@ const BASE_METHODS = [
   "exec.approvals.node.set",
   "exec.approval.request",
   "exec.approval.waitDecision",
+  "exec.approval.list",
   "exec.approval.resolve",
   "wizard.start",
   "wizard.next",

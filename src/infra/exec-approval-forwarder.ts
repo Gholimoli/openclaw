@@ -1,3 +1,4 @@
+import type { ReplyPayload } from "../auto-reply/types.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type {
   ExecApprovalForwardingConfig,
@@ -12,6 +13,14 @@ import { loadConfig } from "../config/config.js";
 import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
+import {
+  buildExecApprovalDefaultButtons,
+  type ExecApprovalButtonRow,
+} from "../telegram/exec-approval-buttons.js";
+import {
+  isTelegramInlineButtonsEnabled,
+  resolveTelegramTargetChatType,
+} from "../telegram/inline-buttons.js";
 import { isDeliverableMessageChannel, normalizeMessageChannel } from "../utils/message-channel.js";
 import { deliverOutboundPayloads } from "./outbound/deliver.js";
 import { resolveSessionDeliveryTarget } from "./outbound/targets.js";
@@ -160,6 +169,52 @@ function buildExpiredMessage(request: ExecApprovalRequest) {
   return `⏱️ Exec approval expired. ID: ${request.id}`;
 }
 
+function buildTelegramRequestButtons(params: {
+  cfg: OpenClawConfig;
+  target: ForwardTarget;
+  approvalId: string;
+}): ExecApprovalButtonRow[] | null {
+  if (resolveTelegramTargetChatType(params.target.to) !== "direct") {
+    return null;
+  }
+  if (
+    !isTelegramInlineButtonsEnabled({
+      cfg: params.cfg,
+      accountId: params.target.accountId ?? null,
+    })
+  ) {
+    return null;
+  }
+  return buildExecApprovalDefaultButtons(params.approvalId);
+}
+
+function buildRequestPayload(params: {
+  cfg: OpenClawConfig;
+  target: ForwardTarget;
+  request: ExecApprovalRequest;
+  nowMs: number;
+}): ReplyPayload {
+  const text = buildRequestMessage(params.request, params.nowMs);
+  const channel = normalizeMessageChannel(params.target.channel) ?? params.target.channel;
+  if (channel !== "telegram") {
+    return { text };
+  }
+  const buttons = buildTelegramRequestButtons({
+    cfg: params.cfg,
+    target: params.target,
+    approvalId: params.request.id,
+  });
+  if (!buttons) {
+    return { text };
+  }
+  return {
+    text,
+    channelData: {
+      telegram: { buttons },
+    },
+  };
+}
+
 function defaultResolveSessionTarget(params: {
   cfg: OpenClawConfig;
   request: ExecApprovalRequest;
@@ -194,7 +249,7 @@ function defaultResolveSessionTarget(params: {
 async function deliverToTargets(params: {
   cfg: OpenClawConfig;
   targets: ForwardTarget[];
-  text: string;
+  buildPayload: (target: ForwardTarget) => ReplyPayload | null;
   deliver: typeof deliverOutboundPayloads;
   shouldSend?: () => boolean;
 }) {
@@ -206,6 +261,10 @@ async function deliverToTargets(params: {
     if (!isDeliverableMessageChannel(channel)) {
       return;
     }
+    const payload = params.buildPayload(target);
+    if (!payload) {
+      return;
+    }
     try {
       await params.deliver({
         cfg: params.cfg,
@@ -213,7 +272,7 @@ async function deliverToTargets(params: {
         to: target.to,
         accountId: target.accountId,
         threadId: target.threadId,
-        payloads: [{ text: params.text }],
+        payloads: [payload],
       });
     } catch (err) {
       log.error(`exec approvals: failed to deliver to ${channel}:${target.to}: ${String(err)}`);
@@ -278,7 +337,12 @@ export function createExecApprovalForwarder(
         }
         pending.delete(request.id);
         const expiredText = buildExpiredMessage(request);
-        await deliverToTargets({ cfg, targets: entry.targets, text: expiredText, deliver });
+        await deliverToTargets({
+          cfg,
+          targets: entry.targets,
+          deliver,
+          buildPayload: () => ({ text: expiredText }),
+        });
       })();
     }, expiresInMs);
     timeoutId.unref?.();
@@ -290,12 +354,17 @@ export function createExecApprovalForwarder(
       return;
     }
 
-    const text = buildRequestMessage(request, nowMs());
     await deliverToTargets({
       cfg,
       targets,
-      text,
       deliver,
+      buildPayload: (target) =>
+        buildRequestPayload({
+          cfg,
+          target,
+          request,
+          nowMs: nowMs(),
+        }),
       shouldSend: () => pending.get(request.id) === pendingEntry,
     });
   };
@@ -312,7 +381,12 @@ export function createExecApprovalForwarder(
 
     const cfg = getConfig();
     const text = buildResolvedMessage(resolved);
-    await deliverToTargets({ cfg, targets: entry.targets, text, deliver });
+    await deliverToTargets({
+      cfg,
+      targets: entry.targets,
+      deliver,
+      buildPayload: () => ({ text }),
+    });
   };
 
   const stop = () => {

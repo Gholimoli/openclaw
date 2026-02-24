@@ -24,6 +24,18 @@ function getFirstDeliveryText(deliver: ReturnType<typeof vi.fn>): string {
   return firstCall?.payloads?.[0]?.text ?? "";
 }
 
+function getFirstDeliveryPayload(deliver: ReturnType<typeof vi.fn>) {
+  const firstCall = deliver.mock.calls[0]?.[0] as
+    | {
+        payloads?: Array<{
+          text?: string;
+          channelData?: Record<string, unknown>;
+        }>;
+      }
+    | undefined;
+  return firstCall?.payloads?.[0];
+}
+
 describe("exec approval forwarder", () => {
   it("forwards to session target and resolves", async () => {
     vi.useFakeTimers();
@@ -104,6 +116,90 @@ describe("exec approval forwarder", () => {
     await forwarder.handleRequested(baseRequest);
 
     expect(getFirstDeliveryText(deliver)).toContain("Command: `echo hello`");
+  });
+
+  it("attaches approval buttons for telegram direct messages", async () => {
+    vi.useFakeTimers();
+    const deliver = vi.fn().mockResolvedValue([]);
+    const cfg = {
+      approvals: {
+        exec: {
+          enabled: true,
+          mode: "targets",
+          targets: [{ channel: "telegram", to: "123" }],
+        },
+      },
+    } as OpenClawConfig;
+
+    const forwarder = createExecApprovalForwarder({
+      getConfig: () => cfg,
+      deliver,
+      nowMs: () => 1000,
+      resolveSessionTarget: () => null,
+    });
+
+    await forwarder.handleRequested(baseRequest);
+    const payload = getFirstDeliveryPayload(deliver) as
+      | { channelData?: { telegram?: { buttons?: unknown[] } } }
+      | undefined;
+    expect(payload?.channelData?.telegram?.buttons).toBeDefined();
+  });
+
+  it("does not attach approval buttons for telegram groups", async () => {
+    vi.useFakeTimers();
+    const deliver = vi.fn().mockResolvedValue([]);
+    const cfg = {
+      approvals: {
+        exec: {
+          enabled: true,
+          mode: "targets",
+          targets: [{ channel: "telegram", to: "-1001234567890" }],
+        },
+      },
+    } as OpenClawConfig;
+
+    const forwarder = createExecApprovalForwarder({
+      getConfig: () => cfg,
+      deliver,
+      nowMs: () => 1000,
+      resolveSessionTarget: () => null,
+    });
+
+    await forwarder.handleRequested(baseRequest);
+    const payload = getFirstDeliveryPayload(deliver) as
+      | { channelData?: { telegram?: { buttons?: unknown[] } } }
+      | undefined;
+    expect(payload?.channelData?.telegram?.buttons).toBeUndefined();
+  });
+
+  it("falls back to text-only when approval id cannot fit telegram callback_data", async () => {
+    vi.useFakeTimers();
+    const deliver = vi.fn().mockResolvedValue([]);
+    const cfg = {
+      approvals: {
+        exec: {
+          enabled: true,
+          mode: "targets",
+          targets: [{ channel: "telegram", to: "123" }],
+        },
+      },
+    } as OpenClawConfig;
+
+    const forwarder = createExecApprovalForwarder({
+      getConfig: () => cfg,
+      deliver,
+      nowMs: () => 1000,
+      resolveSessionTarget: () => null,
+    });
+
+    await forwarder.handleRequested({
+      ...baseRequest,
+      id: "x".repeat(120),
+    });
+    const payload = getFirstDeliveryPayload(deliver) as
+      | { channelData?: { telegram?: { buttons?: unknown[] } } }
+      | undefined;
+    expect(payload?.channelData?.telegram?.buttons).toBeUndefined();
   });
 
   it("formats complex commands as fenced code blocks", async () => {

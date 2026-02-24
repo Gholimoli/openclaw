@@ -75,6 +75,10 @@ import {
   DeviceTokenRotateParamsSchema,
 } from "./devices.js";
 import {
+  ExecApprovalListItemSchema,
+  ExecApprovalListParamsSchema,
+  ExecApprovalListRequestSchema,
+  ExecApprovalListResultSchema,
   ExecApprovalsGetParamsSchema,
   ExecApprovalsNodeGetParamsSchema,
   ExecApprovalsNodeSetParamsSchema,
@@ -240,6 +244,10 @@ export const ProtocolSchemas: Record<string, TSchema> = {
   ExecApprovalsNodeGetParams: ExecApprovalsNodeGetParamsSchema,
   ExecApprovalsNodeSetParams: ExecApprovalsNodeSetParamsSchema,
   ExecApprovalsSnapshot: ExecApprovalsSnapshotSchema,
+  ExecApprovalListParams: ExecApprovalListParamsSchema,
+  ExecApprovalListRequest: ExecApprovalListRequestSchema,
+  ExecApprovalListItem: ExecApprovalListItemSchema,
+  ExecApprovalListResult: ExecApprovalListResultSchema,
   ExecApprovalRequestParams: ExecApprovalRequestParamsSchema,
   ExecApprovalResolveParams: ExecApprovalResolveParamsSchema,
   DevicePairListParams: DevicePairListParamsSchema,

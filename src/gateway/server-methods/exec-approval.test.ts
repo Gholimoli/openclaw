@@ -282,4 +282,182 @@ describe("exec approval handlers", () => {
 
     await requestPromise;
   });
+
+  it("lists pending approvals scoped by session", async () => {
+    const manager = new ExecApprovalManager();
+    const handlers = createExecApprovalHandlers(manager);
+    const context = {
+      broadcast: () => {},
+    };
+
+    const requestARespond = vi.fn();
+    const requestBRespond = vi.fn();
+    const requestA = handlers["exec.approval.request"]({
+      params: {
+        id: "s1",
+        command: "echo one",
+        sessionKey: "agent:main:session-1",
+        timeoutMs: 60_000,
+      },
+      respond: requestARespond,
+      context: context as unknown as Parameters<
+        (typeof handlers)["exec.approval.request"]
+      >[0]["context"],
+      client: null,
+      req: { id: "req-1", type: "req", method: "exec.approval.request" },
+      isWebchatConnect: noop,
+    });
+    const requestB = handlers["exec.approval.request"]({
+      params: {
+        id: "s2",
+        command: "echo two",
+        sessionKey: "agent:main:session-2",
+        timeoutMs: 60_000,
+      },
+      respond: requestBRespond,
+      context: context as unknown as Parameters<
+        (typeof handlers)["exec.approval.request"]
+      >[0]["context"],
+      client: null,
+      req: { id: "req-2", type: "req", method: "exec.approval.request" },
+      isWebchatConnect: noop,
+    });
+
+    const listRespond = vi.fn();
+    await handlers["exec.approval.list"]({
+      params: { sessionKey: "agent:main:session-1", limit: 10 },
+      respond: listRespond,
+      context: context as unknown as Parameters<
+        (typeof handlers)["exec.approval.list"]
+      >[0]["context"],
+      client: null,
+      req: { id: "req-3", type: "req", method: "exec.approval.list" },
+      isWebchatConnect: noop,
+    });
+
+    expect(listRespond).toHaveBeenCalledWith(
+      true,
+      {
+        items: [
+          {
+            id: "s1",
+            createdAtMs: expect.any(Number),
+            expiresAtMs: expect.any(Number),
+            request: {
+              command: "echo one",
+              cwd: null,
+              host: null,
+              agentId: null,
+              sessionKey: "agent:main:session-1",
+            },
+          },
+        ],
+      },
+      undefined,
+    );
+
+    // Resolve to avoid leaving timers running until timeout.
+    await handlers["exec.approval.resolve"]({
+      params: { id: "s1", decision: "deny" },
+      respond: vi.fn(),
+      context: context as unknown as Parameters<
+        (typeof handlers)["exec.approval.resolve"]
+      >[0]["context"],
+      client: { connect: { client: { id: "cli", displayName: "CLI" } } },
+      req: { id: "req-4", type: "req", method: "exec.approval.resolve" },
+      isWebchatConnect: noop,
+    });
+    await handlers["exec.approval.resolve"]({
+      params: { id: "s2", decision: "deny" },
+      respond: vi.fn(),
+      context: context as unknown as Parameters<
+        (typeof handlers)["exec.approval.resolve"]
+      >[0]["context"],
+      client: { connect: { client: { id: "cli", displayName: "CLI" } } },
+      req: { id: "req-5", type: "req", method: "exec.approval.resolve" },
+      isWebchatConnect: noop,
+    });
+
+    await requestA;
+    await requestB;
+  });
+
+  it("enforces list limit and excludes resolved approvals", async () => {
+    const manager = new ExecApprovalManager();
+    const handlers = createExecApprovalHandlers(manager);
+    const context = {
+      broadcast: () => {},
+    };
+
+    const requestARespond = vi.fn();
+    const requestBRespond = vi.fn();
+    const requestA = handlers["exec.approval.request"]({
+      params: {
+        id: "l1",
+        command: "echo one",
+        timeoutMs: 60_000,
+      },
+      respond: requestARespond,
+      context: context as unknown as Parameters<
+        (typeof handlers)["exec.approval.request"]
+      >[0]["context"],
+      client: null,
+      req: { id: "req-10", type: "req", method: "exec.approval.request" },
+      isWebchatConnect: noop,
+    });
+    const requestB = handlers["exec.approval.request"]({
+      params: {
+        id: "l2",
+        command: "echo two",
+        timeoutMs: 60_000,
+      },
+      respond: requestBRespond,
+      context: context as unknown as Parameters<
+        (typeof handlers)["exec.approval.request"]
+      >[0]["context"],
+      client: null,
+      req: { id: "req-11", type: "req", method: "exec.approval.request" },
+      isWebchatConnect: noop,
+    });
+
+    await handlers["exec.approval.resolve"]({
+      params: { id: "l1", decision: "deny" },
+      respond: vi.fn(),
+      context: context as unknown as Parameters<
+        (typeof handlers)["exec.approval.resolve"]
+      >[0]["context"],
+      client: { connect: { client: { id: "cli", displayName: "CLI" } } },
+      req: { id: "req-12", type: "req", method: "exec.approval.resolve" },
+      isWebchatConnect: noop,
+    });
+    await requestA;
+
+    const listRespond = vi.fn();
+    await handlers["exec.approval.list"]({
+      params: { limit: 1 },
+      respond: listRespond,
+      context: context as unknown as Parameters<
+        (typeof handlers)["exec.approval.list"]
+      >[0]["context"],
+      client: null,
+      req: { id: "req-13", type: "req", method: "exec.approval.list" },
+      isWebchatConnect: noop,
+    });
+
+    const payload = listRespond.mock.calls[0]?.[1] as { items?: Array<{ id: string }> } | undefined;
+    expect(payload?.items).toHaveLength(1);
+    expect(payload?.items?.[0]?.id).toBe("l2");
+
+    await handlers["exec.approval.resolve"]({
+      params: { id: "l2", decision: "deny" },
+      respond: vi.fn(),
+      context: context as unknown as Parameters<
+        (typeof handlers)["exec.approval.resolve"]
+      >[0]["context"],
+      client: { connect: { client: { id: "cli", displayName: "CLI" } } },
+      req: { id: "req-14", type: "req", method: "exec.approval.resolve" },
+      isWebchatConnect: noop,
+    });
+    await requestB;
+  });
 });

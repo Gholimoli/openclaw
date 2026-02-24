@@ -40,6 +40,20 @@ type PendingEntry = {
 export class ExecApprovalManager {
   private pending = new Map<string, PendingEntry>();
 
+  private normalizeListLimit(limit?: number): number {
+    if (typeof limit !== "number" || !Number.isFinite(limit)) {
+      return 10;
+    }
+    const value = Math.trunc(limit);
+    if (value < 1) {
+      return 1;
+    }
+    if (value > 50) {
+      return 50;
+    }
+    return value;
+  }
+
   create(
     request: ExecApprovalRequestPayload,
     timeoutMs: number,
@@ -150,5 +164,35 @@ export class ExecApprovalManager {
   awaitDecision(recordId: string): Promise<ExecApprovalDecision | null> | null {
     const entry = this.pending.get(recordId);
     return entry?.promise ?? null;
+  }
+
+  listPending(params?: {
+    sessionKey?: string | null;
+    agentId?: string | null;
+    limit?: number;
+  }): ExecApprovalRecord[] {
+    const sessionKey =
+      typeof params?.sessionKey === "string" && params.sessionKey.trim().length > 0
+        ? params.sessionKey.trim()
+        : null;
+    const agentId =
+      typeof params?.agentId === "string" && params.agentId.trim().length > 0
+        ? params.agentId.trim()
+        : null;
+    const limit = this.normalizeListLimit(params?.limit);
+
+    const items = Array.from(this.pending.values())
+      .map((entry) => entry.record)
+      .filter((record) => record.resolvedAtMs === undefined)
+      .filter((record) => (sessionKey ? record.request.sessionKey === sessionKey : true))
+      .filter((record) => (agentId ? record.request.agentId === agentId : true))
+      .toSorted((a, b) => b.createdAtMs - a.createdAtMs)
+      .slice(0, limit);
+
+    // Return copies so callers can't mutate manager-owned records.
+    return items.map((record) => ({
+      ...record,
+      request: { ...record.request },
+    }));
   }
 }

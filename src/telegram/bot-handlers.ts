@@ -30,6 +30,11 @@ import {
   buildTelegramParentPeer,
   resolveTelegramForumThreadId,
 } from "./bot/helpers.js";
+import {
+  buildExecApprovalConfirmButtons,
+  buildExecApprovalDefaultButtons,
+  parseExecApprovalCallbackData,
+} from "./exec-approval-buttons.js";
 import { migrateTelegramGroupConfig } from "./group-migration.js";
 import { resolveTelegramInlineButtonsScope } from "./inline-buttons.js";
 import {
@@ -447,6 +452,73 @@ export const registerTelegramHandlers = ({
             return;
           }
         }
+      }
+
+      const approvalCallback = parseExecApprovalCallbackData(data);
+      if (approvalCallback) {
+        const currentText = callbackMessage.text ?? callbackMessage.caption ?? "Exec approval";
+        const editApprovalButtons = async (
+          buttons: Array<Array<{ text: string; callback_data: string }>>,
+        ) => {
+          const keyboard = buildInlineKeyboard(buttons);
+          try {
+            await bot.api.editMessageText(
+              callbackMessage.chat.id,
+              callbackMessage.message_id,
+              currentText,
+              {
+                reply_markup: keyboard ?? { inline_keyboard: [] },
+              },
+            );
+          } catch (editErr) {
+            const errStr = String(editErr);
+            if (!errStr.includes("message is not modified")) {
+              throw editErr;
+            }
+          }
+        };
+
+        if (approvalCallback.action === "always") {
+          const buttons = buildExecApprovalConfirmButtons(approvalCallback.approvalId);
+          await editApprovalButtons(buttons ?? []);
+          return;
+        }
+
+        if (approvalCallback.action === "back") {
+          const buttons = buildExecApprovalDefaultButtons(approvalCallback.approvalId);
+          await editApprovalButtons(buttons ?? []);
+          return;
+        }
+
+        const decision =
+          approvalCallback.action === "allow-once"
+            ? "allow-once"
+            : approvalCallback.action === "deny"
+              ? "deny"
+              : "allow-always";
+
+        await editApprovalButtons([]).catch(() => undefined);
+
+        const syntheticMessage: Message = {
+          ...callbackMessage,
+          from: callback.from,
+          text: `/approve ${approvalCallback.approvalId} ${decision}`,
+          caption: undefined,
+          caption_entities: undefined,
+          entities: undefined,
+        };
+        const getFile =
+          typeof ctx.getFile === "function" ? ctx.getFile.bind(ctx) : async () => ({});
+        await processMessage(
+          { message: syntheticMessage, me: ctx.me, getFile },
+          [],
+          storeAllowFrom,
+          {
+            forceWasMentioned: true,
+            messageIdOverride: callback.id,
+          },
+        );
+        return;
       }
 
       const paginationMatch = data.match(/^commands_page_(\d+|noop)(?::(.+))?$/);

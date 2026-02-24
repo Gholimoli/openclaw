@@ -9,6 +9,7 @@ import {
   ErrorCodes,
   errorShape,
   formatValidationErrors,
+  validateExecApprovalListParams,
   validateExecApprovalRequestParams,
   validateExecApprovalResolveParams,
 } from "../protocol/index.js";
@@ -165,6 +166,46 @@ export function createExecApprovalHandlers(
         },
         undefined,
       );
+    },
+    "exec.approval.list": async ({ params, respond }) => {
+      if (!validateExecApprovalListParams(params)) {
+        respond(
+          false,
+          undefined,
+          errorShape(
+            ErrorCodes.INVALID_REQUEST,
+            `invalid exec.approval.list params: ${formatValidationErrors(
+              validateExecApprovalListParams.errors,
+            )}`,
+          ),
+        );
+        return;
+      }
+      const p = params as {
+        sessionKey?: string;
+        agentId?: string;
+        limit?: number;
+      };
+      const sessionKey =
+        typeof p.sessionKey === "string" && p.sessionKey.trim().length > 0
+          ? p.sessionKey.trim()
+          : null;
+      const agentId =
+        typeof p.agentId === "string" && p.agentId.trim().length > 0 ? p.agentId.trim() : null;
+      const limit = typeof p.limit === "number" ? p.limit : undefined;
+      const items = manager.listPending({ sessionKey, agentId, limit }).map((record) => ({
+        id: record.id,
+        createdAtMs: record.createdAtMs,
+        expiresAtMs: record.expiresAtMs,
+        request: {
+          command: record.request.command,
+          cwd: record.request.cwd ?? null,
+          host: record.request.host ?? null,
+          agentId: record.request.agentId ?? null,
+          sessionKey: record.request.sessionKey ?? null,
+        },
+      }));
+      respond(true, { items }, undefined);
     },
     "exec.approval.resolve": async ({ params, respond, client, context }) => {
       if (!validateExecApprovalResolveParams(params)) {

@@ -13,12 +13,62 @@ describe("/approve command", () => {
     vi.clearAllMocks();
   });
 
+  it("lists pending approvals when called without args", async () => {
+    const cfg = {
+      commands: { text: true },
+      channels: { whatsapp: { allowFrom: ["*"] } },
+    } as OpenClawConfig;
+    const mockCallGateway = vi.mocked(callGateway);
+    mockCallGateway.mockResolvedValueOnce({
+      items: [
+        {
+          id: "abc",
+          createdAtMs: 1700000000000,
+          expiresAtMs: Date.now() + 60_000,
+          request: {
+            command: "openclaw gateway status",
+            sessionKey: "agent:main:main",
+          },
+        },
+      ],
+    });
+
+    const params = buildCommandTestParams("/approve", cfg);
+    const result = await handleCommands(params);
+    expect(result.shouldContinue).toBe(false);
+    expect(result.reply?.text).toContain("Pending exec approvals for this session");
+    expect(result.reply?.text).toContain("/approve abc allow-once");
+    expect(result.reply?.text).toContain("/approve abc allow-always");
+    expect(result.reply?.text).toContain("/approve abc deny");
+    expect(mockCallGateway).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "exec.approval.list",
+        params: { limit: 5, sessionKey: "agent:main:main" },
+      }),
+    );
+  });
+
+  it("shows empty-state help when no pending approvals are found", async () => {
+    const cfg = {
+      commands: { text: true },
+      channels: { whatsapp: { allowFrom: ["*"] } },
+    } as OpenClawConfig;
+    const mockCallGateway = vi.mocked(callGateway);
+    mockCallGateway.mockResolvedValueOnce({ items: [] });
+
+    const params = buildCommandTestParams("/approve", cfg);
+    const result = await handleCommands(params);
+    expect(result.shouldContinue).toBe(false);
+    expect(result.reply?.text).toContain("No pending exec approvals for this session");
+    expect(result.reply?.text).toContain("Usage: /approve");
+  });
+
   it("rejects invalid usage", async () => {
     const cfg = {
       commands: { text: true },
       channels: { whatsapp: { allowFrom: ["*"] } },
     } as OpenClawConfig;
-    const params = buildCommandTestParams("/approve", cfg);
+    const params = buildCommandTestParams("/approve abc", cfg);
     const result = await handleCommands(params);
     expect(result.shouldContinue).toBe(false);
     expect(result.reply?.text).toContain("Usage: /approve");

@@ -111,3 +111,40 @@ export const ExecApprovalResolveParamsSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+export const ExecApprovalListParamsSchema = Type.Object(
+  {
+    sessionKey: Type.Optional(NonEmptyString),
+    agentId: Type.Optional(NonEmptyString),
+    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 })),
+  },
+  { additionalProperties: false },
+);
+
+export const ExecApprovalListRequestSchema = Type.Object(
+  {
+    command: NonEmptyString,
+    cwd: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    host: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    agentId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    sessionKey: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  },
+  { additionalProperties: false },
+);
+
+export const ExecApprovalListItemSchema = Type.Object(
+  {
+    id: NonEmptyString,
+    createdAtMs: Type.Integer({ minimum: 0 }),
+    expiresAtMs: Type.Integer({ minimum: 0 }),
+    request: ExecApprovalListRequestSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const ExecApprovalListResultSchema = Type.Object(
+  {
+    items: Type.Array(ExecApprovalListItemSchema),
+  },
+  { additionalProperties: false },
+);
