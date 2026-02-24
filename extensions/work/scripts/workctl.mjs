@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -191,6 +192,136 @@ function validateRepoSlug(value, label) {
   return v;
 }
 
+function normalizePath(p) {
+  return String(p || "").replaceAll("\\", "/");
+}
+
+function globToRegExp(glob) {
+  const g = normalizePath(glob);
+  let out = "^";
+  for (let i = 0; i < g.length; i++) {
+    const ch = g[i];
+    if (ch === "*") {
+      const next = g[i + 1];
+      if (next === "*") {
+        const after = g[i + 2];
+        if (after === "/") {
+          out += "(?:.*\\/)?";
+          i += 2;
+          continue;
+        }
+        out += ".*";
+        i += 1;
+        continue;
+      }
+      out += "[^/]*";
+      continue;
+    }
+    if ("\\.^$+?()[]{}|".includes(ch)) {
+      out += `\\${ch}`;
+      continue;
+    }
+    if (ch === "/") {
+      out += "\\/";
+      continue;
+    }
+    out += ch;
+  }
+  out += "$";
+  return new RegExp(out);
+}
+
+function matchesAny(filePath, patterns) {
+  const p = normalizePath(filePath);
+  for (const pat of patterns || []) {
+    if (!pat) continue;
+    if (globToRegExp(String(pat)).test(p)) return true;
+  }
+  return false;
+}
+
+function matchesAnyFromList(files, patterns) {
+  for (const f of files || []) {
+    if (matchesAny(f, patterns)) return true;
+  }
+  return false;
+}
+
+function loadClawforgeContract(repoDir) {
+  const contractPath = path.join(repoDir, ".clawforge", "contract.json");
+  if (!fs.existsSync(contractPath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(contractPath, "utf8"));
+  } catch (e) {
+    return { error: `invalid ClawForge contract JSON: ${String(e)}` };
+  }
+}
+
+function gitChangedFilesAgainstOriginBase(repoDir, base) {
+  const safeBase = validateGitRefName(base, "base branch");
+  try {
+    const out = execSync(`git -C ${JSON.stringify(repoDir)} diff --name-only origin/${safeBase}`, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return out
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map(normalizePath);
+  } catch {
+    return null;
+  }
+}
+
+function classifyClawforgeRiskTier(changedFiles, rules) {
+  for (const rule of rules || []) {
+    const tier = String(rule?.tier || "").trim();
+    const matchAny = rule?.matchAny || [];
+    if (!tier) continue;
+    if (matchesAnyFromList(changedFiles, matchAny)) return tier;
+  }
+  return "high";
+}
+
+function hasPackageJsonScript(repoDir, scriptName) {
+  const pkgPath = path.join(repoDir, "package.json");
+  if (!fs.existsSync(pkgPath)) return false;
+  try {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+    return Boolean(pkg?.scripts && Object.prototype.hasOwnProperty.call(pkg.scripts, scriptName));
+  } catch {
+    return false;
+  }
+}
+
+function computeClawforgeContext(repoDir, base) {
+  const contract = loadClawforgeContract(repoDir);
+  if (!contract || contract?.error) {
+    return contract?.error ? { enabled: false, error: contract.error } : null;
+  }
+
+  const changedFiles = gitChangedFilesAgainstOriginBase(repoDir, base);
+  const files = changedFiles ?? [];
+
+  const riskTier = changedFiles
+    ? classifyClawforgeRiskTier(files, contract?.riskTierRules || [])
+    : "high";
+
+  const evidenceRules = Array.isArray(contract?.evidenceRules) ? contract.evidenceRules : [];
+  const requireUiEvidence = evidenceRules.some((rule) => {
+    const req = Array.isArray(rule?.require) ? rule.require : [];
+    return req.includes("ui_evidence") && matchesAnyFromList(files, rule?.matchAny || []);
+  });
+
+  return {
+    enabled: true,
+    riskTier,
+    requireUiEvidence,
+    changedFilesCount: files.length,
+  };
+}
+
 async function runRequiredExec({ sessionKey, cwd, command, timeout = 600, pty = false, error }) {
   const res = await execViaGateway({
     sessionKey,
@@ -229,16 +360,45 @@ function detectPm(cwd) {
   return null;
 }
 
-async function runChecks(sessionKey, cwd) {
+async function runChecks(sessionKey, cwd, opts = {}) {
   const pm = detectPm(cwd);
   if (!pm)
     return { ok: true, ran: [], note: "No JS package manager lockfile found; skipping checks." };
+
+  const clawforge = opts?.clawforge?.enabled ? opts.clawforge : null;
+  const riskTier = String(clawforge?.riskTier || "").trim();
+  const requireUiEvidence = Boolean(clawforge?.requireUiEvidence);
 
   const cmds = [];
   if (pm === "pnpm") {
     cmds.push("pnpm install --frozen-lockfile");
     cmds.push("pnpm check");
-    cmds.push("pnpm test");
+
+    if (riskTier === "high") {
+      cmds.push("pnpm build");
+      cmds.push("pnpm protocol:check");
+      cmds.push("pnpm test");
+    } else if (riskTier === "medium") {
+      cmds.push("pnpm test");
+    } else if (riskTier === "low") {
+      if (hasPackageJsonScript(cwd, "test:fast")) {
+        cmds.push("pnpm test:fast");
+      } else {
+        cmds.push("pnpm test");
+      }
+    } else {
+      // Backward-compatible default.
+      cmds.push("pnpm test");
+    }
+
+    if (requireUiEvidence) {
+      if (fs.existsSync(path.join(cwd, "ui", "package.json"))) {
+        cmds.push("pnpm --dir ui exec playwright install chromium");
+      }
+      if (hasPackageJsonScript(cwd, "test:ui")) {
+        cmds.push("pnpm test:ui");
+      }
+    }
   } else if (pm === "npm") {
     cmds.push("npm ci");
     cmds.push("npm run lint || true");
@@ -269,28 +429,70 @@ async function runChecks(sessionKey, cwd) {
         ran,
         failed: cmd,
         tail: res.tail,
+        ...(clawforge
+          ? {
+              clawforge: {
+                riskTier,
+                requireUiEvidence,
+                changedFilesCount: clawforge.changedFilesCount,
+              },
+            }
+          : {}),
       };
     }
   }
   return { ok: true, ran };
 }
 
+async function gitHeadSha(sessionKey, cwd) {
+  const res = await execViaGateway({
+    sessionKey,
+    command: "git rev-parse HEAD",
+    workdir: cwd,
+    timeout: 120,
+  });
+  if (res.status !== "completed") return "";
+  return (res.tail || "").trim();
+}
+
 async function coderabbitReview(sessionKey, cwd, base) {
   // CodeRabbit CLI usage is provider-dependent; keep this best-effort.
   // Users can override by wrapping coderabbit in their own script.
-  const cmd = `coderabbit review --base ${JSON.stringify(base)}`;
-  const res = await execViaGateway({
-    sessionKey,
-    command: cmd,
-    workdir: cwd,
-    pty: true,
-    timeout: 3600,
-  });
-  return {
-    code: res.exitCode ?? 0,
-    status: res.status,
-    tail: res.tail,
-  };
+  const headSha = await gitHeadSha(sessionKey, cwd);
+
+  const baseCmd = `coderabbit review --base ${JSON.stringify(base)}`;
+  const candidates = [`${baseCmd} --plain`, `${baseCmd} --prompt-only`, baseCmd];
+
+  const attempts = [];
+  for (const cmd of candidates) {
+    const res = await execViaGateway({
+      sessionKey,
+      command: cmd,
+      workdir: cwd,
+      pty: true,
+      timeout: 3600,
+    });
+    const code = res.exitCode ?? 0;
+    const status = res.status;
+    const tail = res.tail;
+    attempts.push({ cmd, code, status });
+
+    const isUnknownFlag =
+      code !== 0 &&
+      typeof tail === "string" &&
+      (tail.includes("unknown option") ||
+        tail.includes("Unknown option") ||
+        tail.includes("unrecognized option") ||
+        tail.includes("flag provided but not defined"));
+
+    if (code !== 0 && cmd !== baseCmd && isUnknownFlag) {
+      continue;
+    }
+
+    return { code, status, tail, headSha, cmd, attempts };
+  }
+
+  return { code: 1, status: "completed", tail: "coderabbit review failed", headSha, attempts };
 }
 
 async function codexImplement(sessionKey, cwd, prompt) {
@@ -963,7 +1165,9 @@ async function main() {
     }
 
     let loops = 0;
-    let checks = await runChecks(sessionKey, repoDir);
+    let clawforge = computeClawforgeContext(repoDir, base);
+    if (clawforge?.enabled === false) die("clawforge contract error", { error: clawforge.error });
+    let checks = await runChecks(sessionKey, repoDir, { clawforge });
     while (!checks.ok && loops < Math.max(1, maxFixLoops)) {
       loops++;
       const fixPrompt = `Fix the failing checks. Context:\\nFAILED=${checks.failed}\\nTAIL=${checks.tail || ""}`;
@@ -972,12 +1176,14 @@ async function main() {
         const g = await geminiImplement(sessionKey, repoDir, fixPrompt);
         if (g.code !== 0 || g.status !== "completed") break;
       }
-      checks = await runChecks(sessionKey, repoDir);
+      clawforge = computeClawforgeContext(repoDir, base);
+      if (clawforge?.enabled === false) die("clawforge contract error", { error: clawforge.error });
+      checks = await runChecks(sessionKey, repoDir, { clawforge });
     }
 
     const review = await coderabbitReview(sessionKey, repoDir, base);
 
-    ok({ repoDir, base, loops, checks, review });
+    ok({ repoDir, base, loops, clawforge, checks, review });
     return;
   }
 
@@ -986,9 +1192,11 @@ async function main() {
     const base = String(args.base || "main");
     const sessionKey = String(args["session-key"] || args.sessionKey || "agent:coder:main").trim();
     if (!repoDir) die("--repo-dir required");
-    const checks = await runChecks(sessionKey, repoDir);
+    const clawforge = computeClawforgeContext(repoDir, base);
+    if (clawforge?.enabled === false) die("clawforge contract error", { error: clawforge.error });
+    const checks = await runChecks(sessionKey, repoDir, { clawforge });
     const review = await coderabbitReview(sessionKey, repoDir, base);
-    ok({ repoDir, base, checks, review });
+    ok({ repoDir, base, clawforge, checks, review });
     return;
   }
 

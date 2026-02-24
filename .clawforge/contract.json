@@ -1,0 +1,99 @@
+{
+  "version": "1",
+  "riskTierRules": [
+    {
+      "tier": "high",
+      "matchAny": [
+        ".github/**",
+        "scripts/pr",
+        "scripts/clawforge/**",
+        "src/gateway/**",
+        "src/routing/**",
+        "src/channels/**",
+        "src/agents/**",
+        "extensions/work/**",
+        "apps/**"
+      ]
+    },
+    {
+      "tier": "medium",
+      "matchAny": ["src/**", "ui/**", "extensions/**", "packages/**", "scripts/**"]
+    },
+    {
+      "tier": "docs",
+      "matchAny": ["docs/**", "README*.md", "**/*.md", "**/*.mdx", "docs.json", "mintlify.json"]
+    },
+    {
+      "tier": "low",
+      "matchAny": ["**"]
+    }
+  ],
+  "ciPolicy": {
+    "requiredJobsByTier": {
+      "docs": ["check-docs"],
+      "low": ["check", "checks", "secrets"],
+      "medium": ["check", "build-artifacts", "checks", "secrets"],
+      "high": ["check", "build-artifacts", "checks", "checks-windows", "secrets"]
+    },
+    "scopeOverridesByTier": {
+      "docs": {
+        "run_node": false,
+        "run_macos": false,
+        "run_android": false,
+        "run_ui_evidence": false
+      },
+      "low": {
+        "run_node": false,
+        "run_macos": false,
+        "run_android": false,
+        "run_ui_evidence": false
+      },
+      "medium": {
+        "run_node": false,
+        "run_macos": false,
+        "run_android": false,
+        "run_ui_evidence": false
+      },
+      "high": {
+        "run_node": true,
+        "run_macos": false,
+        "run_android": false,
+        "run_ui_evidence": false
+      }
+    },
+    "docsDriftRules": [
+      {
+        "ifChangedAny": [".github/workflows/**"],
+        "mustAlsoChangeAny": ["docs/ci.md"],
+        "message": "ClawForge docs drift: workflow changes require docs/ci.md updates."
+      },
+      {
+        "ifChangedAny": [".clawforge/contract.json"],
+        "mustAlsoChangeAny": ["docs/automation/clawforge.md"],
+        "message": "ClawForge docs drift: contract changes require docs/automation/clawforge.md updates."
+      },
+      {
+        "ifChangedAny": ["extensions/work/**"],
+        "mustAlsoChangeAny": ["docs/plugins/work.md", "docs/automation/coding-pipeline.md"],
+        "message": "ClawForge docs drift: /work pipeline changes require docs/plugins/work.md or docs/automation/coding-pipeline.md updates."
+      }
+    ]
+  },
+  "evidenceRules": [
+    {
+      "matchAny": ["ui/**"],
+      "require": ["ui_evidence"]
+    }
+  ],
+  "reviewAgent": {
+    "enabled": true,
+    "appSlugMatch": "coderabbit",
+    "requiredTiers": ["high"],
+    "timeoutMinutes": 20,
+    "rerunComment": [
+      "<!-- clawforge-coderabbit-auto-rerun -->",
+      "@coderabbitai review",
+      "sha:${HEAD_SHA}"
+    ]
+  }
+}

@@ -1016,6 +1016,7 @@
                 "group": "Automation",
                 "pages": [
                   "automation/coding-pipeline",
+                  "automation/clawforge",
                   "automation/context-repositories",
                   "automation/hooks",
                   "automation/cron-jobs",

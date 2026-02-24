@@ -205,6 +205,7 @@ For `task` and `fix`:
 2. Check out `base` and create a `work/*` branch.
 3. Run a coding agent CLI (`codex` with a best-effort fallback to `gemini`).
 4. Run deterministic checks based on the repo lockfile.
+   - If the repo contains `.clawforge/contract.json`, `/work` uses it to choose risk-aware checks (for example `test:fast` on low risk changes, `build` and `protocol:check` on high risk changes, and `test:ui` when UI evidence is required).
 5. Run a CodeRabbit review pass.
 6. Stop after `maxFixLoops` if checks remain failing, and return a report.
 
@@ -234,9 +235,9 @@ Recommended approach:
 
 - Local `/work` loop makes the change clean before pushing.
 - GitHub Actions remains the merge gate (format, lint, typecheck, tests, build, security checks).
-- CodeRabbit is best treated as a PR signal (comments) and as a local loop input. Avoid making it a hard merge blocker if its output is nondeterministic for your repos.
+- CodeRabbit is best treated as a PR signal (comments) and as a local loop input. If you make it blocking, keep it limited to high risk changes and enforce current head SHA discipline.
 
-See [CI](/ci) and [Coding automation pipeline](/automation/coding-pipeline) for a reference gate template.
+See [ClawForge](/automation/clawforge), [CI](/ci), and [Coding automation pipeline](/automation/coding-pipeline) for a reference gate template.
 
 ## Troubleshooting
 

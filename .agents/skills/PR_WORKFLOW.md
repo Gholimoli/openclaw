@@ -127,6 +127,14 @@ Gate set:
 - Always: `pnpm build`, `pnpm check`
 - `pnpm test` required unless high-confidence docs-only criteria pass.
 
+## ClawForge constraints
+
+When CI and `/work` are configured with ClawForge:
+
+- Treat review agent output as valid only when it matches the current PR head SHA.
+- If `clawforge-preflight` fails due to docs drift, update the required docs pages as part of the same change.
+- If UI evidence is required, ensure `ui-evidence` is green and its `ui-evidence.json` artifact is present for the current head.
+
 ## Co-contributor and clawtributors
 
 - If we squash, add the PR author as a co-contributor in the commit body using a `Co-authored-by:` trailer.

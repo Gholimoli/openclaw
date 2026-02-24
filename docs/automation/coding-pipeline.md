@@ -144,6 +144,14 @@ Related reading:
 
 Treat GitHub Actions as the merge gate. Your local `/work` loop should make PRs clean before push, but CI is the final lock.
 
+OpenClaw uses ClawForge to keep this deterministic:
+
+- One contract (`.clawforge/contract.json`) classifies risk tiers by changed paths.
+- A preflight gate enforces docs drift rules and current head SHA discipline for review agent evidence.
+- UI changes can require machine verifiable browser evidence as an artifact.
+
+Details: [ClawForge](/automation/clawforge).
+
 Recommended merge blocking checks:
 
 - format and lint checks
@@ -156,7 +164,7 @@ Recommended merge blocking checks:
 Recommended CodeRabbit usage:
 
 - Run CodeRabbit in the local `/work` loop as an input to the fix list.
-- Keep CodeRabbit in CI as informational at first if its output can be nondeterministic for your repos.
+- If CodeRabbit output is nondeterministic, keep it non-blocking except for high risk changes and enforce current head SHA discipline.
 
 ## Runbooks (stability)
 

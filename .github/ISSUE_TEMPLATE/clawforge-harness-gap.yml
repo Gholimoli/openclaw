@@ -1,0 +1,66 @@
+name: ClawForge harness gap
+description: Regression or incident that should become a deterministic harness case.
+title: "[ClawForge gap] <short summary>"
+labels:
+  - clawforge
+  - harness-gap
+body:
+  - type: input
+    id: incident_link
+    attributes:
+      label: Incident or regression link
+      description: Link to the PR, issue, user report, or postmortem (if available).
+      placeholder: "https://github.com/openclaw/openclaw/issues/123"
+    validations:
+      required: false
+
+  - type: textarea
+    id: what_failed
+    attributes:
+      label: What failed
+      description: What happened, what you expected, and the impact.
+      placeholder: "Example: CI passed but UI flow broke due to missing Playwright coverage for ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: missing_harness
+    attributes:
+      label: Missing harness or test
+      description: What deterministic check should have caught this (unit, e2e, UI evidence, policy gate).
+      placeholder: "Example: Add ui/src/ui/...browser.test.ts coverage for ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Deterministic reproduction
+      description: Commands and inputs to reproduce reliably.
+      placeholder: |
+        Steps:
+        1. ...
+        2. ...
+
+        Command:
+        pnpm test:ui -- ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: contract_changes
+    attributes:
+      label: ClawForge contract changes (if any)
+      description: If the risk tiering, docs drift, or evidence rules should change, describe it.
+      placeholder: "Example: Require ui-evidence for changes under ui/src/ui/views/**"
+    validations:
+      required: false
+
+  - type: input
+    id: slo
+    attributes:
+      label: Target SLO
+      description: "How quickly should we close the gap (example: 7 days)."
+      placeholder: "7 days"
+    validations:
+      required: false

@@ -28,10 +28,43 @@ jobs:
         id: check
         uses: ./.github/actions/detect-docs-changes
 
+  clawforge-preflight:
+    needs: [docs-scope]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    outputs:
+      risk_tier: ${{ steps.preflight.outputs.risk_tier }}
+      force_run_node: ${{ steps.preflight.outputs.force_run_node }}
+      force_run_macos: ${{ steps.preflight.outputs.force_run_macos }}
+      force_run_android: ${{ steps.preflight.outputs.force_run_android }}
+      require_ui_evidence: ${{ steps.preflight.outputs.require_ui_evidence }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          check-latest: true
+
+      - name: Run ClawForge preflight gate
+        id: preflight
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/clawforge/preflight.mjs
+
   # Detect which heavy areas are touched so PRs can skip unrelated expensive jobs.
   # Push to main keeps broad coverage.
   changed-scope:
-    needs: [docs-scope]
+    needs: [docs-scope, clawforge-preflight]
     if: needs.docs-scope.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     outputs:
@@ -119,13 +152,24 @@ jobs:
             run_node=true
           fi
 
+          # ClawForge risk-tier overrides (force-on only).
+          if [ "${{ needs.clawforge-preflight.outputs.force_run_node }}" = "true" ]; then
+            run_node=true
+          fi
+          if [ "${{ needs.clawforge-preflight.outputs.force_run_macos }}" = "true" ]; then
+            run_macos=true
+          fi
+          if [ "${{ needs.clawforge-preflight.outputs.force_run_android }}" = "true" ]; then
+            run_android=true
+          fi
+
           echo "run_node=${run_node}" >> "$GITHUB_OUTPUT"
           echo "run_macos=${run_macos}" >> "$GITHUB_OUTPUT"
           echo "run_android=${run_android}" >> "$GITHUB_OUTPUT"
 
   # Build dist once for Node-relevant changes and share it with downstream jobs.
   build-artifacts:
-    needs: [docs-scope, changed-scope, check]
+    needs: [docs-scope, clawforge-preflight, changed-scope, check]
     if: needs.docs-scope.outputs.docs_only != 'true' && (github.event_name == 'push' || needs.changed-scope.outputs.run_node == 'true')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
@@ -175,7 +219,7 @@ jobs:
         run: pnpm release:check
 
   checks:
-    needs: [docs-scope, changed-scope, check]
+    needs: [docs-scope, clawforge-preflight, changed-scope, check]
     if: needs.docs-scope.outputs.docs_only != 'true' && (github.event_name == 'push' || needs.changed-scope.outputs.run_node == 'true')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     strategy:
@@ -222,10 +266,95 @@ jobs:
             ${{ env.OPENCLAW_VITEST_REPORT_DIR }}
             ${{ runner.temp }}/vitest-slowest.md
 
+  ui-evidence:
+    needs: [docs-scope, clawforge-preflight, changed-scope, check]
+    if: >
+      needs.docs-scope.outputs.docs_only != 'true' &&
+      needs.clawforge-preflight.outputs.require_ui_evidence == 'true' &&
+      (github.event_name == 'push' || needs.changed-scope.outputs.run_node == 'true')
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Setup Node environment
+        uses: ./.github/actions/setup-node-env
+
+      - name: Install Playwright Chromium (ui)
+        run: pnpm --dir ui exec playwright install chromium
+
+      - name: Run UI browser tests
+        id: ui_tests
+        continue-on-error: true
+        run: pnpm test:ui
+
+      - name: Write UI evidence manifest
+        if: always()
+        env:
+          RISK_TIER: ${{ needs.clawforge-preflight.outputs.risk_tier }}
+          UI_TESTS_OUTCOME: ${{ steps.ui_tests.outcome }}
+        run: |
+          node --input-type=module - <<'NODE'
+          import fs from "node:fs";
+          import path from "node:path";
+
+          const eventName = String(process.env.GITHUB_EVENT_NAME || "").trim();
+          const eventPath = String(process.env.GITHUB_EVENT_PATH || "").trim();
+          const riskTier = String(process.env.RISK_TIER || "").trim();
+          const outcome = String(process.env.UI_TESTS_OUTCOME || "").trim();
+          const ok = outcome === "success";
+
+          let headSha = "";
+          let baseSha = "";
+          try {
+            const event = JSON.parse(fs.readFileSync(eventPath, "utf8"));
+            if (eventName === "pull_request") {
+              headSha = String(event?.pull_request?.head?.sha || "");
+              baseSha = String(event?.pull_request?.base?.sha || "");
+            } else if (eventName === "push") {
+              headSha = String(process.env.GITHUB_SHA || "");
+              baseSha = String(event?.before || "");
+            }
+          } catch {
+            // Best-effort; keep file valid even if parsing fails.
+          }
+
+          const payload = {
+            kind: "clawforge-ui-evidence",
+            headSha,
+            baseSha,
+            riskTier,
+            workflow: String(process.env.GITHUB_WORKFLOW || ""),
+            runId: String(process.env.GITHUB_RUN_ID || ""),
+            runAttempt: String(process.env.GITHUB_RUN_ATTEMPT || ""),
+            command: "pnpm test:ui",
+            ok,
+            recordedAt: new Date().toISOString(),
+          };
+
+          const outPath = path.resolve("ui-evidence.json");
+          fs.writeFileSync(outPath, JSON.stringify(payload, null, 2) + "\n", "utf8");
+          console.log(`Wrote ${outPath}`);
+          NODE
+
+      - name: Upload UI evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-evidence
+          path: |
+            ui-evidence.json
+
+      - name: Fail if UI tests failed
+        if: steps.ui_tests.outcome != 'success'
+        run: exit 1
+
   # Types, lint, and format check.
   check:
     name: "check"
-    needs: [docs-scope]
+    needs: [docs-scope, clawforge-preflight]
     if: needs.docs-scope.outputs.docs_only != 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
@@ -283,7 +412,7 @@ jobs:
           fi
 
   checks-windows:
-    needs: [docs-scope, changed-scope, build-artifacts, check]
+    needs: [docs-scope, clawforge-preflight, changed-scope, build-artifacts, check]
     if: needs.docs-scope.outputs.docs_only != 'true' && (github.event_name == 'push' || needs.changed-scope.outputs.run_node == 'true')
     runs-on: blacksmith-4vcpu-windows-2025
     env:
@@ -410,7 +539,7 @@ jobs:
   # running 4 separate jobs per PR (as before) starved the queue. One job
   # per PR allows 5 PRs to run macOS checks simultaneously.
   macos:
-    needs: [docs-scope, changed-scope, check]
+    needs: [docs-scope, clawforge-preflight, changed-scope, check]
     if: github.event_name == 'pull_request' && needs.docs-scope.outputs.docs_only != 'true' && needs.changed-scope.outputs.run_macos == 'true'
     runs-on: macos-latest
     steps:
@@ -643,7 +772,7 @@ jobs:
           PY
 
   android:
-    needs: [docs-scope, changed-scope, check]
+    needs: [docs-scope, clawforge-preflight, changed-scope, check]
     if: needs.docs-scope.outputs.docs_only != 'true' && (github.event_name == 'push' || needs.changed-scope.outputs.run_android == 'true')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     strategy:
