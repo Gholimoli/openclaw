@@ -1,5 +1,6 @@
+import type { Node as TsNode, SourceFile as TsSourceFile } from "typescript";
+import { createRequire } from "node:module";
 import path from "node:path";
-import ts from "typescript";
 
 export const PROMPT_ALLOWLIST = new Set([
   "src/agents/system-prompt.ts",
@@ -8,6 +9,24 @@ export const PROMPT_ALLOWLIST = new Set([
   "src/gateway/agent-prompt.ts",
   "src/wizard/prompts.ts",
 ]);
+
+type TypeScriptModule = typeof import("typescript");
+
+const requireForPolicy = createRequire(import.meta.url);
+let cachedTypeScript: TypeScriptModule | undefined;
+
+function getTypeScript(): TypeScriptModule | undefined {
+  if (cachedTypeScript) {
+    return cachedTypeScript;
+  }
+  try {
+    cachedTypeScript = requireForPolicy("typescript") as TypeScriptModule;
+    return cachedTypeScript;
+  } catch {
+    // Treat parsing capability as unavailable (safe default: deny structural edits).
+    return undefined;
+  }
+}
 
 const DASHBOARD_ALLOW_PREFIXES = [
   "ui/",
@@ -114,11 +133,12 @@ export function evaluateCandidatePaths(
 }
 
 function collectLiteralContentRanges(
-  sourceFile: ts.SourceFile,
+  ts: TypeScriptModule,
+  sourceFile: TsSourceFile,
 ): Array<{ start: number; end: number }> {
   const ranges: Array<{ start: number; end: number }> = [];
 
-  const visit = (node: ts.Node) => {
+  const visit = (node: TsNode) => {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
       const start = node.getStart(sourceFile);
       const end = node.getEnd();
@@ -152,11 +172,16 @@ function stripLiteralContents(text: string, ranges: Array<{ start: number; end: 
 }
 
 export function isStringLiteralOnlyChange(params: { before: string; after: string }): boolean {
+  const ts = getTypeScript();
+  if (!ts) {
+    return false;
+  }
+
   const beforeFile = ts.createSourceFile("before.ts", params.before, ts.ScriptTarget.Latest, true);
   const afterFile = ts.createSourceFile("after.ts", params.after, ts.ScriptTarget.Latest, true);
 
-  const beforeRanges = collectLiteralContentRanges(beforeFile);
-  const afterRanges = collectLiteralContentRanges(afterFile);
+  const beforeRanges = collectLiteralContentRanges(ts, beforeFile);
+  const afterRanges = collectLiteralContentRanges(ts, afterFile);
 
   const beforeSkeleton = stripLiteralContents(params.before, beforeRanges);
   const afterSkeleton = stripLiteralContents(params.after, afterRanges);
