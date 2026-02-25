@@ -87,6 +87,31 @@ Your laptop and phone are typically:
 - operator clients (Control UI, CLI), and/or
 - nodes (camera/canvas/screen/system.run) that the Gateway can call into.
 
+## Production updates and rollback (VPS)
+
+For reliable VPS releases, use a release-directory + symlink promotion model:
+
+- Keep the source checkout at a stable path (for example `/home/openclaw/openclaw`).
+- Build each candidate in a dedicated release directory (for example `/home/openclaw/deploy/openclaw/releases/<sha>`).
+- Point the live deployment symlink (for example `/home/openclaw/openclaw-current`) at the currently active release.
+- Store the last known good SHA in a state file (for example `/home/openclaw/deploy/openclaw/last-known-good.sha`).
+
+Recommended promotion flow:
+
+1. Fetch the new commit and build in `releases/<sha>`.
+2. Run a real gateway boot preflight against the candidate release (not only `--version`), using a temporary config and loopback test port.
+3. Switch `openclaw-current` to the new release and restart the gateway service.
+4. Run a health probe (`openclaw channels status --probe`).
+5. Enforce a short stability window (for example 30-60 seconds) and verify the service restart count does not increase.
+6. Only then update `last-known-good.sha`.
+
+Recommended rollback flow:
+
+1. Pause auto-update timer/service to prevent immediate re-promotion of a bad SHA.
+2. Repoint `openclaw-current` to the SHA in `last-known-good.sha`.
+3. Restart the gateway service and rerun health probes.
+4. Resume the auto-update timer only after the fix is deployed and verified.
+
 ## The control plane is one WebSocket protocol
 
 OpenClaw uses a single WebSocket protocol for:
