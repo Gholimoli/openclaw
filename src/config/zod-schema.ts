@@ -93,6 +93,107 @@ const MemorySchema = z
   .strict()
   .optional();
 
+const EvolutionSourceIncludeSchema = z.union([
+  z.literal("releases"),
+  z.literal("commits"),
+  z.literal("issues"),
+  z.literal("prs"),
+]);
+
+const EvolutionSourceSpecSchema = z
+  .object({
+    id: z.string().min(1),
+    kind: z.union([z.literal("github_repo"), z.literal("manual_url")]),
+    enabled: z.boolean().optional(),
+    url: z.string().optional(),
+    githubOwner: z.string().optional(),
+    githubRepo: z.string().optional(),
+    include: z.array(EvolutionSourceIncludeSchema).optional(),
+    tags: z.array(z.string()).optional(),
+    reliabilityTier: z.union([z.literal("high"), z.literal("medium"), z.literal("low")]).optional(),
+  })
+  .strict()
+  .superRefine((source, ctx) => {
+    if (source.kind === "manual_url" && !source.url?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "manual_url sources require url",
+        path: ["url"],
+      });
+    }
+    if (source.kind === "github_repo") {
+      if (!source.githubOwner?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "github_repo sources require githubOwner",
+          path: ["githubOwner"],
+        });
+      }
+      if (!source.githubRepo?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "github_repo sources require githubRepo",
+          path: ["githubRepo"],
+        });
+      }
+    }
+  });
+
+const EvolutionSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    objective: z
+      .union([z.literal("reliability_quality"), z.literal("speed"), z.literal("cost")])
+      .optional(),
+    cadence: z
+      .object({
+        scout: z.literal("hourly").optional(),
+        synth: z.literal("daily").optional(),
+      })
+      .strict()
+      .optional(),
+    autonomy: z
+      .object({
+        mode: z.union([z.literal("merge-low-risk"), z.literal("review-only")]).optional(),
+        mergeScope: z
+          .array(z.union([z.literal("docs"), z.literal("prompts"), z.literal("dashboard")]))
+          .optional(),
+      })
+      .strict()
+      .optional(),
+    discovery: z
+      .object({
+        mode: z.union([z.literal("curated"), z.literal("open"), z.literal("fixed")]).optional(),
+        nominations: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+    sources: z
+      .object({
+        allowlist: z.array(EvolutionSourceSpecSchema).optional(),
+      })
+      .strict()
+      .optional(),
+    x: z
+      .object({
+        mode: z.literal("api-first-hybrid").optional(),
+        browserFallback: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+    execution: z
+      .object({
+        workTarget: z.literal("state-mirror-repo").optional(),
+        mergePath: z.literal("local-squash").optional(),
+        maxConsecutiveFailures: z.number().int().positive().optional(),
+        maxFailuresPer24h: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .optional();
+
 export const OpenClawSchema = z
   .object({
     $schema: z.string().optional(),
@@ -299,6 +400,7 @@ export const OpenClawSchema = z
       })
       .strict()
       .optional(),
+    evolution: EvolutionSchema,
     hooks: z
       .object({
         enabled: z.boolean().optional(),

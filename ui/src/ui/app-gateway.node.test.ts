@@ -79,6 +79,13 @@ function createHost() {
     refreshSessionsAfterChat: new Set<string>(),
     execApprovalQueue: [],
     execApprovalError: null,
+    evolutionStatus: null,
+    evolutionProposals: [],
+    evolutionError: null,
+    officeAgents: [],
+    officeLayout: null,
+    officeActivity: [],
+    officeError: null,
   } as unknown as Parameters<typeof connectGateway>[0];
 }
 
@@ -142,5 +149,61 @@ describe("connectGateway", () => {
 
     secondClient.emitClose(1005);
     expect(host.lastError).toBe("disconnected (1005): no reason");
+  });
+
+  it("applies office and evolution stream updates", () => {
+    const host = createHost();
+
+    connectGateway(host);
+    const client = gatewayClientInstances[0];
+    expect(client).toBeDefined();
+
+    client.emitEvent({
+      event: "office",
+      payload: {
+        kind: "agent.delta",
+        agent: {
+          id: "main",
+          label: "Main",
+          state: "typing",
+          lastUpdateMs: Date.now(),
+          x: 4,
+          y: 5,
+        },
+      },
+    });
+    expect(host.officeAgents).toHaveLength(1);
+    expect(host.officeAgents[0]?.id).toBe("main");
+
+    client.emitEvent({
+      event: "evolution",
+      payload: {
+        kind: "proposal.updated",
+        proposal: {
+          id: "p1",
+          createdAtMs: Date.now(),
+          updatedAtMs: Date.now(),
+          title: "Improve docs",
+          summary: "Update docs",
+          insightIds: [],
+          sourceIds: [],
+          candidatePaths: ["docs/a.md"],
+          score: {
+            reliabilityImpact: 90,
+            qualityImpact: 85,
+            implementationRisk: 10,
+            effort: 10,
+            sourceConfidence: 90,
+            fitWithOpenClawArchitecture: 88,
+            total: 85,
+          },
+          class: "auto_merge_low_risk",
+          status: "pending",
+        },
+      },
+    });
+
+    expect(host.evolutionProposals).toHaveLength(1);
+    expect(host.evolutionProposals[0]?.id).toBe("p1");
   });
 });

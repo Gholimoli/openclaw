@@ -91,6 +91,27 @@ import {
   CronStatusParamsSchema,
   type CronUpdateParams,
   CronUpdateParamsSchema,
+  type EvolutionInsight,
+  EvolutionInsightsListParamsSchema,
+  type EvolutionInsightsListParams,
+  type EvolutionInsightsListResult,
+  type EvolutionProposal,
+  EvolutionProposalsActParamsSchema,
+  type EvolutionProposalsActParams,
+  type EvolutionProposalsActResult,
+  EvolutionProposalsListParamsSchema,
+  type EvolutionProposalsListParams,
+  type EvolutionProposalsListResult,
+  type EvolutionSource,
+  type EvolutionSourceSpec,
+  EvolutionSourcesListParamsSchema,
+  type EvolutionSourcesListParams,
+  type EvolutionSourcesListResult,
+  EvolutionSourcesUpsertParamsSchema,
+  type EvolutionSourcesUpsertParams,
+  EvolutionStatusParamsSchema,
+  type EvolutionStatusParams,
+  type EvolutionStatus,
   type DevicePairApproveParams,
   DevicePairApproveParamsSchema,
   type DevicePairListParams,
@@ -131,6 +152,13 @@ import {
   LogsTailParamsSchema,
   type LogsTailResult,
   LogsTailResultSchema,
+  OfficeLayoutGetParamsSchema,
+  type OfficeLayoutGetParams,
+  OfficeLayoutSetParamsSchema,
+  type OfficeLayoutSetParams,
+  type OfficeSnapshot,
+  OfficeSnapshotParamsSchema,
+  type OfficeSnapshotParams,
   type ModelsListParams,
   ModelsListParamsSchema,
   type NodeDescribeParams,
@@ -327,6 +355,33 @@ export const validateCronUpdateParams = ajv.compile<CronUpdateParams>(CronUpdate
 export const validateCronRemoveParams = ajv.compile<CronRemoveParams>(CronRemoveParamsSchema);
 export const validateCronRunParams = ajv.compile<CronRunParams>(CronRunParamsSchema);
 export const validateCronRunsParams = ajv.compile<CronRunsParams>(CronRunsParamsSchema);
+export const validateEvolutionStatusParams = ajv.compile<EvolutionStatusParams>(
+  EvolutionStatusParamsSchema,
+);
+export const validateEvolutionSourcesListParams = ajv.compile<EvolutionSourcesListParams>(
+  EvolutionSourcesListParamsSchema,
+);
+export const validateEvolutionSourcesUpsertParams = ajv.compile<EvolutionSourcesUpsertParams>(
+  EvolutionSourcesUpsertParamsSchema,
+);
+export const validateEvolutionInsightsListParams = ajv.compile<EvolutionInsightsListParams>(
+  EvolutionInsightsListParamsSchema,
+);
+export const validateEvolutionProposalsListParams = ajv.compile<EvolutionProposalsListParams>(
+  EvolutionProposalsListParamsSchema,
+);
+export const validateEvolutionProposalsActParams = ajv.compile<EvolutionProposalsActParams>(
+  EvolutionProposalsActParamsSchema,
+);
+export const validateOfficeSnapshotParams = ajv.compile<OfficeSnapshotParams>(
+  OfficeSnapshotParamsSchema,
+);
+export const validateOfficeLayoutGetParams = ajv.compile<OfficeLayoutGetParams>(
+  OfficeLayoutGetParamsSchema,
+);
+export const validateOfficeLayoutSetParams = ajv.compile<OfficeLayoutSetParams>(
+  OfficeLayoutSetParamsSchema,
+);
 export const validateDevicePairListParams = ajv.compile<DevicePairListParams>(
   DevicePairListParamsSchema,
 );
@@ -492,6 +547,15 @@ export {
   CronRemoveParamsSchema,
   CronRunParamsSchema,
   CronRunsParamsSchema,
+  EvolutionStatusParamsSchema,
+  EvolutionSourcesListParamsSchema,
+  EvolutionSourcesUpsertParamsSchema,
+  EvolutionInsightsListParamsSchema,
+  EvolutionProposalsListParamsSchema,
+  EvolutionProposalsActParamsSchema,
+  OfficeSnapshotParamsSchema,
+  OfficeLayoutGetParamsSchema,
+  OfficeLayoutSetParamsSchema,
   LogsTailParamsSchema,
   LogsTailResultSchema,
   ChatHistoryParamsSchema,
@@ -598,6 +662,25 @@ export type {
   CronRunParams,
   CronRunsParams,
   CronRunLogEntry,
+  EvolutionSourceSpec,
+  EvolutionSource,
+  EvolutionInsight,
+  EvolutionProposal,
+  EvolutionStatusParams,
+  EvolutionStatus,
+  EvolutionSourcesListParams,
+  EvolutionSourcesListResult,
+  EvolutionSourcesUpsertParams,
+  EvolutionInsightsListParams,
+  EvolutionInsightsListResult,
+  EvolutionProposalsListParams,
+  EvolutionProposalsListResult,
+  EvolutionProposalsActParams,
+  EvolutionProposalsActResult,
+  OfficeSnapshotParams,
+  OfficeSnapshot,
+  OfficeLayoutGetParams,
+  OfficeLayoutSetParams,
   ExecApprovalsGetParams,
   ExecApprovalsSetParams,
   ExecApprovalsSnapshot,

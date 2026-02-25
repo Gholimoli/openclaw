@@ -253,6 +253,57 @@ When validation fails:
 
   </Accordion>
 
+  <Accordion title="Enable evolution loop and Office tab">
+    Turn on the reliability-first self-improvement loop and keep auto-merge scope narrow:
+
+    ```json5
+    {
+      evolution: {
+        enabled: true,
+        objective: "reliability_quality",
+        cadence: { scout: "hourly", synth: "daily" },
+        autonomy: {
+          mode: "merge-low-risk",
+          mergeScope: ["docs", "prompts", "dashboard"],
+        },
+        discovery: { mode: "curated", nominations: true },
+        sources: {
+          allowlist: [
+            {
+              id: "openclaw-repo",
+              kind: "github_repo",
+              githubOwner: "openclaw",
+              githubRepo: "openclaw",
+              include: ["releases", "commits", "issues", "prs"],
+              reliabilityTier: "high",
+            },
+            {
+              id: "manual-insight",
+              kind: "manual_url",
+              url: "https://example.com/post",
+              reliabilityTier: "medium",
+            },
+          ],
+        },
+        execution: {
+          workTarget: "state-mirror-repo",
+          mergePath: "local-squash",
+          maxConsecutiveFailures: 3,
+          maxFailuresPer24h: 5,
+        },
+      },
+    }
+    ```
+
+    Notes:
+
+    - `evolution.enabled` defaults to `false` (opt-in).
+    - Auto-merge is restricted to low-risk proposals and allowlisted paths.
+    - Evolution/Office controls and activity are available in the Control UI Office tab.
+    - API access is available through `evolution.*` and `office.*` gateway methods.
+
+  </Accordion>
+
   <Accordion title="Set up webhooks (hooks)">
     Enable HTTP webhook endpoints on the Gateway:
 

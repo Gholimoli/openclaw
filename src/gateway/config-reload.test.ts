@@ -108,6 +108,12 @@ describe("buildGatewayReloadPlan", () => {
     expect(plan.noopPaths).toContain("gateway.remote.url");
   });
 
+  it("restarts evolution service on evolution config changes", () => {
+    const plan = buildGatewayReloadPlan(["evolution.enabled"]);
+    expect(plan.restartGateway).toBe(false);
+    expect(plan.restartEvolution).toBe(true);
+  });
+
   it("defaults unknown paths to restart", () => {
     const plan = buildGatewayReloadPlan(["unknownField"]);
     expect(plan.restartGateway).toBe(true);

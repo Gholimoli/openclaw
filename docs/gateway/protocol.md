@@ -175,6 +175,39 @@ The Gateway treats these as **claims** and enforces server-side allowlists.
 - When an exec request needs approval, the gateway broadcasts `exec.approval.requested`.
 - Operator clients resolve by calling `exec.approval.resolve` (requires `operator.approvals` scope).
 
+## Evolution and Office methods/events
+
+Evolution and Office are additive protocol surfaces on version `3`.
+
+### Read scope methods (`operator.read`)
+
+- `evolution.status`
+- `evolution.sources.list`
+- `evolution.insights.list`
+- `evolution.proposals.list`
+- `office.snapshot`
+- `office.layout.get`
+
+### Admin methods (`operator.admin`)
+
+- `evolution.sources.upsert`
+- `evolution.proposals.act` (`approve`, `reject`, `execute`, `pause`)
+- `office.layout.set`
+
+### Events
+
+- `evolution`
+  - `run.started`
+  - `run.finished`
+  - `proposal.updated`
+  - `paused.changed`
+  - `report.published`
+- `office`
+  - `agent.delta`
+  - `alert.pin`
+  - `layout.updated`
+  - `activity.append`
+
 ## Versioning
 
 - `PROTOCOL_VERSION` lives in `src/gateway/protocol/schema.ts`.

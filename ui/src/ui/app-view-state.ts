@@ -30,6 +30,11 @@ import type {
   SessionsListResult,
   SkillStatusReport,
   StatusSummary,
+  EvolutionProposal,
+  EvolutionStatus,
+  OfficeActivityEntry,
+  OfficeAgentState,
+  OfficeLayout,
 } from "./types.ts";
 import type { ChatAttachment, ChatQueueItem, CronFormState } from "./ui-types.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
@@ -190,6 +195,20 @@ export type AppViewState = {
   cronRunsJobId: string | null;
   cronRuns: CronRunLogEntry[];
   cronBusy: boolean;
+  evolutionLoading: boolean;
+  evolutionError: string | null;
+  evolutionStatus: EvolutionStatus | null;
+  evolutionProposals: EvolutionProposal[];
+  officeLoading: boolean;
+  officeSavingLayout: boolean;
+  officeError: string | null;
+  officeAgents: OfficeAgentState[];
+  officeLayout: OfficeLayout | null;
+  officeActivity: OfficeActivityEntry[];
+  officeFilterAgent: string;
+  officeFilterSource: string;
+  officeFilterProposal: string;
+  officeFilterRunClass: "all" | "auto_merge_low_risk" | "needs_review" | "reject_archive";
   skillsLoading: boolean;
   skillsReport: SkillStatusReport | null;
   skillsError: string | null;
@@ -228,6 +247,15 @@ export type AppViewState = {
   loadOverview: () => Promise<void>;
   loadAssistantIdentity: () => Promise<void>;
   loadCron: () => Promise<void>;
+  loadEvolution: () => Promise<void>;
+  loadOfficeSnapshot: (opts?: { quiet?: boolean }) => Promise<void>;
+  toggleEvolutionPause: () => Promise<void>;
+  actEvolutionProposal: (
+    proposalId: string,
+    action: "approve" | "reject" | "execute",
+  ) => Promise<void>;
+  moveOfficeAgent: (agentId: string, x: number, y: number) => void;
+  saveOfficeLayout: () => Promise<void>;
   handleWhatsAppStart: (force: boolean) => Promise<void>;
   handleWhatsAppWait: () => Promise<void>;
   handleWhatsAppLogout: () => Promise<void>;

@@ -43,6 +43,14 @@ describe("control UI routing", () => {
     expect(window.location.pathname).toBe("/sessions");
   });
 
+  it("hydrates office route from the location", async () => {
+    const app = mountApp("/office");
+    await app.updateComplete;
+
+    expect(app.tab).toBe("office");
+    expect(window.location.pathname).toBe("/office");
+  });
+
   it("respects /ui base paths", async () => {
     const app = mountApp("/ui/cron");
     await app.updateComplete;

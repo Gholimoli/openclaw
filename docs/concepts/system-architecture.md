@@ -32,6 +32,8 @@ Related deep dives:
 - **Operator client**: CLI, Control UI, macOS app, or automation connecting with `role: operator`. See [Gateway protocol](/gateway/protocol).
 - **Node**: a companion device that connects with `role: node` and exposes commands like `canvas.*`, `camera.*`, `system.run`. See [Nodes](/nodes).
 - **Control UI**: the built-in browser UI served by the Gateway at `/` (default port `18789`). See [Control UI](/web/control-ui).
+- **Evolution loop**: an opt-in reliability-first automation service that scouts curated sources, synthesizes proposals, applies low-risk changes, and writes audit/state artifacts.
+- **Office tab**: a Control UI view that visualizes active agent/run state, blocked approvals, and evolution activity in near real time.
 - **VidClaw**: a separate self-hosted dashboard that runs next to the Gateway (default `127.0.0.1:3333`). See [VidClaw](/tools/vidclaw).
 
 ## High level component map
@@ -93,6 +95,36 @@ OpenClaw uses a single WebSocket protocol for:
 - node transport (node capabilities and `node.invoke`)
 
 All clients start by sending a `connect` request, declaring their role, and authenticating. See [Gateway protocol](/gateway/protocol).
+
+## Evolution loop service
+
+The Gateway can run an internal Evolution service when `evolution.enabled` is set to `true`.
+
+It follows a deterministic four-stage loop:
+
+- Scout: hourly source fetch from curated allowlist sources.
+- Synthesize: daily proposal generation, scoring, and ranking.
+- Execute: guarded patch execution with strict path policy and local squash workflow.
+- Report: status/report events to operator clients and the Control UI.
+
+State and audit artifacts are stored under the gateway state directory in an `evolution/` subtree, including:
+
+- source/cursor state
+- insights, proposals, runs, and audit JSONL logs
+- office layout/activity state
+- mirror repository workspace for safe execution
+
+## Reliability first execution boundaries
+
+Evolution auto-merge is intentionally narrow and safety-first:
+
+- Only low-risk proposals are auto-executed.
+- Auto-merge scope is constrained to docs, prompt literals, and dashboard/control-ui files.
+- Prompt edits must be string-literal-only changes in allowlisted prompt files.
+- Changes outside policy (runtime/auth/sandbox/release/publish sensitive paths) are rejected for auto-merge.
+- Failure bursts trigger automatic pause, and operator actions can pause/resume at any time.
+
+See [Configuration](/gateway/configuration), [Gateway protocol](/gateway/protocol), and [Control UI](/web/control-ui) for runtime controls and UI surfaces.
 
 ### Why this matters
 

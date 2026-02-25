@@ -564,3 +564,133 @@ export type LogEntry = {
   message?: string | null;
   meta?: Record<string, unknown> | null;
 };
+
+export type EvolutionSource = {
+  id: string;
+  kind: "github_repo" | "manual_url";
+  enabled: boolean;
+  url?: string;
+  githubOwner?: string;
+  githubRepo?: string;
+  include: Array<"releases" | "commits" | "issues" | "prs">;
+  tags: string[];
+  reliabilityTier: "high" | "medium" | "low";
+  createdAtMs: number;
+  updatedAtMs: number;
+};
+
+export type EvolutionInsight = {
+  id: string;
+  sourceId: string;
+  fetchedAt: string;
+  url: string;
+  author?: string;
+  publishedAt?: string;
+  contentHash: string;
+  evidenceText: string;
+  confidence: number;
+  tags: string[];
+};
+
+export type EvolutionProposalScore = {
+  reliabilityImpact: number;
+  qualityImpact: number;
+  implementationRisk: number;
+  effort: number;
+  sourceConfidence: number;
+  fitWithOpenClawArchitecture: number;
+  total: number;
+};
+
+export type EvolutionPatchOperation =
+  | { type: "replace_text"; path: string; find: string; replace: string }
+  | { type: "write_file"; path: string; content: string };
+
+export type EvolutionProposal = {
+  id: string;
+  createdAtMs: number;
+  updatedAtMs: number;
+  title: string;
+  summary: string;
+  insightIds: string[];
+  sourceIds: string[];
+  candidatePaths: string[];
+  score: EvolutionProposalScore;
+  class: "auto_merge_low_risk" | "needs_review" | "reject_archive";
+  status: "pending" | "approved" | "rejected" | "executing" | "executed" | "failed" | "archived";
+  reason?: string;
+  patchOps?: EvolutionPatchOperation[];
+  lastExecution?: {
+    atMs: number;
+    ok: boolean;
+    commitSha?: string;
+    message?: string;
+  };
+};
+
+export type EvolutionStatus = {
+  enabled: boolean;
+  running: boolean;
+  paused: boolean;
+  objective: "reliability_quality" | "speed" | "cost";
+  scoutEveryMs: number;
+  synthEveryMs: number;
+  nextScoutAtMs: number | null;
+  nextSynthAtMs: number | null;
+  lastScoutAtMs: number | null;
+  lastSynthAtMs: number | null;
+  counts: {
+    sources: number;
+    insights: number;
+    proposals: number;
+    pending: number;
+    autoMergeCandidates: number;
+  };
+};
+
+export type OfficeAgentState = {
+  id: string;
+  label: string;
+  state:
+    | "idle"
+    | "walking"
+    | "reading"
+    | "typing"
+    | "running-command"
+    | "waiting-input"
+    | "approval-blocked"
+    | "failed";
+  lastUpdateMs: number;
+  runId?: string;
+  details?: string;
+  blocked?: boolean;
+  failed?: boolean;
+  x: number;
+  y: number;
+};
+
+export type OfficeLayout = {
+  version: 1;
+  tileSize: number;
+  width: number;
+  height: number;
+  placements: Record<string, { x: number; y: number }>;
+};
+
+export type OfficeActivityEntry = {
+  id: string;
+  ts: number;
+  kind: string;
+  label: string;
+  details?: string;
+  agentId?: string;
+  proposalId?: string;
+  sourceId?: string;
+  runId?: string;
+};
+
+export type OfficeSnapshot = {
+  agents: OfficeAgentState[];
+  layout: OfficeLayout;
+  activity: OfficeActivityEntry[];
+};

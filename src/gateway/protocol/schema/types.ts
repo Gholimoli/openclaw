@@ -71,6 +71,23 @@ import type {
   DeviceTokenRotateParamsSchema,
 } from "./devices.js";
 import type {
+  EvolutionInsightSchema,
+  EvolutionInsightsListParamsSchema,
+  EvolutionInsightsListResultSchema,
+  EvolutionProposalSchema,
+  EvolutionProposalsActParamsSchema,
+  EvolutionProposalsActResultSchema,
+  EvolutionProposalsListParamsSchema,
+  EvolutionProposalsListResultSchema,
+  EvolutionSourceSchema,
+  EvolutionSourceSpecSchema,
+  EvolutionSourcesListParamsSchema,
+  EvolutionSourcesListResultSchema,
+  EvolutionSourcesUpsertParamsSchema,
+  EvolutionStatusParamsSchema,
+  EvolutionStatusSchema,
+} from "./evolution.js";
+import type {
   ExecApprovalListItemSchema,
   ExecApprovalListParamsSchema,
   ExecApprovalListRequestSchema,
@@ -114,6 +131,15 @@ import type {
   NodePairVerifyParamsSchema,
   NodeRenameParamsSchema,
 } from "./nodes.js";
+import type {
+  OfficeActivityEntrySchema,
+  OfficeAgentStateSchema,
+  OfficeLayoutGetParamsSchema,
+  OfficeLayoutSchema,
+  OfficeLayoutSetParamsSchema,
+  OfficeSnapshotParamsSchema,
+  OfficeSnapshotSchema,
+} from "./office.js";
 import type {
   SessionsCompactParamsSchema,
   SessionsDeleteParamsSchema,
@@ -226,6 +252,28 @@ export type CronRemoveParams = Static<typeof CronRemoveParamsSchema>;
 export type CronRunParams = Static<typeof CronRunParamsSchema>;
 export type CronRunsParams = Static<typeof CronRunsParamsSchema>;
 export type CronRunLogEntry = Static<typeof CronRunLogEntrySchema>;
+export type EvolutionSourceSpec = Static<typeof EvolutionSourceSpecSchema>;
+export type EvolutionSource = Static<typeof EvolutionSourceSchema>;
+export type EvolutionInsight = Static<typeof EvolutionInsightSchema>;
+export type EvolutionProposal = Static<typeof EvolutionProposalSchema>;
+export type EvolutionStatusParams = Static<typeof EvolutionStatusParamsSchema>;
+export type EvolutionStatus = Static<typeof EvolutionStatusSchema>;
+export type EvolutionSourcesListParams = Static<typeof EvolutionSourcesListParamsSchema>;
+export type EvolutionSourcesListResult = Static<typeof EvolutionSourcesListResultSchema>;
+export type EvolutionSourcesUpsertParams = Static<typeof EvolutionSourcesUpsertParamsSchema>;
+export type EvolutionInsightsListParams = Static<typeof EvolutionInsightsListParamsSchema>;
+export type EvolutionInsightsListResult = Static<typeof EvolutionInsightsListResultSchema>;
+export type EvolutionProposalsListParams = Static<typeof EvolutionProposalsListParamsSchema>;
+export type EvolutionProposalsListResult = Static<typeof EvolutionProposalsListResultSchema>;
+export type EvolutionProposalsActParams = Static<typeof EvolutionProposalsActParamsSchema>;
+export type EvolutionProposalsActResult = Static<typeof EvolutionProposalsActResultSchema>;
+export type OfficeAgentState = Static<typeof OfficeAgentStateSchema>;
+export type OfficeActivityEntry = Static<typeof OfficeActivityEntrySchema>;
+export type OfficeLayout = Static<typeof OfficeLayoutSchema>;
+export type OfficeSnapshotParams = Static<typeof OfficeSnapshotParamsSchema>;
+export type OfficeLayoutGetParams = Static<typeof OfficeLayoutGetParamsSchema>;
+export type OfficeLayoutSetParams = Static<typeof OfficeLayoutSetParamsSchema>;
+export type OfficeSnapshot = Static<typeof OfficeSnapshotSchema>;
 export type LogsTailParams = Static<typeof LogsTailParamsSchema>;
 export type LogsTailResult = Static<typeof LogsTailResultSchema>;
 export type ExecApprovalsGetParams = Static<typeof ExecApprovalsGetParamsSchema>;

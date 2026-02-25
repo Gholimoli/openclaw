@@ -3,7 +3,9 @@ import type { AgentsListResult } from "./types.ts";
 import { refreshChat } from "./app-chat.ts";
 import {
   startLogsPolling,
+  startOfficePolling,
   stopLogsPolling,
+  stopOfficePolling,
   startDebugPolling,
   stopDebugPolling,
 } from "./app-polling.ts";
@@ -16,9 +18,11 @@ import { loadConfig, loadConfigSchema } from "./controllers/config.ts";
 import { loadCronJobs, loadCronStatus } from "./controllers/cron.ts";
 import { loadDebug } from "./controllers/debug.ts";
 import { loadDevices } from "./controllers/devices.ts";
+import { loadEvolution } from "./controllers/evolution.ts";
 import { loadExecApprovals } from "./controllers/exec-approvals.ts";
 import { loadLogs } from "./controllers/logs.ts";
 import { loadNodes } from "./controllers/nodes.ts";
+import { loadOfficeSnapshot } from "./controllers/office.ts";
 import { loadPresence } from "./controllers/presence.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import { loadSkills } from "./controllers/skills.ts";
@@ -160,6 +164,11 @@ export function setTab(host: SettingsHost, next: Tab) {
   } else {
     stopDebugPolling(host as unknown as Parameters<typeof stopDebugPolling>[0]);
   }
+  if (next === "office") {
+    startOfficePolling(host as unknown as Parameters<typeof startOfficePolling>[0]);
+  } else {
+    stopOfficePolling(host as unknown as Parameters<typeof stopOfficePolling>[0]);
+  }
   void refreshActiveTab(host);
   syncUrlWithTab(host, next, false);
 }
@@ -239,6 +248,12 @@ export async function refreshActiveTab(host: SettingsHost) {
   if (host.tab === "debug") {
     await loadDebug(host as unknown as OpenClawApp);
     host.eventLog = host.eventLogBuffer;
+  }
+  if (host.tab === "office") {
+    await Promise.all([
+      loadEvolution(host as unknown as OpenClawApp),
+      loadOfficeSnapshot(host as unknown as OpenClawApp),
+    ]);
   }
   if (host.tab === "logs") {
     host.logsAtBottom = true;
@@ -358,6 +373,11 @@ export function setTabFromRoute(host: SettingsHost, next: Tab) {
     startDebugPolling(host as unknown as Parameters<typeof startDebugPolling>[0]);
   } else {
     stopDebugPolling(host as unknown as Parameters<typeof stopDebugPolling>[0]);
+  }
+  if (next === "office") {
+    startOfficePolling(host as unknown as Parameters<typeof startOfficePolling>[0]);
+  } else {
+    stopOfficePolling(host as unknown as Parameters<typeof stopOfficePolling>[0]);
   }
   if (host.connected) {
     void refreshActiveTab(host);

@@ -2264,6 +2264,560 @@ public struct CronRunLogEntry: Codable, Sendable {
     }
 }
 
+public struct EvolutionSourceSpec: Codable, Sendable {
+    public let id: String
+    public let kind: AnyCodable
+    public let enabled: Bool?
+    public let url: String?
+    public let githubowner: String?
+    public let githubrepo: String?
+    public let include: [AnyCodable]?
+    public let tags: [String]?
+    public let reliabilitytier: AnyCodable?
+
+    public init(
+        id: String,
+        kind: AnyCodable,
+        enabled: Bool?,
+        url: String?,
+        githubowner: String?,
+        githubrepo: String?,
+        include: [AnyCodable]?,
+        tags: [String]?,
+        reliabilitytier: AnyCodable?
+    ) {
+        self.id = id
+        self.kind = kind
+        self.enabled = enabled
+        self.url = url
+        self.githubowner = githubowner
+        self.githubrepo = githubrepo
+        self.include = include
+        self.tags = tags
+        self.reliabilitytier = reliabilitytier
+    }
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case enabled
+        case url
+        case githubowner = "githubOwner"
+        case githubrepo = "githubRepo"
+        case include
+        case tags
+        case reliabilitytier = "reliabilityTier"
+    }
+}
+
+public struct EvolutionSource: Codable, Sendable {
+    public let id: String
+    public let kind: AnyCodable
+    public let enabled: Bool
+    public let url: String?
+    public let githubowner: String?
+    public let githubrepo: String?
+    public let include: [AnyCodable]
+    public let tags: [String]
+    public let reliabilitytier: AnyCodable
+    public let createdatms: Int
+    public let updatedatms: Int
+
+    public init(
+        id: String,
+        kind: AnyCodable,
+        enabled: Bool,
+        url: String?,
+        githubowner: String?,
+        githubrepo: String?,
+        include: [AnyCodable],
+        tags: [String],
+        reliabilitytier: AnyCodable,
+        createdatms: Int,
+        updatedatms: Int
+    ) {
+        self.id = id
+        self.kind = kind
+        self.enabled = enabled
+        self.url = url
+        self.githubowner = githubowner
+        self.githubrepo = githubrepo
+        self.include = include
+        self.tags = tags
+        self.reliabilitytier = reliabilitytier
+        self.createdatms = createdatms
+        self.updatedatms = updatedatms
+    }
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case enabled
+        case url
+        case githubowner = "githubOwner"
+        case githubrepo = "githubRepo"
+        case include
+        case tags
+        case reliabilitytier = "reliabilityTier"
+        case createdatms = "createdAtMs"
+        case updatedatms = "updatedAtMs"
+    }
+}
+
+public struct EvolutionInsight: Codable, Sendable {
+    public let id: String
+    public let sourceid: String
+    public let fetchedat: String
+    public let url: String
+    public let author: String?
+    public let publishedat: String?
+    public let contenthash: String
+    public let evidencetext: String
+    public let confidence: Double
+    public let tags: [String]
+
+    public init(
+        id: String,
+        sourceid: String,
+        fetchedat: String,
+        url: String,
+        author: String?,
+        publishedat: String?,
+        contenthash: String,
+        evidencetext: String,
+        confidence: Double,
+        tags: [String]
+    ) {
+        self.id = id
+        self.sourceid = sourceid
+        self.fetchedat = fetchedat
+        self.url = url
+        self.author = author
+        self.publishedat = publishedat
+        self.contenthash = contenthash
+        self.evidencetext = evidencetext
+        self.confidence = confidence
+        self.tags = tags
+    }
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case sourceid = "sourceId"
+        case fetchedat = "fetchedAt"
+        case url
+        case author
+        case publishedat = "publishedAt"
+        case contenthash = "contentHash"
+        case evidencetext = "evidenceText"
+        case confidence
+        case tags
+    }
+}
+
+public struct EvolutionProposal: Codable, Sendable {
+    public let id: String
+    public let createdatms: Int
+    public let updatedatms: Int
+    public let title: String
+    public let summary: String
+    public let insightids: [String]
+    public let sourceids: [String]
+    public let candidatepaths: [String]
+    public let score: [String: AnyCodable]
+    public let _class: AnyCodable
+    public let status: AnyCodable
+    public let reason: String?
+    public let patchops: [AnyCodable]?
+    public let lastexecution: [String: AnyCodable]?
+
+    public init(
+        id: String,
+        createdatms: Int,
+        updatedatms: Int,
+        title: String,
+        summary: String,
+        insightids: [String],
+        sourceids: [String],
+        candidatepaths: [String],
+        score: [String: AnyCodable],
+        _class: AnyCodable,
+        status: AnyCodable,
+        reason: String?,
+        patchops: [AnyCodable]?,
+        lastexecution: [String: AnyCodable]?
+    ) {
+        self.id = id
+        self.createdatms = createdatms
+        self.updatedatms = updatedatms
+        self.title = title
+        self.summary = summary
+        self.insightids = insightids
+        self.sourceids = sourceids
+        self.candidatepaths = candidatepaths
+        self.score = score
+        self._class = _class
+        self.status = status
+        self.reason = reason
+        self.patchops = patchops
+        self.lastexecution = lastexecution
+    }
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case createdatms = "createdAtMs"
+        case updatedatms = "updatedAtMs"
+        case title
+        case summary
+        case insightids = "insightIds"
+        case sourceids = "sourceIds"
+        case candidatepaths = "candidatePaths"
+        case score
+        case _class = "class"
+        case status
+        case reason
+        case patchops = "patchOps"
+        case lastexecution = "lastExecution"
+    }
+}
+
+public struct EvolutionStatusParams: Codable, Sendable {
+}
+
+public struct EvolutionStatus: Codable, Sendable {
+    public let enabled: Bool
+    public let running: Bool
+    public let paused: Bool
+    public let objective: AnyCodable
+    public let scouteveryms: Int
+    public let syntheveryms: Int
+    public let nextscoutatms: AnyCodable
+    public let nextsynthatms: AnyCodable
+    public let lastscoutatms: AnyCodable
+    public let lastsynthatms: AnyCodable
+    public let counts: [String: AnyCodable]
+
+    public init(
+        enabled: Bool,
+        running: Bool,
+        paused: Bool,
+        objective: AnyCodable,
+        scouteveryms: Int,
+        syntheveryms: Int,
+        nextscoutatms: AnyCodable,
+        nextsynthatms: AnyCodable,
+        lastscoutatms: AnyCodable,
+        lastsynthatms: AnyCodable,
+        counts: [String: AnyCodable]
+    ) {
+        self.enabled = enabled
+        self.running = running
+        self.paused = paused
+        self.objective = objective
+        self.scouteveryms = scouteveryms
+        self.syntheveryms = syntheveryms
+        self.nextscoutatms = nextscoutatms
+        self.nextsynthatms = nextsynthatms
+        self.lastscoutatms = lastscoutatms
+        self.lastsynthatms = lastsynthatms
+        self.counts = counts
+    }
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case running
+        case paused
+        case objective
+        case scouteveryms = "scoutEveryMs"
+        case syntheveryms = "synthEveryMs"
+        case nextscoutatms = "nextScoutAtMs"
+        case nextsynthatms = "nextSynthAtMs"
+        case lastscoutatms = "lastScoutAtMs"
+        case lastsynthatms = "lastSynthAtMs"
+        case counts
+    }
+}
+
+public struct EvolutionSourcesListParams: Codable, Sendable {
+}
+
+public struct EvolutionSourcesListResult: Codable, Sendable {
+    public let sources: [EvolutionSource]
+
+    public init(
+        sources: [EvolutionSource]
+    ) {
+        self.sources = sources
+    }
+    private enum CodingKeys: String, CodingKey {
+        case sources
+    }
+}
+
+public struct EvolutionSourcesUpsertParams: Codable, Sendable {
+    public let source: EvolutionSourceSpec
+
+    public init(
+        source: EvolutionSourceSpec
+    ) {
+        self.source = source
+    }
+    private enum CodingKeys: String, CodingKey {
+        case source
+    }
+}
+
+public struct EvolutionInsightsListParams: Codable, Sendable {
+    public let limit: Int?
+
+    public init(
+        limit: Int?
+    ) {
+        self.limit = limit
+    }
+    private enum CodingKeys: String, CodingKey {
+        case limit
+    }
+}
+
+public struct EvolutionInsightsListResult: Codable, Sendable {
+    public let insights: [EvolutionInsight]
+
+    public init(
+        insights: [EvolutionInsight]
+    ) {
+        self.insights = insights
+    }
+    private enum CodingKeys: String, CodingKey {
+        case insights
+    }
+}
+
+public struct EvolutionProposalsListParams: Codable, Sendable {
+    public let limit: Int?
+
+    public init(
+        limit: Int?
+    ) {
+        self.limit = limit
+    }
+    private enum CodingKeys: String, CodingKey {
+        case limit
+    }
+}
+
+public struct EvolutionProposalsListResult: Codable, Sendable {
+    public let proposals: [EvolutionProposal]
+
+    public init(
+        proposals: [EvolutionProposal]
+    ) {
+        self.proposals = proposals
+    }
+    private enum CodingKeys: String, CodingKey {
+        case proposals
+    }
+}
+
+public struct EvolutionProposalsActParams: Codable, Sendable {
+    public let proposalid: String?
+    public let action: AnyCodable
+    public let paused: Bool?
+    public let reason: String?
+
+    public init(
+        proposalid: String?,
+        action: AnyCodable,
+        paused: Bool?,
+        reason: String?
+    ) {
+        self.proposalid = proposalid
+        self.action = action
+        self.paused = paused
+        self.reason = reason
+    }
+    private enum CodingKeys: String, CodingKey {
+        case proposalid = "proposalId"
+        case action
+        case paused
+        case reason
+    }
+}
+
+public struct EvolutionProposalsActResult: Codable, Sendable {
+    public let ok: Bool
+    public let message: String
+
+    public init(
+        ok: Bool,
+        message: String
+    ) {
+        self.ok = ok
+        self.message = message
+    }
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case message
+    }
+}
+
+public struct OfficeAgentState: Codable, Sendable {
+    public let id: String
+    public let label: String
+    public let state: AnyCodable
+    public let lastupdatems: Int
+    public let runid: String?
+    public let details: String?
+    public let blocked: Bool?
+    public let failed: Bool?
+    public let x: Int
+    public let y: Int
+
+    public init(
+        id: String,
+        label: String,
+        state: AnyCodable,
+        lastupdatems: Int,
+        runid: String?,
+        details: String?,
+        blocked: Bool?,
+        failed: Bool?,
+        x: Int,
+        y: Int
+    ) {
+        self.id = id
+        self.label = label
+        self.state = state
+        self.lastupdatems = lastupdatems
+        self.runid = runid
+        self.details = details
+        self.blocked = blocked
+        self.failed = failed
+        self.x = x
+        self.y = y
+    }
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case label
+        case state
+        case lastupdatems = "lastUpdateMs"
+        case runid = "runId"
+        case details
+        case blocked
+        case failed
+        case x
+        case y
+    }
+}
+
+public struct OfficeActivityEntry: Codable, Sendable {
+    public let id: String
+    public let ts: Int
+    public let kind: String
+    public let label: String
+    public let details: String?
+    public let agentid: String?
+    public let proposalid: String?
+    public let sourceid: String?
+    public let runid: String?
+
+    public init(
+        id: String,
+        ts: Int,
+        kind: String,
+        label: String,
+        details: String?,
+        agentid: String?,
+        proposalid: String?,
+        sourceid: String?,
+        runid: String?
+    ) {
+        self.id = id
+        self.ts = ts
+        self.kind = kind
+        self.label = label
+        self.details = details
+        self.agentid = agentid
+        self.proposalid = proposalid
+        self.sourceid = sourceid
+        self.runid = runid
+    }
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case ts
+        case kind
+        case label
+        case details
+        case agentid = "agentId"
+        case proposalid = "proposalId"
+        case sourceid = "sourceId"
+        case runid = "runId"
+    }
+}
+
+public struct OfficeLayout: Codable, Sendable {
+    public let version: Double
+    public let tilesize: Int
+    public let width: Int
+    public let height: Int
+    public let placements: [String: AnyCodable]
+
+    public init(
+        version: Double,
+        tilesize: Int,
+        width: Int,
+        height: Int,
+        placements: [String: AnyCodable]
+    ) {
+        self.version = version
+        self.tilesize = tilesize
+        self.width = width
+        self.height = height
+        self.placements = placements
+    }
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case tilesize = "tileSize"
+        case width
+        case height
+        case placements
+    }
+}
+
+public struct OfficeSnapshotParams: Codable, Sendable {
+}
+
+public struct OfficeLayoutGetParams: Codable, Sendable {
+}
+
+public struct OfficeLayoutSetParams: Codable, Sendable {
+    public let layout: OfficeLayout
+
+    public init(
+        layout: OfficeLayout
+    ) {
+        self.layout = layout
+    }
+    private enum CodingKeys: String, CodingKey {
+        case layout
+    }
+}
+
+public struct OfficeSnapshot: Codable, Sendable {
+    public let agents: [OfficeAgentState]
+    public let layout: OfficeLayout
+    public let activity: [OfficeActivityEntry]
+
+    public init(
+        agents: [OfficeAgentState],
+        layout: OfficeLayout,
+        activity: [OfficeActivityEntry]
+    ) {
+        self.agents = agents
+        self.layout = layout
+        self.activity = activity
+    }
+    private enum CodingKeys: String, CodingKey {
+        case agents
+        case layout
+        case activity
+    }
+}
+
 public struct LogsTailParams: Codable, Sendable {
     public let cursor: Int?
     public let limit: Int?
@@ -2394,6 +2948,94 @@ public struct ExecApprovalsSnapshot: Codable, Sendable {
         case exists
         case hash
         case file
+    }
+}
+
+public struct ExecApprovalListParams: Codable, Sendable {
+    public let sessionkey: String?
+    public let agentid: String?
+    public let limit: Int?
+
+    public init(
+        sessionkey: String?,
+        agentid: String?,
+        limit: Int?
+    ) {
+        self.sessionkey = sessionkey
+        self.agentid = agentid
+        self.limit = limit
+    }
+    private enum CodingKeys: String, CodingKey {
+        case sessionkey = "sessionKey"
+        case agentid = "agentId"
+        case limit
+    }
+}
+
+public struct ExecApprovalListRequest: Codable, Sendable {
+    public let command: String
+    public let cwd: AnyCodable?
+    public let host: AnyCodable?
+    public let agentid: AnyCodable?
+    public let sessionkey: AnyCodable?
+
+    public init(
+        command: String,
+        cwd: AnyCodable?,
+        host: AnyCodable?,
+        agentid: AnyCodable?,
+        sessionkey: AnyCodable?
+    ) {
+        self.command = command
+        self.cwd = cwd
+        self.host = host
+        self.agentid = agentid
+        self.sessionkey = sessionkey
+    }
+    private enum CodingKeys: String, CodingKey {
+        case command
+        case cwd
+        case host
+        case agentid = "agentId"
+        case sessionkey = "sessionKey"
+    }
+}
+
+public struct ExecApprovalListItem: Codable, Sendable {
+    public let id: String
+    public let createdatms: Int
+    public let expiresatms: Int
+    public let request: ExecApprovalListRequest
+
+    public init(
+        id: String,
+        createdatms: Int,
+        expiresatms: Int,
+        request: ExecApprovalListRequest
+    ) {
+        self.id = id
+        self.createdatms = createdatms
+        self.expiresatms = expiresatms
+        self.request = request
+    }
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case createdatms = "createdAtMs"
+        case expiresatms = "expiresAtMs"
+        case request
+    }
+}
+
+public struct ExecApprovalListResult: Codable, Sendable {
+    public let items: [ExecApprovalListItem]
+
+    public init(
+        items: [ExecApprovalListItem]
+    ) {
+        self.items = items
+    }
+    private enum CodingKeys: String, CodingKey {
+        case items
     }
 }
 

@@ -4,7 +4,17 @@ import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { GatewayEventFrame, GatewayHelloOk } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
 import type { UiSettings } from "./storage.ts";
-import type { AgentsListResult, PresenceEntry, HealthSnapshot, StatusSummary } from "./types.ts";
+import type {
+  AgentsListResult,
+  EvolutionProposal,
+  EvolutionStatus,
+  HealthSnapshot,
+  OfficeActivityEntry,
+  OfficeAgentState,
+  OfficeLayout,
+  PresenceEntry,
+  StatusSummary,
+} from "./types.ts";
 import { CHAT_SESSIONS_ACTIVE_MINUTES, flushChatQueueForEvent } from "./app-chat.ts";
 import {
   applySettings,
@@ -54,6 +64,13 @@ type GatewayHost = {
   refreshSessionsAfterChat: Set<string>;
   execApprovalQueue: ExecApprovalRequest[];
   execApprovalError: string | null;
+  evolutionStatus: EvolutionStatus | null;
+  evolutionProposals: EvolutionProposal[];
+  evolutionError: string | null;
+  officeAgents: OfficeAgentState[];
+  officeLayout: OfficeLayout | null;
+  officeActivity: OfficeActivityEntry[];
+  officeError: string | null;
 };
 
 type SessionDefaultsSnapshot = {
@@ -268,6 +285,94 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     const resolved = parseExecApprovalResolved(evt.payload);
     if (resolved) {
       host.execApprovalQueue = removeExecApproval(host.execApprovalQueue, resolved.id);
+    }
+    return;
+  }
+
+  if (evt.event === "evolution") {
+    const payload = evt.payload as
+      | {
+          kind?: string;
+          proposal?: EvolutionProposal;
+          paused?: boolean;
+          reason?: string;
+        }
+      | undefined;
+    if (!payload?.kind) {
+      return;
+    }
+    if (payload.kind === "proposal.updated" && payload.proposal) {
+      const proposal = payload.proposal;
+      const existing = host.evolutionProposals.findIndex((entry) => entry.id === proposal.id);
+      if (existing >= 0) {
+        host.evolutionProposals = host.evolutionProposals.map((entry, index) =>
+          index === existing ? proposal : entry,
+        );
+      } else {
+        host.evolutionProposals = [proposal, ...host.evolutionProposals];
+      }
+      return;
+    }
+    if (payload.kind === "paused.changed" && host.evolutionStatus) {
+      host.evolutionStatus = {
+        ...host.evolutionStatus,
+        paused: payload.paused === true,
+      };
+      return;
+    }
+    if (payload.kind === "run.finished" || payload.kind === "report.published") {
+      host.evolutionError = null;
+    }
+    return;
+  }
+
+  if (evt.event === "office") {
+    const payload = evt.payload as
+      | {
+          kind?: string;
+          agent?: OfficeAgentState;
+          entry?: OfficeActivityEntry;
+          layout?: OfficeLayout;
+          message?: string;
+          severity?: string;
+          agentId?: string;
+        }
+      | undefined;
+    if (!payload?.kind) {
+      return;
+    }
+    if (payload.kind === "agent.delta" && payload.agent) {
+      const agent = payload.agent;
+      const index = host.officeAgents.findIndex((entry) => entry.id === agent.id);
+      if (index >= 0) {
+        host.officeAgents = host.officeAgents.map((entry, current) =>
+          current === index ? agent : entry,
+        );
+      } else {
+        host.officeAgents = [...host.officeAgents, agent];
+      }
+      return;
+    }
+    if (payload.kind === "layout.updated" && payload.layout) {
+      host.officeLayout = payload.layout;
+      return;
+    }
+    if (payload.kind === "activity.append" && payload.entry) {
+      host.officeActivity = [payload.entry, ...host.officeActivity].slice(0, 300);
+      return;
+    }
+    if (payload.kind === "alert.pin" && payload.message) {
+      host.officeError = payload.message;
+      host.officeActivity = [
+        {
+          id: `alert-${Date.now()}`,
+          ts: Date.now(),
+          kind: `alert.${payload.severity ?? "info"}`,
+          label: payload.message,
+          agentId: payload.agentId,
+        },
+        ...host.officeActivity,
+      ].slice(0, 300);
     }
   }
 }

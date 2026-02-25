@@ -63,6 +63,7 @@ import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.t
 import { renderInstances } from "./views/instances.ts";
 import { renderLogs } from "./views/logs.ts";
 import { renderNodes } from "./views/nodes.ts";
+import { renderOffice } from "./views/office.ts";
 import { renderOverview } from "./views/overview.ts";
 import { renderSessions } from "./views/sessions.ts";
 import { renderSkills } from "./views/skills.ts";
@@ -330,6 +331,55 @@ export function renderApp(state: AppViewState) {
                 onRun: (job) => runCronJob(state, job),
                 onRemove: (job) => removeCronJob(state, job),
                 onLoadRuns: (jobId) => loadCronRuns(state, jobId),
+              })
+            : nothing
+        }
+
+        ${
+          state.tab === "office"
+            ? renderOffice({
+                loading: state.officeLoading || state.evolutionLoading,
+                error: state.officeError ?? state.evolutionError,
+                savingLayout: state.officeSavingLayout,
+                evolutionStatus: state.evolutionStatus,
+                proposals: state.evolutionProposals,
+                agents: state.officeAgents,
+                layout: state.officeLayout,
+                activity: state.officeActivity,
+                filters: {
+                  agent: state.officeFilterAgent,
+                  source: state.officeFilterSource,
+                  proposal: state.officeFilterProposal,
+                  runClass: state.officeFilterRunClass,
+                },
+                onRefresh: () =>
+                  Promise.all([state.loadEvolution(), state.loadOfficeSnapshot()]).then(
+                    () => undefined,
+                  ),
+                onTogglePause: () => state.toggleEvolutionPause(),
+                onProposalAction: (proposalId, action) =>
+                  state.actEvolutionProposal(proposalId, action),
+                onFiltersChange: (patch) => {
+                  if (typeof patch.agent === "string") {
+                    state.officeFilterAgent = patch.agent;
+                  }
+                  if (typeof patch.source === "string") {
+                    state.officeFilterSource = patch.source;
+                  }
+                  if (typeof patch.proposal === "string") {
+                    state.officeFilterProposal = patch.proposal;
+                  }
+                  if (
+                    patch.runClass === "all" ||
+                    patch.runClass === "auto_merge_low_risk" ||
+                    patch.runClass === "needs_review" ||
+                    patch.runClass === "reject_archive"
+                  ) {
+                    state.officeFilterRunClass = patch.runClass;
+                  }
+                },
+                onMoveAgent: (agentId, x, y) => state.moveOfficeAgent(agentId, x, y),
+                onSaveLayout: () => state.saveOfficeLayout(),
               })
             : nothing
         }

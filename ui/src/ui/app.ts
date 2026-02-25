@@ -27,6 +27,11 @@ import type {
   SkillStatusReport,
   StatusSummary,
   NostrProfile,
+  EvolutionProposal,
+  EvolutionStatus,
+  OfficeActivityEntry,
+  OfficeAgentState,
+  OfficeLayout,
 } from "./types.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
 import {
@@ -78,6 +83,14 @@ import {
 } from "./app-tool-stream.ts";
 import { resolveInjectedAssistantIdentity } from "./assistant-identity.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
+import {
+  actEvolutionProposal as actEvolutionProposalInternal,
+  loadEvolution as loadEvolutionInternal,
+} from "./controllers/evolution.ts";
+import {
+  loadOfficeSnapshot as loadOfficeSnapshotInternal,
+  saveOfficeLayout as saveOfficeLayoutInternal,
+} from "./controllers/office.ts";
 import { loadSettings, type UiSettings } from "./storage.ts";
 import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./ui-types.ts";
 
@@ -290,6 +303,23 @@ export class OpenClawApp extends LitElement {
   @state() cronRuns: CronRunLogEntry[] = [];
   @state() cronBusy = false;
 
+  @state() evolutionLoading = false;
+  @state() evolutionError: string | null = null;
+  @state() evolutionStatus: EvolutionStatus | null = null;
+  @state() evolutionProposals: EvolutionProposal[] = [];
+
+  @state() officeLoading = false;
+  @state() officeSavingLayout = false;
+  @state() officeError: string | null = null;
+  @state() officeAgents: OfficeAgentState[] = [];
+  @state() officeLayout: OfficeLayout | null = null;
+  @state() officeActivity: OfficeActivityEntry[] = [];
+  @state() officeFilterAgent = "";
+  @state() officeFilterSource = "";
+  @state() officeFilterProposal = "";
+  @state() officeFilterRunClass: "all" | "auto_merge_low_risk" | "needs_review" | "reject_archive" =
+    "all";
+
   @state() skillsLoading = false;
   @state() skillsReport: SkillStatusReport | null = null;
   @state() skillsError: string | null = null;
@@ -333,6 +363,7 @@ export class OpenClawApp extends LitElement {
   private nodesPollInterval: number | null = null;
   private logsPollInterval: number | null = null;
   private debugPollInterval: number | null = null;
+  private officePollInterval: number | null = null;
   private logsScrollFrame: number | null = null;
   private toolStreamById = new Map<string, ToolStreamEntry>();
   private toolStreamOrder: string[] = [];
@@ -427,6 +458,65 @@ export class OpenClawApp extends LitElement {
 
   async loadCron() {
     await loadCronInternal(this as unknown as Parameters<typeof loadCronInternal>[0]);
+  }
+
+  async loadEvolution() {
+    await loadEvolutionInternal(this as unknown as Parameters<typeof loadEvolutionInternal>[0]);
+  }
+
+  async loadOfficeSnapshot(opts?: { quiet?: boolean }) {
+    await loadOfficeSnapshotInternal(
+      this as unknown as Parameters<typeof loadOfficeSnapshotInternal>[0],
+      opts,
+    );
+  }
+
+  async toggleEvolutionPause() {
+    const paused = !(this.evolutionStatus?.paused ?? false);
+    await actEvolutionProposalInternal(
+      this as unknown as Parameters<typeof actEvolutionProposalInternal>[0],
+      { action: "pause", paused },
+    );
+  }
+
+  async actEvolutionProposal(proposalId: string, action: "approve" | "reject" | "execute") {
+    await actEvolutionProposalInternal(
+      this as unknown as Parameters<typeof actEvolutionProposalInternal>[0],
+      { proposalId, action },
+    );
+  }
+
+  moveOfficeAgent(agentId: string, x: number, y: number) {
+    if (!this.officeLayout) {
+      return;
+    }
+    const placements = {
+      ...this.officeLayout.placements,
+      [agentId]: { x, y },
+    };
+    this.officeLayout = {
+      ...this.officeLayout,
+      placements,
+    };
+    this.officeAgents = this.officeAgents.map((entry) =>
+      entry.id === agentId
+        ? {
+            ...entry,
+            x,
+            y,
+          }
+        : entry,
+    );
+  }
+
+  async saveOfficeLayout() {
+    if (!this.officeLayout) {
+      return;
+    }
+    await saveOfficeLayoutInternal(
+      this as unknown as Parameters<typeof saveOfficeLayoutInternal>[0],
+      this.officeLayout,
+    );
   }
 
   async handleAbortChat() {

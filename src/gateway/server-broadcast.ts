@@ -3,6 +3,7 @@ import { MAX_BUFFERED_BYTES } from "./server-constants.js";
 import { logWs, shouldLogWs, summarizeAgentEventForWsLog } from "./ws-log.js";
 
 const ADMIN_SCOPE = "operator.admin";
+const READ_SCOPE = "operator.read";
 const APPROVALS_SCOPE = "operator.approvals";
 const PAIRING_SCOPE = "operator.pairing";
 
@@ -13,6 +14,8 @@ const EVENT_SCOPE_GUARDS: Record<string, string[]> = {
   "device.pair.resolved": [PAIRING_SCOPE],
   "node.pair.requested": [PAIRING_SCOPE],
   "node.pair.resolved": [PAIRING_SCOPE],
+  evolution: [READ_SCOPE],
+  office: [READ_SCOPE],
 };
 
 function hasEventScope(client: GatewayWsClient, event: string): boolean {

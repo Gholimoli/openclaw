@@ -390,4 +390,38 @@ export const FIELD_HELP: Record<string, string> = {
     'Direct message access control ("pairing" recommended). "open" requires channels.slack.allowFrom=["*"] (legacy: channels.slack.dm.allowFrom).',
   "channels.slack.dmPolicy":
     'Direct message access control ("pairing" recommended). "open" requires channels.slack.allowFrom=["*"].',
+  evolution: "Automated reliability-first improvement loop and Office visualization.",
+  "evolution.enabled": "Enable the evolution loop (default: false).",
+  "evolution.objective":
+    'Optimization objective ("reliability_quality" default, "speed", or "cost").',
+  "evolution.cadence.scout": 'Scout cadence (default: "hourly").',
+  "evolution.cadence.synth": 'Synthesis cadence (default: "daily").',
+  "evolution.autonomy.mode": 'Execution autonomy mode ("merge-low-risk" default or "review-only").',
+  "evolution.autonomy.mergeScope":
+    'Allowed auto-merge scopes (default: ["docs","prompts","dashboard"]).',
+  "evolution.discovery.mode": 'Source discovery mode ("curated" default, "open", or "fixed").',
+  "evolution.discovery.nominations":
+    "Allow operator/user source nominations in curated mode (default: true).",
+  "evolution.sources.allowlist": "Curated source list for scouting (GitHub repos and manual URLs).",
+  "evolution.sources.allowlist.*.id": "Stable source identifier.",
+  "evolution.sources.allowlist.*.kind": 'Source kind ("github_repo" or "manual_url").',
+  "evolution.sources.allowlist.*.enabled": "Enable or disable a specific source entry.",
+  "evolution.sources.allowlist.*.url": "Manual source URL (required when kind=manual_url).",
+  "evolution.sources.allowlist.*.githubOwner":
+    "GitHub organization/user name (required when kind=github_repo).",
+  "evolution.sources.allowlist.*.githubRepo":
+    "GitHub repository name (required when kind=github_repo).",
+  "evolution.sources.allowlist.*.include":
+    'GitHub entities to ingest ("releases", "commits", "issues", "prs").',
+  "evolution.sources.allowlist.*.tags": "Static tags attached to all insights from this source.",
+  "evolution.sources.allowlist.*.reliabilityTier": 'Source trust tier ("high", "medium", "low").',
+  "evolution.x.mode": 'X ingestion strategy ("api-first-hybrid").',
+  "evolution.x.browserFallback":
+    "Allow browser-based fallback for X ingestion when API/search path is unavailable (default: false).",
+  "evolution.execution.workTarget": 'Execution target (default: "state-mirror-repo").',
+  "evolution.execution.mergePath": 'Merge strategy (default: "local-squash").',
+  "evolution.execution.maxConsecutiveFailures":
+    "Auto-pause threshold for consecutive execution failures (default: 3).",
+  "evolution.execution.maxFailuresPer24h":
+    "Auto-pause threshold for failures in the last 24 hours (default: 5).",
 };

@@ -1,0 +1,259 @@
+.office-card {
+  display: grid;
+  gap: 14px;
+}
+
+.office-toolbar {
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.office-toolbar__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.office-error {
+  margin-top: 2px;
+}
+
+.office-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.office-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.office-filters .field {
+  margin-bottom: 0;
+}
+
+.office-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  gap: 12px;
+}
+
+.office-map-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--bg-elevated), black 12%),
+    var(--card)
+  );
+  padding: 12px;
+  min-height: 420px;
+}
+
+.office-map {
+  --office-scale: 2.1;
+  position: relative;
+  width: 100%;
+  aspect-ratio: calc(var(--office-cols) / var(--office-rows));
+  min-height: 360px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background:
+    linear-gradient(
+      0deg,
+      color-mix(in oklab, var(--bg), black 8%),
+      color-mix(in oklab, var(--bg), black 2%)
+    ),
+    repeating-linear-gradient(
+      to right,
+      transparent,
+      transparent calc(var(--office-tile) * var(--office-scale) - 1px),
+      color-mix(in oklab, var(--border), transparent 30%)
+        calc(var(--office-tile) * var(--office-scale) - 1px),
+      color-mix(in oklab, var(--border), transparent 30%)
+        calc(var(--office-tile) * var(--office-scale))
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      transparent,
+      transparent calc(var(--office-tile) * var(--office-scale) - 1px),
+      color-mix(in oklab, var(--border), transparent 30%)
+        calc(var(--office-tile) * var(--office-scale) - 1px),
+      color-mix(in oklab, var(--border), transparent 30%)
+        calc(var(--office-tile) * var(--office-scale))
+    );
+}
+
+.office-sprite {
+  position: absolute;
+  transform: translate(-10%, -10%);
+  transition:
+    left 140ms ease-out,
+    top 140ms ease-out,
+    transform 140ms ease-out;
+  cursor: grab;
+  user-select: none;
+  z-index: 2;
+}
+
+.office-sprite:active {
+  cursor: grabbing;
+}
+
+.office-sprite__body {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in oklab, var(--text), transparent 72%);
+  background: linear-gradient(135deg, var(--accent), color-mix(in oklab, var(--accent), black 28%));
+  box-shadow: var(--shadow-sm);
+}
+
+.office-sprite__name {
+  margin-top: 3px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 10px;
+  text-align: center;
+  background: color-mix(in oklab, var(--bg), black 35%);
+  color: var(--text-strong);
+}
+
+.office-sprite--walking .office-sprite__body {
+  animation: office-bob 0.9s infinite;
+}
+
+.office-sprite--typing .office-sprite__body,
+.office-sprite--running-command .office-sprite__body {
+  background: linear-gradient(
+    135deg,
+    var(--accent-2),
+    color-mix(in oklab, var(--accent-2), black 25%)
+  );
+}
+
+.office-sprite--approval-blocked .office-sprite__body {
+  background: linear-gradient(135deg, var(--warn), color-mix(in oklab, var(--warn), black 26%));
+}
+
+.office-sprite--failed .office-sprite__body {
+  background: linear-gradient(135deg, var(--danger), color-mix(in oklab, var(--danger), black 24%));
+}
+
+.office-bubble {
+  position: absolute;
+  left: 26px;
+  top: -6px;
+  min-width: 52px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--border), white 20%);
+  background: color-mix(in oklab, var(--bg), black 18%);
+  font-size: 10px;
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+
+.office-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  background: var(--bg-elevated);
+  min-height: 420px;
+  display: grid;
+  gap: 8px;
+}
+
+.office-panel__title {
+  margin-top: 8px;
+}
+
+.office-proposals {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.office-proposal {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  background: color-mix(in oklab, var(--bg), black 5%);
+  display: grid;
+  gap: 6px;
+}
+
+.office-proposal__title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.office-proposal__meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.office-proposal__actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.office-activity {
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+}
+
+.office-activity__entry {
+  border-bottom: 1px solid color-mix(in oklab, var(--border), transparent 30%);
+  padding: 4px 2px;
+}
+
+.office-activity__entry:last-child {
+  border-bottom: none;
+}
+
+.office-activity__label {
+  font-size: 12px;
+}
+
+.office-activity__meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+@keyframes office-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@media (max-width: 980px) {
+  .office-stats,
+  .office-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .office-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .office-map {
+    --office-scale: 1.45;
+  }
+}

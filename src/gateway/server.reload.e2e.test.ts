@@ -37,6 +37,30 @@ const hoisted = vi.hoisted(() => {
   const startGmailWatcher = vi.fn(async () => ({ started: true }));
   const stopGmailWatcher = vi.fn(async () => {});
 
+  const evolutionStart = vi.fn(async () => {});
+  const evolutionStop = vi.fn(async () => {});
+  const evolutionService = {
+    start: evolutionStart,
+    stop: evolutionStop,
+    status: vi.fn(async () => ({})),
+    listSources: vi.fn(async () => []),
+    upsertSource: vi.fn(async () => ({})),
+    listInsights: vi.fn(async () => []),
+    listProposals: vi.fn(async () => []),
+    actProposal: vi.fn(async () => ({ ok: true, message: "ok" })),
+    runScoutNow: vi.fn(async () => ({ added: 0, skipped: 0 })),
+    runSynthesizeNow: vi.fn(async () => ({ added: 0, executed: 0, failed: 0 })),
+    executeProposal: vi.fn(async () => ({ ok: true, message: "ok" })),
+    officeSnapshot: vi.fn(async () => ({ agents: [], layout: { version: 1 }, activity: [] })),
+    officeLayoutGet: vi.fn(async () => ({ version: 1 })),
+    officeLayoutSet: vi.fn(async () => ({ version: 1 })),
+    onAgentEvent: vi.fn(async () => {}),
+    onExecApprovalRequested: vi.fn(async () => {}),
+    onExecApprovalResolved: vi.fn(async () => {}),
+    onCronEvent: vi.fn(async () => {}),
+  };
+  const createEvolutionService = vi.fn(() => evolutionService);
+
   const providerManager = {
     getRuntimeSnapshot: vi.fn(() => ({
       providers: {
@@ -131,6 +155,9 @@ const hoisted = vi.hoisted(() => {
     startHeartbeatRunner,
     startGmailWatcher,
     stopGmailWatcher,
+    createEvolutionService,
+    evolutionStart,
+    evolutionStop,
     providerManager,
     createChannelManager,
     startGatewayConfigReloader,
@@ -163,6 +190,10 @@ vi.mock("./server-channels.js", () => ({
 
 vi.mock("./config-reload.js", () => ({
   startGatewayConfigReloader: hoisted.startGatewayConfigReloader,
+}));
+
+vi.mock("../evolution/service.js", () => ({
+  createEvolutionService: hoisted.createEvolutionService,
 }));
 
 installGatewayTestHooks({ scope: "suite" });
@@ -230,6 +261,7 @@ describe("gateway hot reload", () => {
           "hooks.gmail.account",
           "cron.enabled",
           "agents.defaults.heartbeat.every",
+          "evolution.enabled",
           "browser.enabled",
           "web.enabled",
           "channels.telegram.botToken",
@@ -245,6 +277,7 @@ describe("gateway hot reload", () => {
         restartBrowserControl: true,
         restartCron: true,
         restartHeartbeat: true,
+        restartEvolution: true,
         restartChannels: new Set(["whatsapp", "telegram", "discord", "signal", "imessage"]),
         noopPaths: [],
       },
@@ -260,6 +293,8 @@ describe("gateway hot reload", () => {
     expect(hoisted.startHeartbeatRunner).toHaveBeenCalledTimes(1);
     expect(hoisted.heartbeatUpdateConfig).toHaveBeenCalledTimes(1);
     expect(hoisted.heartbeatUpdateConfig).toHaveBeenCalledWith(nextConfig);
+    expect(hoisted.evolutionStart).toHaveBeenCalledTimes(2);
+    expect(hoisted.evolutionStop).toHaveBeenCalledTimes(1);
 
     expect(hoisted.cronInstances.length).toBe(2);
     expect(hoisted.cronInstances[0].stop).toHaveBeenCalledTimes(1);
@@ -295,6 +330,7 @@ describe("gateway hot reload", () => {
         restartBrowserControl: false,
         restartCron: false,
         restartHeartbeat: false,
+        restartEvolution: false,
         restartChannels: new Set(),
         noopPaths: [],
       },

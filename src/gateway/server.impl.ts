@@ -22,6 +22,7 @@ import {
   writeConfigFile,
 } from "../config/config.js";
 import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
+import { createEvolutionService } from "../evolution/service.js";
 import { clearAgentRunContext, onAgentEvent } from "../infra/agent-events.js";
 import {
   ensureControlUiAssetsBuilt,
@@ -100,6 +101,7 @@ const logReload = log.child("reload");
 const logHooks = log.child("hooks");
 const logPlugins = log.child("plugins");
 const logWsControl = log.child("ws");
+const logEvolution = log.child("evolution");
 const gatewayRuntime = runtimeForLogger(log);
 const canvasRuntime = runtimeForLogger(logCanvas);
 
@@ -402,8 +404,57 @@ export async function startGatewayServer(
   const nodeSubscribe = nodeSubscriptions.subscribe;
   const nodeUnsubscribe = nodeSubscriptions.unsubscribe;
   const nodeUnsubscribeAll = nodeSubscriptions.unsubscribeAll;
+  const evolutionService = createEvolutionService({
+    getConfig: loadConfig,
+    repoRoot: process.cwd(),
+    broadcast: (event, payload) => {
+      broadcast(event, payload, { dropIfSlow: true });
+    },
+    log: {
+      info: (message) => logEvolution.info(message),
+      warn: (message) => logEvolution.warn(message),
+      error: (message) => logEvolution.error(message),
+    },
+  });
+
+  const feedEvolutionEvent = (event: string, payload: unknown) => {
+    if (event === "exec.approval.requested") {
+      void evolutionService
+        .onExecApprovalRequested((payload ?? {}) as Record<string, unknown>)
+        .catch((err) => {
+          logEvolution.warn(`exec approval request forwarding failed: ${String(err)}`);
+        });
+      return;
+    }
+    if (event === "exec.approval.resolved") {
+      void evolutionService
+        .onExecApprovalResolved((payload ?? {}) as Record<string, unknown>)
+        .catch((err) => {
+          logEvolution.warn(`exec approval resolution forwarding failed: ${String(err)}`);
+        });
+      return;
+    }
+    if (event === "cron") {
+      void evolutionService.onCronEvent((payload ?? {}) as Record<string, unknown>).catch((err) => {
+        logEvolution.warn(`cron forwarding failed: ${String(err)}`);
+      });
+    }
+  };
+
+  const broadcastWithEvolution = (
+    event: string,
+    payload: unknown,
+    opts?: {
+      dropIfSlow?: boolean;
+      stateVersion?: { presence?: number; health?: number };
+    },
+  ) => {
+    broadcast(event, payload, opts);
+    feedEvolutionEvent(event, payload);
+  };
+
   const broadcastVoiceWakeChanged = (triggers: string[]) => {
-    broadcast("voicewake.changed", { triggers }, { dropIfSlow: true });
+    broadcastWithEvolution("voicewake.changed", { triggers }, { dropIfSlow: true });
   };
   const hasMobileNodeConnected = () => hasConnectedMobileNode(nodeRegistry);
   applyGatewayLaneConcurrency(cfgAtStart);
@@ -411,7 +462,7 @@ export async function startGatewayServer(
   let cronState = buildGatewayCronService({
     cfg: cfgAtStart,
     deps,
-    broadcast,
+    broadcast: broadcastWithEvolution,
   });
   let { cron, storePath: cronStorePath } = cronState;
 
@@ -488,25 +539,30 @@ export async function startGatewayServer(
     }));
   }
 
+  const agentEventHandler = createAgentEventHandler({
+    broadcast: broadcastWithEvolution,
+    broadcastToConnIds,
+    nodeSendToSession,
+    agentRunSeq,
+    chatRunState,
+    resolveSessionKeyForRun,
+    clearAgentRunContext,
+    toolEventRecipients,
+  });
+
   const agentUnsub = minimalTestGateway
     ? null
-    : onAgentEvent(
-        createAgentEventHandler({
-          broadcast,
-          broadcastToConnIds,
-          nodeSendToSession,
-          agentRunSeq,
-          chatRunState,
-          resolveSessionKeyForRun,
-          clearAgentRunContext,
-          toolEventRecipients,
-        }),
-      );
+    : onAgentEvent((evt) => {
+        agentEventHandler(evt);
+        void evolutionService.onAgentEvent((evt ?? {}) as Record<string, unknown>).catch((err) => {
+          logEvolution.warn(`agent event forwarding failed: ${String(err)}`);
+        });
+      });
 
   const heartbeatUnsub = minimalTestGateway
     ? null
     : onHeartbeatEvent((evt) => {
-        broadcast("heartbeat", evt, { dropIfSlow: true });
+        broadcastWithEvolution("heartbeat", evt, { dropIfSlow: true });
       });
 
   let heartbeatRunner: HeartbeatRunner = minimalTestGateway
@@ -519,6 +575,9 @@ export async function startGatewayServer(
   if (!minimalTestGateway) {
     void cron.start().catch((err) => logCron.error(`failed to start: ${String(err)}`));
   }
+  await evolutionService.start().catch((err) => {
+    logEvolution.error(`failed to start: ${String(err)}`);
+  });
 
   // Recover pending outbound deliveries from previous crash/restart.
   if (!minimalTestGateway) {
@@ -560,11 +619,12 @@ export async function startGatewayServer(
       ...pluginRegistry.gatewayHandlers,
       ...execApprovalHandlers,
     },
-    broadcast,
+    broadcast: broadcastWithEvolution,
     context: {
       deps,
       cron,
       cronStorePath,
+      evolution: evolutionService,
       execApprovalManager,
       loadGatewayModelCatalog,
       getHealthCache,
@@ -573,7 +633,7 @@ export async function startGatewayServer(
       logGateway: log,
       incrementPresenceVersion,
       getHealthVersion,
-      broadcast,
+      broadcast: broadcastWithEvolution,
       broadcastToConnIds,
       nodeSendToSession,
       nodeSendToAllSubscribed,
@@ -654,12 +714,13 @@ export async function startGatewayServer(
     : (() => {
         const { applyHotReload, requestGatewayRestart } = createGatewayReloadHandlers({
           deps,
-          broadcast,
+          broadcast: broadcastWithEvolution,
           getState: () => ({
             hooksConfig,
             heartbeatRunner,
             cronState,
             browserControl,
+            evolutionService,
           }),
           setState: (nextState) => {
             hooksConfig = nextState.hooksConfig;
@@ -702,7 +763,8 @@ export async function startGatewayServer(
     cron,
     heartbeatRunner,
     nodePresenceTimers,
-    broadcast,
+    broadcast: broadcastWithEvolution,
+    evolution: evolutionService,
     tickInterval,
     healthInterval,
     dedupeCleanup,

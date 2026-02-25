@@ -58,4 +58,37 @@ describe("gateway broadcaster", () => {
     expect(approvalsSocket.send).toHaveBeenCalledTimes(1);
     expect(pairingSocket.send).toHaveBeenCalledTimes(1);
   });
+
+  it("filters office and evolution events by read scope", () => {
+    const readSocket: TestSocket = {
+      bufferedAmount: 0,
+      send: vi.fn(),
+      close: vi.fn(),
+    };
+    const writeSocket: TestSocket = {
+      bufferedAmount: 0,
+      send: vi.fn(),
+      close: vi.fn(),
+    };
+
+    const clients = new Set<GatewayWsClient>([
+      {
+        socket: readSocket as unknown as GatewayWsClient["socket"],
+        connect: { role: "operator", scopes: ["operator.read"] } as GatewayWsClient["connect"],
+        connId: "c-read",
+      },
+      {
+        socket: writeSocket as unknown as GatewayWsClient["socket"],
+        connect: { role: "operator", scopes: ["operator.write"] } as GatewayWsClient["connect"],
+        connId: "c-write",
+      },
+    ]);
+
+    const { broadcast } = createGatewayBroadcaster({ clients });
+    broadcast("office", { kind: "activity.append" });
+    broadcast("evolution", { kind: "run.started" });
+
+    expect(readSocket.send).toHaveBeenCalledTimes(2);
+    expect(writeSocket.send).toHaveBeenCalledTimes(0);
+  });
 });

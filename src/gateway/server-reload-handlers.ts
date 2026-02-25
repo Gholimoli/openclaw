@@ -1,5 +1,6 @@
 import type { CliDeps } from "../cli/deps.js";
 import type { loadConfig } from "../config/config.js";
+import type { EvolutionService } from "../evolution/service.js";
 import type { HeartbeatRunner } from "../infra/heartbeat-runner.js";
 import type { ChannelKind, GatewayReloadPlan } from "./config-reload.js";
 import { getActiveEmbeddedRunCount } from "../agents/pi-embedded-runner/runs.js";
@@ -24,6 +25,7 @@ type GatewayHotReloadState = {
   heartbeatRunner: HeartbeatRunner;
   cronState: GatewayCronState;
   browserControl: Awaited<ReturnType<typeof startBrowserControlServerIfEnabled>> | null;
+  evolutionService?: EvolutionService;
 };
 
 export function createGatewayReloadHandlers(params: {
@@ -108,6 +110,13 @@ export function createGatewayReloadHandlers(params: {
       } else {
         params.logHooks.info("skipping gmail watcher restart (OPENCLAW_SKIP_GMAIL_WATCHER=1)");
       }
+    }
+
+    if (plan.restartEvolution && nextState.evolutionService) {
+      await nextState.evolutionService.stop().catch(() => {});
+      await nextState.evolutionService.start().catch((err) => {
+        params.logReload.warn(`evolution restart failed: ${String(err)}`);
+      });
     }
 
     if (plan.restartChannels.size > 0) {
