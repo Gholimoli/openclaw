@@ -7,6 +7,7 @@ Docs: https://docs.openclaw.ai
 ### Changes
 
 - Subagents: nested sub-agents (sub-sub-agents) with configurable depth. Set `agents.defaults.subagents.maxSpawnDepth: 2` to allow sub-agents to spawn their own children. Includes `maxChildrenPerAgent` limit (default 5), depth-aware tool policy, and proper announce chain routing. (#14447) Thanks @tyler6204.
+- Exec approvals/Telegram: make Telegram session approval forwarding default-on when Telegram is configured (unless `approvals.exec.enabled=false`), switch Telegram approval menus to **Approve**/**Deny** primary actions, and enforce strict timeout behavior so prompt-issued exec approvals never auto-approve without an explicit decision.
 
 ### Fixes
 

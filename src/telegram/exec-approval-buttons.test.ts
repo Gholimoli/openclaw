@@ -30,6 +30,9 @@ describe("exec approval telegram buttons", () => {
     expect(defaults).toHaveLength(2);
     expect(defaults?.[0]).toHaveLength(2);
     expect(defaults?.[1]).toHaveLength(1);
+    expect(defaults?.[0]?.[0]?.text).toBe("Approve");
+    expect(defaults?.[0]?.[1]?.text).toBe("Deny");
+    expect(defaults?.[1]?.[0]?.text).toBe("Always allow");
 
     const confirm = buildExecApprovalConfirmButtons(id);
     expect(confirm).toHaveLength(2);

@@ -13,6 +13,7 @@ import { loadConfig } from "../config/config.js";
 import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
+import { listEnabledTelegramAccounts } from "../telegram/accounts.js";
 import {
   buildExecApprovalDefaultButtons,
   type ExecApprovalButtonRow,
@@ -69,35 +70,56 @@ function matchSessionFilter(sessionKey: string, patterns: string[]): boolean {
   });
 }
 
-function shouldForward(params: {
-  config?: ExecApprovalForwardingConfig;
-  request: ExecApprovalRequest;
-}): boolean {
-  const config = params.config;
-  if (!config?.enabled) {
+type ForwardingDecision = {
+  shouldForward: boolean;
+  telegramDefaultOnly: boolean;
+};
+
+function hasEnabledTelegramTargets(cfg: OpenClawConfig): boolean {
+  if (cfg.channels?.telegram?.enabled === false) {
     return false;
   }
-  if (config.agentFilter?.length) {
+  try {
+    return listEnabledTelegramAccounts(cfg).some((account) => account.tokenSource !== "none");
+  } catch {
+    return false;
+  }
+}
+
+function shouldForward(params: {
+  cfg: OpenClawConfig;
+  config?: ExecApprovalForwardingConfig;
+  request: ExecApprovalRequest;
+}): ForwardingDecision {
+  const config = params.config;
+  if (config?.enabled === false) {
+    return { shouldForward: false, telegramDefaultOnly: false };
+  }
+  const telegramDefaultOnly = !config;
+  if (telegramDefaultOnly && !hasEnabledTelegramTargets(params.cfg)) {
+    return { shouldForward: false, telegramDefaultOnly };
+  }
+  if (config?.agentFilter?.length) {
     const agentId =
       params.request.request.agentId ??
       parseAgentSessionKey(params.request.request.sessionKey)?.agentId;
     if (!agentId) {
-      return false;
+      return { shouldForward: false, telegramDefaultOnly };
     }
     if (!config.agentFilter.includes(agentId)) {
-      return false;
+      return { shouldForward: false, telegramDefaultOnly };
     }
   }
-  if (config.sessionFilter?.length) {
+  if (config?.sessionFilter?.length) {
     const sessionKey = params.request.request.sessionKey;
     if (!sessionKey) {
-      return false;
+      return { shouldForward: false, telegramDefaultOnly };
     }
     if (!matchSessionFilter(sessionKey, config.sessionFilter)) {
-      return false;
+      return { shouldForward: false, telegramDefaultOnly };
     }
   }
-  return true;
+  return { shouldForward: true, telegramDefaultOnly };
 }
 
 function buildTargetKey(target: ExecApprovalForwardTarget): string {
@@ -293,17 +315,23 @@ export function createExecApprovalForwarder(
   const handleRequested = async (request: ExecApprovalRequest) => {
     const cfg = getConfig();
     const config = cfg.approvals?.exec;
-    if (!shouldForward({ config, request })) {
+    const forwarding = shouldForward({ cfg, config, request });
+    if (!forwarding.shouldForward) {
       return;
     }
 
-    const mode = normalizeMode(config?.mode);
+    const mode = forwarding.telegramDefaultOnly ? DEFAULT_MODE : normalizeMode(config?.mode);
     const targets: ForwardTarget[] = [];
     const seen = new Set<string>();
 
     if (mode === "session" || mode === "both") {
       const sessionTarget = resolveSessionTarget({ cfg, request });
       if (sessionTarget) {
+        const sessionChannel =
+          normalizeMessageChannel(sessionTarget.channel) ?? sessionTarget.channel;
+        if (forwarding.telegramDefaultOnly && sessionChannel !== "telegram") {
+          return;
+        }
         const key = buildTargetKey(sessionTarget);
         if (!seen.has(key)) {
           seen.add(key);
@@ -315,6 +343,10 @@ export function createExecApprovalForwarder(
     if (mode === "targets" || mode === "both") {
       const explicitTargets = config?.targets ?? [];
       for (const target of explicitTargets) {
+        const channel = normalizeMessageChannel(target.channel) ?? target.channel;
+        if (forwarding.telegramDefaultOnly && channel !== "telegram") {
+          continue;
+        }
         const key = buildTargetKey(target);
         if (seen.has(key)) {
           continue;
@@ -402,8 +434,13 @@ export function createExecApprovalForwarder(
 }
 
 export function shouldForwardExecApproval(params: {
+  cfg?: OpenClawConfig;
   config?: ExecApprovalForwardingConfig;
   request: ExecApprovalRequest;
 }): boolean {
-  return shouldForward(params);
+  return shouldForward({
+    cfg: params.cfg ?? loadConfig(),
+    config: params.config,
+    request: params.request,
+  }).shouldForward;
 }

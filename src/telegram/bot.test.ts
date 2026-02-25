@@ -563,8 +563,9 @@ describe("createTelegramBot", () => {
           };
         }
       | undefined;
-    expect(params?.reply_markup?.inline_keyboard?.[0]?.[0]?.text).toBe("Allow once");
-    expect(params?.reply_markup?.inline_keyboard?.[0]?.[1]?.text).toBe("Always allow");
+    expect(params?.reply_markup?.inline_keyboard?.[0]?.[0]?.text).toBe("Approve");
+    expect(params?.reply_markup?.inline_keyboard?.[0]?.[1]?.text).toBe("Deny");
+    expect(params?.reply_markup?.inline_keyboard?.[1]?.[0]?.text).toBe("Always allow");
   });
 
   it("edits commands list for pagination callbacks", async () => {

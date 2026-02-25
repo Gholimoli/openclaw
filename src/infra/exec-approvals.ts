@@ -37,6 +37,8 @@ export type ExecApprovalResolved = {
 export type ExecApprovalsDefaults = {
   security?: ExecSecurity;
   ask?: ExecAsk;
+  // Used by local approval runtimes that cannot show a prompt.
+  // Gateway-managed exec.approval.request timeouts are always treated as deny.
   askFallback?: ExecSecurity;
   autoAllowSkills?: boolean;
 };

@@ -39,6 +39,20 @@ function inferVisualStateFromAgentEvent(payload: Record<string, unknown>): Offic
   return "reading";
 }
 
+function shouldRecordAgentActivity(stream: string, phase: string): boolean {
+  if (stream === "assistant") {
+    return false;
+  }
+  if (stream === "tool" && phase === "update") {
+    return false;
+  }
+  return true;
+}
+
+function shouldRecordChatActivity(chatState: string): boolean {
+  return chatState !== "delta";
+}
+
 export type OfficeStateManager = {
   snapshot: () => {
     agents: OfficeAgentState[];
@@ -74,7 +88,29 @@ export function createOfficeStateManager(params: {
     };
   };
 
-  const upsertAgent = (agentId: string, patch: Partial<OfficeAgentState>): OfficeAgentState => {
+  const hasMeaningfulAgentChange = (
+    previous: OfficeAgentState | undefined,
+    next: OfficeAgentState,
+  ) => {
+    if (!previous) {
+      return true;
+    }
+    return (
+      previous.label !== next.label ||
+      previous.state !== next.state ||
+      previous.runId !== next.runId ||
+      previous.details !== next.details ||
+      previous.blocked !== next.blocked ||
+      previous.failed !== next.failed ||
+      previous.x !== next.x ||
+      previous.y !== next.y
+    );
+  };
+
+  const upsertAgent = (
+    agentId: string,
+    patch: Partial<OfficeAgentState>,
+  ): { agent: OfficeAgentState; changed: boolean } => {
     const current = agents.get(agentId);
     const placement = resolvePlacement(agentId);
     const next: OfficeAgentState = {
@@ -90,7 +126,7 @@ export function createOfficeStateManager(params: {
       y: patch.y ?? current?.y ?? placement.y,
     };
     agents.set(agentId, next);
-    return next;
+    return { agent: next, changed: hasMeaningfulAgentChange(current, next) };
   };
 
   const appendActivity = (entry: Omit<OfficeActivityEntry, "id" | "ts">): OfficeActivityEntry => {
@@ -147,18 +183,22 @@ export function createOfficeStateManager(params: {
         failed: state === "failed",
         lastUpdateMs: Date.now(),
       });
-      const activityEntry = appendActivity({
-        kind: `agent.${stream}`,
-        label: `${agentId}: ${phase}`,
-        details: typeof data.text === "string" ? data.text.slice(0, 120) : undefined,
-        agentId,
-        runId,
-      });
+      const events: OfficeEventPayload[] = nextAgent.changed
+        ? [{ kind: "agent.delta", agent: nextAgent.agent }]
+        : [];
 
-      return [
-        { kind: "agent.delta", agent: nextAgent },
-        { kind: "activity.append", entry: activityEntry },
-      ];
+      if (shouldRecordAgentActivity(stream, phase)) {
+        const activityEntry = appendActivity({
+          kind: `agent.${stream}`,
+          label: `${agentId}: ${phase}`,
+          details: typeof data.text === "string" ? data.text.slice(0, 120) : undefined,
+          agentId,
+          runId,
+        });
+        events.push({ kind: "activity.append", entry: activityEntry });
+      }
+
+      return events;
     },
     applyChatEvent: (payload) => {
       const agentId = resolveAgentIdFromSessionKey(payload.sessionKey);
@@ -188,18 +228,21 @@ export function createOfficeStateManager(params: {
         lastUpdateMs: Date.now(),
       });
 
-      const entry = appendActivity({
-        kind: `chat.${chatState}`,
-        label: `${agentId}: chat ${chatState}`,
-        details,
-        agentId,
-        runId,
-      });
+      const events: OfficeEventPayload[] = agent.changed
+        ? [{ kind: "agent.delta", agent: agent.agent }]
+        : [];
+      if (shouldRecordChatActivity(chatState)) {
+        const entry = appendActivity({
+          kind: `chat.${chatState}`,
+          label: `${agentId}: chat ${chatState}`,
+          details,
+          agentId,
+          runId,
+        });
+        events.push({ kind: "activity.append", entry });
+      }
 
-      return [
-        { kind: "agent.delta", agent },
-        { kind: "activity.append", entry },
-      ];
+      return events;
     },
     applyExecApprovalRequested: (payload) => {
       const request =
@@ -221,16 +264,18 @@ export function createOfficeStateManager(params: {
         details: command.slice(0, 120),
         agentId,
       });
-      return [
-        { kind: "agent.delta", agent },
-        {
-          kind: "alert.pin",
-          message: `Approval required for ${agentId}`,
-          severity: "warn",
-          agentId,
-        },
-        { kind: "activity.append", entry: activityEntry },
-      ];
+      const updates: OfficeEventPayload[] = [];
+      if (agent.changed) {
+        updates.push({ kind: "agent.delta", agent: agent.agent });
+      }
+      updates.push({
+        kind: "alert.pin",
+        message: `Approval required for ${agentId}`,
+        severity: "warn",
+        agentId,
+      });
+      updates.push({ kind: "activity.append", entry: activityEntry });
+      return [...updates];
     },
     applyExecApprovalResolved: (payload) => {
       const decision = typeof payload.decision === "string" ? payload.decision : "resolved";
@@ -245,7 +290,9 @@ export function createOfficeStateManager(params: {
           details: `approval ${decision}`,
           lastUpdateMs: Date.now(),
         });
-        updates.push({ kind: "agent.delta", agent: next });
+        if (next.changed) {
+          updates.push({ kind: "agent.delta", agent: next.agent });
+        }
       }
       const entry = appendActivity({
         kind: "approval.resolved",

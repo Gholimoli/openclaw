@@ -1,403 +1,607 @@
 ---
-summary: "End-to-end system architecture for OpenClaw on a VPS: Gateway, agents, nodes, access boundaries, and VidClaw."
+summary: "Master system atlas for OpenClaw on VPS and home hosts: topology, permissions, operations, and plugin fit."
 read_when:
-  - You are running the Gateway on a VPS or home server
-  - You want a complete mental model of how OpenClaw components fit together
+  - You need a complete architecture map for OpenClaw
+  - You are operating OpenClaw on a VPS or always on machine
+  - You need to audit access boundaries and day 2 operations
 title: "System architecture"
 ---
 
 # System architecture
 
-This page is a single, end-to-end guide to how OpenClaw works in practice when you run the Gateway on a VPS (or any always-on host).
+This is the canonical OpenClaw system atlas for operators and maintainers.
+It combines architecture, access boundaries, operations, plugin fit, and runtime
+reconciliation into one public safe document.
 
-If you only remember one thing, remember this:
+## Scope and intent
 
-- The **Gateway host** is where the system actually lives: sessions, auth profiles, channel logins, and (usually) your workspace files.
-- Everything else (CLI, macOS app, browser Control UI, phones, nodes) is a **client** that connects to the Gateway over the Gateway WebSocket.
+This atlas is optimized for:
 
-Related deep dives:
+- Deterministic operation of one Gateway as the control plane
+- Clear trust boundaries for chat, tools, nodes, and admin surfaces
+- Multi agent isolation for workspace, auth profiles, and session state
+- Secure private access patterns for VPS and home servers
+- Repeatable day 2 operations with probe and rollback workflows
 
-- [Gateway architecture](/concepts/architecture)
-- [Network model](/gateway/network-model)
-- [Remote access](/gateway/remote)
-- [Multi-Agent Routing](/concepts/multi-agent)
-- [Nodes](/nodes)
-- [VidClaw (control center)](/tools/vidclaw)
+This atlas is not optimized for:
 
-## Terms
+- Public internet exposed admin surfaces
+- One click PaaS only assumptions
+- Implicit trust in sender content or plugin code
+- Ad hoc operations without health gates
 
-- **Gateway**: the long-running process that owns channel connections and the WebSocket control plane (`openclaw gateway`).
-- **Gateway host**: the machine running the Gateway (your VPS, home server, Mac mini, or laptop).
-- **Agent**: one isolated "brain" (workspace + per-agent auth + per-agent sessions) inside the Gateway. See [Multi-Agent Routing](/concepts/multi-agent).
-- **Operator client**: CLI, Control UI, macOS app, or automation connecting with `role: operator`. See [Gateway protocol](/gateway/protocol).
-- **Node**: a companion device that connects with `role: node` and exposes commands like `canvas.*`, `camera.*`, `system.run`. See [Nodes](/nodes).
-- **Control UI**: the built-in browser UI served by the Gateway at `/` (default port `18789`). See [Control UI](/web/control-ui).
-- **Evolution loop**: an opt-in reliability-first automation service that scouts curated sources, synthesizes proposals, applies low-risk changes, and writes audit/state artifacts.
-- **Office tab**: a Control UI view that visualizes active agent/run state, blocked approvals, and evolution activity in near real time.
-- **VidClaw**: a separate self-hosted dashboard that runs next to the Gateway (default `127.0.0.1:3333`). See [VidClaw](/tools/vidclaw).
+## Optimization goals
 
-## High level component map
+OpenClaw is primarily optimized for:
+
+- Single Gateway ownership of channels and WebSocket control plane
+- Fast operator control through Control UI, CLI, and nodes
+- Safety by layered gates: channel policy, pairing, scopes, tool policy, sandbox, approvals
+- Extensibility through in process plugins and external companion systems
+
+OpenClaw intentionally accepts these tradeoffs:
+
+- Plugins run in process and are trusted code
+- Tool capable agents need explicit hardening to reduce blast radius
+- High flexibility means misconfiguration can widen risk if guardrails are ignored
+
+## A2 blueprint poster
+
+Print asset path:
+
+- [`docs/assets/architecture/system-atlas-a2.svg`](/assets/architecture/system-atlas-a2.svg)
+
+Print guidance:
+
+- Target: A2 landscape
+- Theme: network blueprint
+- Density: balanced
+- Print at 100 percent scale for best label readability
+
+![OpenClaw system atlas A2 blueprint poster](/assets/architecture/system-atlas-a2.svg)
+
+## Full component topology
 
 ```mermaid
 flowchart LR
-  subgraph VPS[Gateway host (VPS or always-on machine)]
-    GW[OpenClaw Gateway\nWebSocket + HTTP\n:18789]
-    STATE[(~/.openclaw\nconfig + credentials + sessions)]
-    WS[(Agent workspace\n~/.openclaw/workspace-...)]
+  subgraph Ingress[External ingress]
+    WA[WhatsApp]
+    TG[Telegram]
+    DS[Discord]
+    SL[Slack]
+    EXT[Plugin channels]
+    HOOKS[Webhook and cron triggers]
+  end
+
+  subgraph Host[Gateway host]
+    GW[Gateway process\nWS plus HTTP\nport 18789]
+    AG[Agent runtime loop]
+    EV[Evolution service]
+    STATE[(~/.openclaw\nconfig and state)]
+    WORK[(agent workspaces)]
+    CUI[Control UI\nserved by Gateway]
+    GW --- AG
+    GW --- EV
     GW --- STATE
-    GW --- WS
+    GW --- WORK
+    GW --- CUI
   end
 
-  subgraph Operator[Operator clients]
-    CLI[CLI\nopenclaw ...]
-    UI[Control UI\nBrowser SPA]
-    MAC[macOS app\n(remote over SSH optional)]
-    AUTO[Automation\nhooks/webhooks/cron]
+  subgraph Operators[Operator clients]
+    CLI[CLI]
+    WEB[Browser Control UI]
+    MAC[macOS app]
+    AUTO[Automation clients]
   end
 
-  subgraph Nodes[Nodes (role: node)]
+  subgraph Nodes[Node devices]
     IOS[iOS node]
     AND[Android node]
     MACNODE[macOS node mode]
     HEAD[Headless node host]
   end
 
-  CLI <-- WebSocket --> GW
-  UI <-- WebSocket --> GW
-  MAC <-- WebSocket --> GW
-  AUTO <-- WebSocket --> GW
+  subgraph Adjacent[Adjacent systems]
+    VID[VidClaw\nexternal control center\n127.0.0.1:3333]
+    MODELS[Model providers]
+    SCM[Git hosting and CI]
+  end
 
-  IOS <-- WebSocket --> GW
-  AND <-- WebSocket --> GW
-  MACNODE <-- WebSocket --> GW
-  HEAD <-- WebSocket --> GW
+  WA --> GW
+  TG --> GW
+  DS --> GW
+  SL --> GW
+  EXT --> GW
+  HOOKS --> GW
+
+  CLI <-- WS --> GW
+  WEB <-- WS --> GW
+  MAC <-- WS --> GW
+  AUTO <-- WS --> GW
+
+  IOS <-- WS --> GW
+  AND <-- WS --> GW
+  MACNODE <-- WS --> GW
+  HEAD <-- WS --> GW
+
+  AG <-- API --> MODELS
+  EV --> SCM
+  VID --> GW
+  VID --> WORK
 ```
 
-## What runs where (VPS mental model)
+Caption: one Gateway host is the source of truth for channels, sessions, auth,
+and control plane state. VidClaw is adjacent and external to the in process
+plugin runtime.
 
-When you use a VPS, treat it as the "source of truth" machine:
+## Runtime source of truth inventories
 
-- The Gateway runs on the VPS (or always-on host).
-- Inbound messages (Telegram, WhatsApp, Discord, etc.) land on the Gateway.
-- The agent loop runs on the Gateway host.
-- Session transcripts and per-agent state are stored on the Gateway host.
+### Core channel inventory
 
-Your laptop and phone are typically:
+Source: `src/channels/registry.ts`
 
-- operator clients (Control UI, CLI), and/or
-- nodes (camera/canvas/screen/system.run) that the Gateway can call into.
+<!-- atlas:auto:core-channels:start -->
 
-## Production updates and rollback (VPS)
+| Channel id   | Label       | Docs path              | Source note                                                                 |
+| ------------ | ----------- | ---------------------- | --------------------------------------------------------------------------- |
+| `telegram`   | Telegram    | `/channels/telegram`   | simplest way to get started — register a bot with @BotFather and get going. |
+| `whatsapp`   | WhatsApp    | `/channels/whatsapp`   | works with your own number; recommend a separate phone + eSIM.              |
+| `discord`    | Discord     | `/channels/discord`    | very well supported right now.                                              |
+| `irc`        | IRC         | `/channels/irc`        | classic IRC networks with DM/channel routing and pairing controls.          |
+| `googlechat` | Google Chat | `/channels/googlechat` | Google Workspace Chat app with HTTP webhook.                                |
+| `slack`      | Slack       | `/channels/slack`      | supported (Socket Mode).                                                    |
+| `signal`     | Signal      | `/channels/signal`     | core built in channel                                                       |
+| `imessage`   | iMessage    | `/channels/imessage`   | this is still a work in progress.                                           |
 
-For reliable VPS releases, use a release-directory + symlink promotion model:
+<!-- atlas:auto:core-channels:end -->
 
-- Keep the source checkout at a stable path (for example `/home/openclaw/openclaw`).
-- Build each candidate in a dedicated release directory (for example `/home/openclaw/deploy/openclaw/releases/<sha>`).
-- Point the live deployment symlink (for example `/home/openclaw/openclaw-current`) at the currently active release.
-- Store the last known good SHA in a state file (for example `/home/openclaw/deploy/openclaw/last-known-good.sha`).
+### Plugin channel inventory
 
-Recommended promotion flow:
+Source: `extensions/*/package.json` `openclaw.channel`
 
-1. Fetch the new commit and build in `releases/<sha>`.
-2. Run a real gateway boot preflight against the candidate release (not only `--version`), using a temporary config and loopback test port.
-3. Switch `openclaw-current` to the new release and restart the gateway service.
-4. Run a health probe (`openclaw channels status --probe`).
-5. Enforce a short stability window (for example 30-60 seconds) and verify the service restart count does not increase.
-6. Only then update `last-known-good.sha`.
+<!-- atlas:auto:plugin-channels:start -->
 
-Recommended rollback flow:
+| Channel id       | Label           | npm spec                   | Docs path                  | Extension directory         |
+| ---------------- | --------------- | -------------------------- | -------------------------- | --------------------------- |
+| `feishu`         | Feishu          | `@openclaw/feishu`         | `/channels/feishu`         | `extensions/feishu`         |
+| `googlechat`     | Google Chat     | `@openclaw/googlechat`     | `/channels/googlechat`     | `extensions/googlechat`     |
+| `nostr`          | Nostr           | `@openclaw/nostr`          | `/channels/nostr`          | `extensions/nostr`          |
+| `msteams`        | Microsoft Teams | `@openclaw/msteams`        | `/channels/msteams`        | `extensions/msteams`        |
+| `mattermost`     | Mattermost      | `@openclaw/mattermost`     | `/channels/mattermost`     | `extensions/mattermost`     |
+| `nextcloud-talk` | Nextcloud Talk  | `@openclaw/nextcloud-talk` | `/channels/nextcloud-talk` | `extensions/nextcloud-talk` |
+| `matrix`         | Matrix          | `@openclaw/matrix`         | `/channels/matrix`         | `extensions/matrix`         |
+| `bluebubbles`    | BlueBubbles     | `@openclaw/bluebubbles`    | `/channels/bluebubbles`    | `extensions/bluebubbles`    |
+| `line`           | LINE            | `@openclaw/line`           | `/channels/line`           | `extensions/line`           |
+| `zalo`           | Zalo            | `@openclaw/zalo`           | `/channels/zalo`           | `extensions/zalo`           |
+| `zalouser`       | Zalo Personal   | `@openclaw/zalouser`       | `/channels/zalouser`       | `extensions/zalouser`       |
+| `tlon`           | Tlon            | `@openclaw/tlon`           | `/channels/tlon`           | `extensions/tlon`           |
 
-1. Pause auto-update timer/service to prevent immediate re-promotion of a bad SHA.
-2. Repoint `openclaw-current` to the SHA in `last-known-good.sha`.
-3. Restart the gateway service and rerun health probes.
-4. Resume the auto-update timer only after the fix is deployed and verified.
+<!-- atlas:auto:plugin-channels:end -->
 
-## The control plane is one WebSocket protocol
+## Access and trust boundaries
 
-OpenClaw uses a single WebSocket protocol for:
+### Trust boundary map
 
-- operator control (status, chat, config, approvals)
-- node transport (node capabilities and `node.invoke`)
+- Boundary A: network edge to Gateway HTTP and WebSocket
+- Boundary B: connect handshake, auth, device identity, pairing
+- Boundary C: role and scope gates for Gateway methods and events
+- Boundary D: tool policy and sandbox runtime placement
+- Boundary E: exec approvals on gateway host or node host
+- Boundary F: filesystem and credential storage under `~/.openclaw`
 
-All clients start by sending a `connect` request, declaring their role, and authenticating. See [Gateway protocol](/gateway/protocol).
+### Operator and node role model
 
-## Evolution loop service
+- `role=operator`: control plane clients (CLI, Control UI, macOS app, automation)
+- `role=node`: capability host (camera, canvas, location, system.run)
 
-The Gateway can run an internal Evolution service when `evolution.enabled` is set to `true`.
+### Gateway method scope matrix
 
-It follows a deterministic four-stage loop:
+Source: `src/gateway/server-methods.ts`
 
-- Scout: hourly source fetch from curated allowlist sources.
-- Synthesize: daily proposal generation, scoring, and ranking.
-- Execute: guarded patch execution with strict path policy and local squash workflow.
-- Report: status/report events to operator clients and the Control UI.
+<!-- atlas:auto:gateway-method-scopes:start -->
 
-State and audit artifacts are stored under the gateway state directory in an `evolution/` subtree, including:
+| Authorization gate  | Required role or scope                                  | Methods                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Node role methods   | `role=node`                                             | `node.event`, `node.invoke.result`, `skills.bins`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Approval methods    | `operator.approvals` or `operator.admin`                | `exec.approval.list`, `exec.approval.request`, `exec.approval.resolve`, `exec.approval.waitDecision`                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Pairing methods     | `operator.pairing` or `operator.admin`                  | `device.pair.approve`, `device.pair.list`, `device.pair.reject`, `device.token.revoke`, `device.token.rotate`, `node.pair.approve`, `node.pair.list`, `node.pair.reject`, `node.pair.request`, `node.pair.verify`, `node.rename`                                                                                                                                                                                                                                                                                                                 |
+| Read methods        | `operator.read` or `operator.write` or `operator.admin` | `agent.identity.get`, `agents.list`, `channels.status`, `chat.history`, `config.get`, `cron.list`, `cron.runs`, `cron.status`, `evolution.insights.list`, `evolution.proposals.list`, `evolution.sources.list`, `evolution.status`, `health`, `last-heartbeat`, `logs.tail`, `models.list`, `node.describe`, `node.list`, `office.layout.get`, `office.snapshot`, `sessions.list`, `sessions.preview`, `skills.status`, `status`, `system-presence`, `talk.config`, `tts.providers`, `tts.status`, `usage.cost`, `usage.status`, `voicewake.get` |
+| Write methods       | `operator.write` or `operator.admin`                    | `agent`, `agent.wait`, `browser.request`, `chat.abort`, `chat.send`, `node.invoke`, `send`, `talk.mode`, `tts.convert`, `tts.disable`, `tts.enable`, `tts.setProvider`, `voicewake.set`, `wake`                                                                                                                                                                                                                                                                                                                                                  |
+| Admin prefixes      | `operator.admin`                                        | `exec.approvals.`, `config.`, `update.`, `wizard.`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Admin exact methods | `operator.admin`                                        | `agents.create`, `agents.delete`, `agents.update`, `channels.logout`, `cron.add`, `cron.remove`, `cron.run`, `cron.update`, `sessions.compact`, `sessions.delete`, `sessions.patch`, `sessions.reset`, `skills.install`, `skills.update`                                                                                                                                                                                                                                                                                                         |
 
-- source/cursor state
-- insights, proposals, runs, and audit JSONL logs
-- office layout/activity state
-- mirror repository workspace for safe execution
+<!-- atlas:auto:gateway-method-scopes:end -->
 
-## Reliability first execution boundaries
+### Event visibility scope guards
 
-Evolution auto-merge is intentionally narrow and safety-first:
+Source: `src/gateway/server-broadcast.ts`
 
-- Only low-risk proposals are auto-executed.
-- Auto-merge scope is constrained to docs, prompt literals, and dashboard/control-ui files.
-- Prompt edits must be string-literal-only changes in allowlisted prompt files.
-- Changes outside policy (runtime/auth/sandbox/release/publish sensitive paths) are rejected for auto-merge.
-- Failure bursts trigger automatic pause, and operator actions can pause/resume at any time.
+<!-- atlas:auto:event-scope-guards:start -->
 
-See [Configuration](/gateway/configuration), [Gateway protocol](/gateway/protocol), and [Control UI](/web/control-ui) for runtime controls and UI surfaces.
+| Event                     | Required scope       |
+| ------------------------- | -------------------- |
+| `device.pair.requested`   | `operator.pairing`   |
+| `device.pair.resolved`    | `operator.pairing`   |
+| `exec.approval.requested` | `operator.approvals` |
+| `exec.approval.resolved`  | `operator.approvals` |
+| `node.pair.requested`     | `operator.pairing`   |
+| `node.pair.resolved`      | `operator.pairing`   |
 
-### Why this matters
+<!-- atlas:auto:event-scope-guards:end -->
 
-If you can reach the Gateway WebSocket securely, you can:
+### Connect and pairing guards
 
-- open the Control UI
-- operate the CLI remotely
-- connect nodes
+Source: `src/gateway/server/ws-connection/message-handler.ts`
 
-So remote access is mostly about safely exposing or tunneling that single port.
+<!-- atlas:auto:connect-guards:start -->
 
-## Remote access patterns (VPS)
+| Connect guard                                    | Current behavior in source                           |
+| ------------------------------------------------ | ---------------------------------------------------- |
+| Allowed roles                                    | `operator`, `node`                                   |
+| Scope model                                      | Explicit scopes only default deny                    |
+| Scope stripping without device identity          | enabled                                              |
+| Control UI secure context requirement            | HTTPS or localhost required unless bypass is enabled |
+| allowInsecureAuth toggle in handshake            | present                                              |
+| dangerouslyDisableDeviceAuth toggle in handshake | present                                              |
 
-Default Gateway setup is loopback-first (`127.0.0.1:18789` on the Gateway host). You then reach it remotely using one of these patterns.
+<!-- atlas:auto:connect-guards:end -->
 
-### Pattern A: SSH tunnel (universal fallback)
-
-```bash
-ssh -N -L 18789:127.0.0.1:18789 user@gateway-host
-```
-
-Then point clients at `ws://127.0.0.1:18789` and open the Control UI at `http://127.0.0.1:18789/`.
-
-### Pattern B: Tailscale Serve (recommended for the Control UI)
-
-Keep the Gateway loopback-only and let Tailscale proxy it with HTTPS. See [Control UI](/web/control-ui) and [Tailscale](/gateway/tailscale).
-
-### Pattern C: Bind to tailnet or LAN
-
-Bind the Gateway beyond loopback only when you mean it, and ensure auth is enabled. See [Remote access](/gateway/remote) and [Security](/gateway/security).
-
-## Authentication and access boundaries
-
-There are multiple "doors" that protect a VPS Gateway. You typically want all of them.
-
-### Door 1: Gateway auth (token or password)
-
-Gateway auth is enforced during the WebSocket handshake via `connect.params.auth`:
-
-- token: `gateway.auth.token` (or `OPENCLAW_GATEWAY_TOKEN`)
-- password: `gateway.auth.password`
-
-See [Dashboard](/web/dashboard) and [Gateway configuration](/gateway/configuration).
-
-### Door 2: Device identity and pairing
-
-New operator devices and nodes require a one-time approval (device pairing). This prevents someone who got network access from silently controlling your Gateway.
-
-See:
-
-- [Control UI pairing](/web/control-ui#device-pairing-first-connection)
-- [Gateway protocol: device identity](/gateway/protocol#device-identity--pairing)
-- [Devices CLI](/cli/devices)
-
-### Door 3: Channel allowlists and policies
-
-Inbound messages are gated per channel:
-
-- DM policy (pairing, allowlist, open, disabled)
-- Group allowlists and mention requirements
-
-See [Security](/gateway/security) and the relevant channel docs under [Channels](/channels).
-
-### Door 4: Tool execution boundaries (sandbox, node, approvals)
-
-Tool execution is where "chat becomes actions". OpenClaw provides multiple boundaries you can combine:
-
-- **Sandboxing**: run certain sessions in Docker. See [Sandboxing](/gateway/sandboxing).
-- **Exec approvals**: require allowlists or interactive approval for shell commands. See [Exec approvals](/tools/exec-approvals).
-- **Node host**: run commands on a separate machine (your laptop) instead of the VPS. See [Nodes: remote node host](/nodes#remote-node-host-systemrun).
-
-The diagram below shows the common "VPS Gateway + local node" setup for safe local access.
+### Connect handshake and pairing flow
 
 ```mermaid
 sequenceDiagram
-  participant Chat as Inbound chat (Telegram/WhatsApp/etc)
-  participant GW as Gateway (VPS)
-  participant LLM as Model provider
-  participant Node as Node host (laptop or macOS node)
+  participant C as Client operator or node
+  participant G as Gateway
+  participant P as Pairing store
 
-  Chat->>GW: inbound message
-  GW->>LLM: agent run (prompt + tools policy)
-  LLM-->>GW: tool call (exec host=node)
-  GW->>Node: node.invoke(system.run, ...)
-  Node-->>GW: stdout/stderr/exitCode
-  GW-->>Chat: reply delivered
+  G->>C: event connect.challenge nonce
+  C->>G: req connect role scopes auth device
+
+  alt Shared auth invalid
+    G-->>C: res error unauthorized
+    G-->>C: close 1008
+  else Shared auth valid
+    alt Device identity missing and bypass disallowed
+      G-->>C: res error secure context required
+      G-->>C: close 1008
+    else Device identity present
+      G->>P: check role and scope pairing for device
+      alt New role or scope
+        G->>P: create pairing request
+        G-->>C: res error pairing required
+      else Paired
+        G-->>C: res hello ok with protocol and policy
+      end
+    end
+  end
 ```
 
-## Agents (how many, and how to think about them)
+Caption: pairing approvals gate role and scope upgrades. Shared auth alone is not
+a substitute for remote device identity when pairing is required.
 
-An agent is the unit of isolation inside a single Gateway process:
-
-- separate workspace
-- separate per-agent auth profiles
-- separate session store and transcripts
-
-See [Multi-Agent Routing](/concepts/multi-agent).
-
-### Recommended defaults (most people)
-
-1. **One agent (`main`)** for personal chat is enough when only you can DM the bot.
-2. **Two agents** is a common upgrade:
-   - `main`: chat, status, routing, approvals
-   - `coder`: sandboxed execution for coding and automation
-3. **Three agents** is a common "ops split":
-   - `main`: chat surface (minimal tools)
-   - `coder`: sandboxed tool execution
-   - `ops`: maintenance only (disabled or tightly allowlisted most of the time)
-4. **Four agents** is a common "super powers split" (recommended for hardened VPS setups):
-   - `main`: chat surface (minimal tools; no host exec; no browser)
-   - `coder`: sandboxed execution (tool runs happen in Docker)
-   - `power`: browser + approvals-gated host exec (no file mutation tools)
-   - `ops`: maintenance only (usually disabled or read-only)
-
-If you use a dedicated `power` agent, configure `sessions_spawn` to allow `main` to target it:
-
-```json5
-{
-  agents: {
-    list: [{ id: "main", subagents: { allowAgents: ["power", "coder"] } }],
-  },
-}
-```
-
-### When you want more agents
-
-- Multiple people share one Gateway: use one agent per person for isolation, then route via bindings.
-- Multiple "personas" with different rules: one agent per persona.
-- Different credentials or model choices: per-agent auth and per-agent model defaults make this clean.
-
-### When you need separate VPSes
-
-Usually you do not. One Gateway can host multiple agents.
-
-Use separate hosts only when you need hard isolation boundaries that a single process + filesystem permissions cannot provide (for example, separate OS users/hosts, separate secrets, or different trust zones).
-
-## Where data lives (important for VPS)
-
-On the Gateway host:
-
-- Config: `~/.openclaw/openclaw.json`
-- Credentials: `~/.openclaw/credentials/`
-- Per-agent auth profiles: `~/.openclaw/agents/<agentId>/agent/auth-profiles.json`
-- Per-agent sessions:
-  - store: `~/.openclaw/agents/<agentId>/sessions/sessions.json`
-  - transcripts: `~/.openclaw/agents/<agentId>/sessions/*.jsonl`
-- Workspace files (default): `~/.openclaw/workspace` (or per-agent workspaces)
-
-Docs:
-
-- [Agent workspace](/concepts/agent-workspace)
-- [Session management](/concepts/session)
-
-## Control UI vs VidClaw (what each is)
-
-These are different things.
-
-### Control UI (built-in)
-
-- Served by the Gateway itself (default `http://127.0.0.1:18789/`).
-- Talks directly to the Gateway WebSocket.
-- Used for chat, config, pairing, approvals, node status, logs, channel status, and more.
-
-Docs:
-
-- [Control UI](/web/control-ui)
-- [Dashboard](/web/dashboard)
-
-### VidClaw (separate control center)
-
-VidClaw is a self-hosted dashboard designed to run next to an OpenClaw Gateway:
-
-- Typical bind: `127.0.0.1:3333`
-- Typical access: SSH port-forward or a private network like Tailscale
-- It can read and write workspace files and can run `openclaw` CLI commands
-
-So yes, it is a web interface, but it is not the same as the Gateway Control UI.
-
-How it connects:
-
-- VidClaw reads OpenClaw state under `~/.openclaw` by default (override with `OPENCLAW_DIR`).
-- VidClaw can talk to the Gateway API (default `OPENCLAW_API=http://127.0.0.1:18789`).
-
-Docs: [VidClaw (control center)](/tools/vidclaw).
-
-### How to open the VidClaw UI securely (VPS)
-
-Keep VidClaw on loopback and tunnel it.
-
-SSH port-forward example:
-
-```bash
-ssh -N -L 3333:127.0.0.1:3333 user@gateway-host
-```
-
-Then open:
-
-- `http://127.0.0.1:3333/`
-
-### Making agents aware of VidClaw
-
-Agents are not automatically aware of external dashboards.
-
-Recommended pattern:
-
-- Put operator notes in `<workspace>/AGENTS.md` (for example: VidClaw URL, "loopback-only" rule, and the tunnel command).
-- Enable the bundled hook `bootstrap-extra-files` to inject `AGENTS.md` into the system prompt during `agent:bootstrap`.
-
-Docs: [Hooks](/automation/hooks).
-
-## How to "best use" a VPS setup
-
-The stable, safe way to use OpenClaw on a VPS is to keep the Gateway private and treat remote access like admin access.
-
-### A practical baseline
-
-- Keep the Gateway loopback-only on the VPS.
-- Use Tailscale Serve (or SSH tunnel) for the Control UI.
-- Keep inbound DMs locked down (pairing or allowlists).
-- Use a dedicated execution agent (often sandboxed) for risky tool use.
-- Use nodes for local-only capabilities (browser UI, camera, local filesystem), instead of punching holes into the VPS.
-
-### The routine commands you will use
-
-- Open the UI: `openclaw dashboard`
-- Check health and status: `openclaw status --all` and `openclaw status --deep`
-- Audit security posture: `openclaw security audit --deep`
-- Approve devices: `openclaw devices list` then `openclaw devices approve <id>`
-- Check nodes: `openclaw nodes status`
-
-## Troubleshooting map
+### Permission gate pipeline
 
 ```mermaid
 flowchart TD
-  A[Nothing works] --> B{Gateway reachable?}
-  B -->|No| C[Start or restart gateway\nopenclaw gateway status\nopenclaw gateway restart]
-  B -->|Yes| D{Auth or pairing issue?}
-  D -->|Yes| E[Get token on gateway host\nopenclaw config get gateway.auth.token\nRe-open Control UI]
-  D -->|No| F{Is it a node-only capability?}
-  F -->|Yes| G[Pair node\nopenclaw devices list\nopenclaw devices approve ...]
-  F -->|No| H[Check channel policy\nallowlists / dmPolicy / groups]
+  M[Inbound message or RPC request]
+  A[Channel policy and allowlist gate]
+  B[Connect auth and device pairing gate]
+  C[Role and scope method gate]
+  D[Tool policy allow deny gate]
+  E[Sandbox runtime placement gate]
+  F[Exec approvals gate if host exec]
+  G[Action executes]
+
+  M --> A --> B --> C --> D --> E --> F --> G
+
+  X1[Block]
+  A -->|policy denied| X1
+  B -->|auth or pairing failed| X1
+  C -->|scope missing| X1
+  D -->|tool denied| X1
+  E -->|sandbox mismatch or blocked| X1
+  F -->|approval denied timeout| X1
 ```
 
-## Next steps
+Caption: security is layered. no single gate should carry the full safety burden.
 
-If you are building a multi-device setup, the usual next reads are:
+## End to end message to action sequence
 
-- [Remote access](/gateway/remote)
-- [Nodes](/nodes)
-- [Multi-Agent Routing](/concepts/multi-agent)
+```mermaid
+sequenceDiagram
+  participant Chat as Channel sender
+  participant GW as Gateway
+  participant Model as Model provider
+  participant Node as Node host optional
+
+  Chat->>GW: inbound message event
+  GW->>GW: route to agent session by bindings
+  GW->>Model: prompt and tool policy
+  Model-->>GW: assistant tokens and optional tool call
+
+  alt Tool call host=node
+    GW->>Node: node.invoke system.run
+    Node-->>GW: stdout stderr exitCode
+  else Tool call host=sandbox or gateway
+    GW->>GW: run tool under sandbox and approval policy
+  end
+
+  GW-->>Chat: final reply delivered
+```
+
+Caption: delivery and tooling pass through the same routed agent session and
+policy chain.
+
+## Agent isolation model
+
+An agent is an isolation domain with these boundaries:
+
+- Workspace path (default cwd, not hard sandbox by itself)
+- Agent state directory (`agentDir`) and auth profiles
+- Session store and transcript files
+- Agent specific tool policy and optional sandbox policy
+
+Isolation sources:
+
+- Per agent auth profile path: `~/.openclaw/agents/<agentId>/agent/auth-profiles.json`
+- Per agent sessions path: `~/.openclaw/agents/<agentId>/sessions/`
+- Per agent workspace path via config (`agents.list[].workspace`)
+
+Isolation caveats:
+
+- Workspace path is a default cwd, not a host filesystem jail
+- Without sandboxing, absolute paths can reach host files
+- Agent to agent actions require explicit allow config
+
+Recommended split for hardened VPS setups:
+
+- `main`: chat and routing, minimal tools, no host exec
+- `coder`: sandboxed filesystem and exec workflow tools
+- `power`: explicit approvals for high risk tools
+- `ops`: maintenance only, usually disabled or tightly constrained
+
+## Channel and plugin architecture
+
+Channel architecture has two layers:
+
+- Core channel registry (`src/channels/registry.ts`)
+- Plugin channel metadata and implementations (`extensions/*`)
+
+Plugin architecture facts:
+
+- Plugins are loaded in process with the Gateway
+- Plugins can register tools, RPC methods, HTTP routes, services, hooks
+- Plugin config is schema validated through plugin manifest metadata
+
+VidClaw clarification:
+
+- VidClaw is an external self hosted control center
+- VidClaw is not an in process OpenClaw plugin
+- VidClaw typically runs beside Gateway on `127.0.0.1:3333`
+
+Related docs:
+
+- [Plugins](/tools/plugin)
+- [VidClaw](/tools/vidclaw)
+- [Work plugin](/plugins/work)
+- [Voice call plugin](/plugins/voice-call)
+
+## UI and portal address matrix
+
+| Surface                   | Default local address                               | Access class    | Notes                                               |
+| ------------------------- | --------------------------------------------------- | --------------- | --------------------------------------------------- |
+| Gateway Control UI        | `http://127.0.0.1:18789/`                           | admin           | Served by Gateway, WebSocket auth and pairing aware |
+| Gateway WebSocket         | `ws://127.0.0.1:18789`                              | control plane   | Operator and node transport                         |
+| VidClaw UI                | `http://127.0.0.1:3333/`                            | admin           | External control center, keep loopback only         |
+| Remote Control UI via SSH | `ssh -N -L 18789:127.0.0.1:18789 user@gateway-host` | private tunnel  | Recommended universal fallback                      |
+| Remote VidClaw via SSH    | `ssh -N -L 3333:127.0.0.1:3333 user@gateway-host`   | private tunnel  | Keep VidClaw off public internet                    |
+| Tailscale Serve UI        | `https://<magicdns>/`                               | private network | Recommended remote UX for Control UI                |
+
+## VPS operating model
+
+### VPS baseline defaults from source
+
+Source: `ops/vps/openclaw.vps-coding.json5`
+
+<!-- atlas:auto:vps-defaults:start -->
+
+| VPS baseline field           | Value from `ops/vps/openclaw.vps-coding.json5`                 |
+| ---------------------------- | -------------------------------------------------------------- |
+| Gateway bind                 | `loopback`                                                     |
+| Gateway port                 | `18789`                                                        |
+| Gateway auth mode            | `token`                                                        |
+| Gateway tool deny list       | `gateway`, `sessions_send`, `sessions_spawn`, `whatsapp_login` |
+| Telegram dmPolicy            | `allowlist`                                                    |
+| Telegram groupPolicy         | `disabled`                                                     |
+| Telegram configWrites        | `false`                                                        |
+| Telegram streamMode          | `off`                                                          |
+| Session dmScope              | `per-channel-peer`                                             |
+| Agent ids                    | `main`, `coder`, `power`, `ops`                                |
+| Work plugin enabled          | `true`                                                         |
+| Work plugin coderSessionKey  | `agent:coder:main`                                             |
+| Exec approvals enabled       | `true`                                                         |
+| Exec approvals mode          | `targets`                                                      |
+| Exec approvals agentFilter   | `power`                                                        |
+| Exec approvals targets count | `1`                                                            |
+| tools.elevated.enabled       | `false`                                                        |
+
+<!-- atlas:auto:vps-defaults:end -->
+
+### Deploy health rollback loop
+
+1. Build candidate release in isolated release directory
+2. Preflight a real gateway boot on loopback test port
+3. Promote symlink to candidate release
+4. Restart service and run `openclaw channels status --probe`
+5. Hold stability window and verify restart count stays stable
+6. Mark as last known good release
+
+Rollback path:
+
+1. Pause auto update timer
+2. Repoint symlink to last known good release
+3. Restart and probe again
+4. Resume update timer only after fix deployment
+
+### Operations loop diagram
+
+```mermaid
+flowchart LR
+  A[Build candidate release] --> B[Gateway preflight boot]
+  B --> C[Promote live symlink]
+  C --> D[Restart gateway service]
+  D --> E[Probe and status checks]
+  E --> F{Stable window passes}
+  F -->|Yes| G[Mark last known good]
+  F -->|No| H[Rollback to last known good]
+  H --> D
+```
+
+Caption: release safety depends on preflight plus post restart probes and a
+stability window.
+
+## Best practices and anti patterns
+
+### Best practices
+
+- Keep gateway bind loopback unless explicit remote bind is required
+- Enforce gateway auth and keep strong token or password hygiene
+- Use pairing approvals for remote operator and node devices
+- Keep chat facing agents minimal and route risky work to dedicated agents
+- Use sandboxing for coding and filesystem mutation workflows
+- Keep VidClaw private with loopback plus SSH or tailnet access
+- Run `openclaw security audit --deep` after config changes
+- Prefer exact plugin versions and explicit plugin allow lists
+- Verify with `openclaw status --all` and `openclaw status --deep`
+
+### Anti patterns
+
+- Publicly exposing Control UI or VidClaw without private network controls
+- Running tool rich agents in open group or open DM policies
+- Sharing one high privilege agent across unrelated operators
+- Treating workspace path as strong isolation without sandbox
+- Installing plugins from untrusted sources without review
+- Shipping updates without boot preflight and post restart probe
+
+## Incident and troubleshooting decision tree
+
+```mermaid
+flowchart TD
+  S[Incident or failure] --> N{Gateway reachable}
+  N -->|No| N1[Check service status logs and bind port]
+  N1 --> N2[Restart service and recheck probes]
+
+  N -->|Yes| A{Auth or pairing failures}
+  A -->|Yes| A1[Check gateway auth mode token password]
+  A1 --> A2[Check pending device approvals]
+
+  A -->|No| T{Tool action blocked}
+  T -->|Yes| T1[Check role and scope for calling client]
+  T1 --> T2[Check tool allow deny and sandbox mode]
+  T2 --> T3[Check exec approvals allowlist or prompts]
+
+  T -->|No| C{Channel delivery issue}
+  C -->|Yes| C1[Check channel specific status probe]
+  C1 --> C2[Check DM and group policy allowlists]
+
+  C -->|No| R[Collect reconciliation bundle and review]
+```
+
+Caption: diagnose from transport and auth first, then method scopes and tool
+policy, then channel specific delivery paths.
+
+## Live runtime reconciliation workflow
+
+This section is for operator supplied runtime evidence. Keep all output public
+safe before sharing.
+
+### Redaction rules
+
+Before sharing command output:
+
+- Remove tokens, passwords, API keys, cookies, and auth headers
+- Replace hostnames, IP addresses, usernames, phone numbers with placeholders
+- Keep structure and key fields unchanged so reconciliation stays deterministic
+
+### Checklist commands
+
+Run on the gateway host, then share output grouped exactly by heading.
+
+#### host_runtime_fingerprint
+
+```bash
+uname -a
+node -v
+openclaw --version
+pwd
+```
+
+#### listening_ports_exposure
+
+```bash
+ss -ltnp | rg '18789|3333|22' || true
+openclaw config get gateway.bind
+openclaw config get gateway.port
+```
+
+#### gateway_health_status_probe
+
+```bash
+openclaw health
+openclaw status --all
+openclaw status --deep
+openclaw channels status --probe
+```
+
+#### security_audit
+
+```bash
+openclaw security audit
+openclaw security audit --deep
+```
+
+#### inventory_agents_bindings_plugins_nodes_devices
+
+```bash
+openclaw agents list --bindings
+openclaw plugins list
+openclaw nodes status
+openclaw devices list
+```
+
+### Ingestion format for reconciliation
+
+Use this exact template when sharing output:
+
+```text
+[host_runtime_fingerprint]
+<redacted command output>
+
+[listening_ports_exposure]
+<redacted command output>
+
+[gateway_health_status_probe]
+<redacted command output>
+
+[security_audit]
+<redacted command output>
+
+[inventory_agents_bindings_plugins_nodes_devices]
+<redacted command output>
+```
+
+After you share the bundle, this atlas can be reconciled by updating runtime
+annotation sections without changing the architecture structure.
+
+## Related docs
+
+- [Gateway architecture](/concepts/architecture)
+- [Gateway protocol](/gateway/protocol)
 - [Security](/gateway/security)
+- [Remote access](/gateway/remote)
+- [Sandboxing](/gateway/sandboxing)
+- [Exec approvals](/tools/exec-approvals)
+- [Multi agent routing](/concepts/multi-agent)
+- [Nodes](/nodes)
+- [VPS coding automation](/install/vps-coding)
+- [VidClaw](/tools/vidclaw)

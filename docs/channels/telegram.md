@@ -396,10 +396,12 @@ If the primary bot is unresponsive, you can immediately message the standby bot.
 
     Exec approval forwarding uses inline buttons in Telegram DMs:
 
-    - approval prompts can include **Allow once**, **Always allow**, and **Deny**
+    - approval prompts include **Approve** (allow once) and **Deny**
+    - additional choices (for example **Always allow**) are also delivered as menu buttons
     - **Always allow** requires a second confirmation tap
     - final decisions clear buttons immediately to prevent duplicate taps
     - group chats still receive text-only approval prompts
+    - default: when Telegram is configured and `approvals.exec` is unset, exec approvals are forwarded to the Telegram session; set `approvals.exec.enabled: false` to disable this behavior
 
     Related docs: [Exec approvals](/tools/exec-approvals)
 

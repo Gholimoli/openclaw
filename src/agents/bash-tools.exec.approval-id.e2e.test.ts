@@ -7,6 +7,14 @@ vi.mock("./tools/gateway.js", () => ({
   callGatewayTool: vi.fn(),
 }));
 
+vi.mock("./bash-tools.exec-runtime.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("./bash-tools.exec-runtime.js")>();
+  return {
+    ...mod,
+    runExecProcess: vi.fn(mod.runExecProcess),
+  };
+});
+
 vi.mock("./tools/nodes-utils.js", () => ({
   listNodes: vi.fn(async () => [
     { nodeId: "node-1", commands: ["system.run"], platform: "darwin" },
@@ -180,5 +188,71 @@ describe("exec approvals", () => {
     expect(result.details.status).toBe("approval-pending");
     await approvalSeen;
     expect(calls).toContain("exec.approval.request");
+  });
+
+  it("does not execute node invoke when approval decision is missing", async () => {
+    const { callGatewayTool } = await import("./tools/gateway.js");
+    const calls: string[] = [];
+
+    vi.mocked(callGatewayTool).mockImplementation(async (method) => {
+      calls.push(method);
+      if (method === "exec.approval.request") {
+        return { decision: null };
+      }
+      if (method === "node.invoke") {
+        return { ok: true };
+      }
+      return { ok: true };
+    });
+
+    const { createExecTool } = await import("./bash-tools.exec.js");
+    const tool = createExecTool({
+      host: "node",
+      ask: "always",
+      security: "full",
+      approvalRunningNoticeMs: 0,
+    });
+
+    const result = await tool.execute("call5", { command: "echo denied-on-timeout" });
+    expect(result.details.status).toBe("approval-pending");
+
+    await expect
+      .poll(() => calls.filter((method) => method === "node.invoke").length, {
+        timeout: 2000,
+        interval: 20,
+      })
+      .toBe(0);
+  });
+
+  it("does not execute gateway command when approval decision is missing", async () => {
+    const { callGatewayTool } = await import("./tools/gateway.js");
+    const execRuntime = await import("./bash-tools.exec-runtime.js");
+    const runExecProcess = vi.mocked(execRuntime.runExecProcess);
+    runExecProcess.mockClear();
+
+    vi.mocked(callGatewayTool).mockImplementation(async (method) => {
+      if (method === "exec.approval.request") {
+        return { decision: null };
+      }
+      return { ok: true };
+    });
+
+    const { createExecTool } = await import("./bash-tools.exec.js");
+    const tool = createExecTool({
+      host: "gateway",
+      ask: "always",
+      security: "full",
+      approvalRunningNoticeMs: 0,
+    });
+
+    const result = await tool.execute("call6", { command: "echo denied-on-timeout" });
+    expect(result.details.status).toBe("approval-pending");
+
+    await expect
+      .poll(() => runExecProcess.mock.calls.length, {
+        timeout: 2000,
+        interval: 20,
+      })
+      .toBe(0);
   });
 });

@@ -37,6 +37,85 @@ function getFirstDeliveryPayload(deliver: ReturnType<typeof vi.fn>) {
 }
 
 describe("exec approval forwarder", () => {
+  it("defaults to telegram session forwarding when approvals config is unset", async () => {
+    vi.useFakeTimers();
+    const deliver = vi.fn().mockResolvedValue([]);
+    const cfg = {
+      channels: {
+        telegram: {
+          botToken: "telegram-token",
+        },
+      },
+    } as OpenClawConfig;
+
+    const forwarder = createExecApprovalForwarder({
+      getConfig: () => cfg,
+      deliver,
+      nowMs: () => 1000,
+      resolveSessionTarget: () => ({ channel: "telegram", to: "123" }),
+    });
+
+    await forwarder.handleRequested(baseRequest);
+    expect(deliver).toHaveBeenCalledTimes(1);
+    const payload = getFirstDeliveryPayload(deliver) as
+      | { channelData?: { telegram?: { buttons?: Array<Array<{ text: string }>> } } }
+      | undefined;
+    const labels =
+      payload?.channelData?.telegram?.buttons?.flat().map((button) => button.text) ?? [];
+    expect(labels).toContain("Approve");
+    expect(labels).toContain("Deny");
+    expect(labels).toContain("Always allow");
+  });
+
+  it("does not auto-forward non-telegram sessions when approvals config is unset", async () => {
+    vi.useFakeTimers();
+    const deliver = vi.fn().mockResolvedValue([]);
+    const cfg = {
+      channels: {
+        telegram: {
+          botToken: "telegram-token",
+        },
+      },
+    } as OpenClawConfig;
+
+    const forwarder = createExecApprovalForwarder({
+      getConfig: () => cfg,
+      deliver,
+      nowMs: () => 1000,
+      resolveSessionTarget: () => ({ channel: "slack", to: "U1" }),
+    });
+
+    await forwarder.handleRequested(baseRequest);
+    expect(deliver).not.toHaveBeenCalled();
+  });
+
+  it("respects explicit exec approval forwarding disable", async () => {
+    vi.useFakeTimers();
+    const deliver = vi.fn().mockResolvedValue([]);
+    const cfg = {
+      channels: {
+        telegram: {
+          botToken: "telegram-token",
+        },
+      },
+      approvals: {
+        exec: {
+          enabled: false,
+        },
+      },
+    } as OpenClawConfig;
+
+    const forwarder = createExecApprovalForwarder({
+      getConfig: () => cfg,
+      deliver,
+      nowMs: () => 1000,
+      resolveSessionTarget: () => ({ channel: "telegram", to: "123" }),
+    });
+
+    await forwarder.handleRequested(baseRequest);
+    expect(deliver).not.toHaveBeenCalled();
+  });
+
   it("forwards to session target and resolves", async () => {
     vi.useFakeTimers();
     const deliver = vi.fn().mockResolvedValue([]);

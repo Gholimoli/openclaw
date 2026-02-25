@@ -93,6 +93,9 @@ If a prompt is required but no UI is reachable, fallback decides:
 - **allowlist**: allow only if allowlist matches.
 - **full**: allow.
 
+For gateway-managed `exec.approval.request` prompts, timeout/no-decision is treated as deny.
+In that flow, execution never auto-approves from `askFallback`.
+
 ## Allowlist (per agent)
 
 Allowlists are **per agent**. If multiple agents exist, switch which agent you’re
@@ -179,6 +182,12 @@ Actions:
 You can forward exec approval prompts to any chat channel (including plugin channels) and approve
 them with `/approve`. This uses the normal outbound delivery pipeline.
 
+Default behavior:
+
+- When Telegram is configured and `approvals.exec` is not set, OpenClaw forwards exec approvals to
+  the originating Telegram session by default.
+- Set `approvals.exec.enabled: false` to disable forwarding.
+
 Recommended pattern for multi-agent setups:
 
 - Keep your chat-facing agent (for example `main`) minimal and **deny** host exec.
@@ -215,7 +224,7 @@ Reply in chat:
 
 - `/approve` (no args) lists pending approvals for the current session and prints copyable commands.
 - Telegram DM forwarding can include tap-to-approve buttons.
-  - One tap: **Allow once** or **Deny**
+  - One tap: **Approve** (allow once) or **Deny**
   - Two taps: **Always allow** (confirm step)
   - Final decisions clear buttons immediately
 - Telegram group targets stay text-only for approvals.

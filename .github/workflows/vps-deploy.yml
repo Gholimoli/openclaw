@@ -1,31 +1,89 @@
 name: VPS Deploy
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit SHA to deploy (optional; defaults to current main HEAD)
+        required: false
+        type: string
 
 concurrency:
   group: vps-deploy-${{ github.repository }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
+      - name: Resolve deploy target
+        id: target
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          main_head="$(git ls-remote "https://github.com/${REPOSITORY}" refs/heads/main | awk '{print $1}')"
+          if [ -z "$main_head" ]; then
+            echo "::error::Unable to resolve main branch HEAD SHA"
+            exit 1
+          fi
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            deploy_sha="$INPUT_SHA"
+            if [ -z "$deploy_sha" ]; then
+              deploy_sha="$main_head"
+            fi
+          else
+            deploy_sha="$WORKFLOW_RUN_SHA"
+          fi
+
+          if ! printf '%s' "$deploy_sha" | grep -Eq '^[0-9a-fA-F]{7,40}$'; then
+            echo "::error::Invalid deploy SHA: $deploy_sha"
+            exit 1
+          fi
+
+          stale="false"
+          if [ "$EVENT_NAME" = "workflow_run" ] && [ "$deploy_sha" != "$main_head" ]; then
+            stale="true"
+            echo "::warning::Skipping stale CI SHA $deploy_sha (current main is $main_head)"
+          fi
+
+          echo "sha=$deploy_sha" >> "$GITHUB_OUTPUT"
+          echo "main_head=$main_head" >> "$GITHUB_OUTPUT"
+          echo "stale=$stale" >> "$GITHUB_OUTPUT"
+
       - name: Validate deploy secrets
+        if: steps.target.outputs.stale != 'true'
         env:
           VPS_DEPLOY_HOST: ${{ secrets.VPS_DEPLOY_HOST }}
           VPS_DEPLOY_USER: ${{ secrets.VPS_DEPLOY_USER }}
           VPS_DEPLOY_SSH_KEY: ${{ secrets.VPS_DEPLOY_SSH_KEY }}
           VPS_DEPLOY_KNOWN_HOSTS: ${{ secrets.VPS_DEPLOY_KNOWN_HOSTS }}
         run: |
+          set -euo pipefail
           test -n "$VPS_DEPLOY_HOST"
           test -n "$VPS_DEPLOY_USER"
           test -n "$VPS_DEPLOY_SSH_KEY"
           test -n "$VPS_DEPLOY_KNOWN_HOSTS"
 
       - name: Configure SSH
+        if: steps.target.outputs.stale != 'true'
         env:
           VPS_DEPLOY_SSH_KEY: ${{ secrets.VPS_DEPLOY_SSH_KEY }}
           VPS_DEPLOY_KNOWN_HOSTS: ${{ secrets.VPS_DEPLOY_KNOWN_HOSTS }}
@@ -37,14 +95,86 @@ jobs:
           printf '%s\n' "$VPS_DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Trigger VPS deploy
+      - name: Promote release on VPS
+        if: steps.target.outputs.stale != 'true'
         env:
           VPS_DEPLOY_HOST: ${{ secrets.VPS_DEPLOY_HOST }}
           VPS_DEPLOY_USER: ${{ secrets.VPS_DEPLOY_USER }}
+          VPS_DEPLOY_REPO_DIR: ${{ secrets.VPS_DEPLOY_REPO_DIR }}
+          OPENCLAW_DEPLOY_ROOT: ${{ secrets.OPENCLAW_DEPLOY_ROOT }}
+          OPENCLAW_CURRENT_LINK: ${{ secrets.OPENCLAW_CURRENT_LINK }}
+          OPENCLAW_LAST_KNOWN_GOOD_FILE: ${{ secrets.OPENCLAW_LAST_KNOWN_GOOD_FILE }}
+          OPENCLAW_GATEWAY_SERVICE: ${{ secrets.OPENCLAW_GATEWAY_SERVICE }}
+          OPENCLAW_GATEWAY_HEALTH_URL: ${{ secrets.OPENCLAW_GATEWAY_HEALTH_URL }}
+          OPENCLAW_STABILITY_SECONDS: ${{ secrets.OPENCLAW_STABILITY_SECONDS }}
+          OPENCLAW_HEALTH_TIMEOUT_SECONDS: ${{ secrets.OPENCLAW_HEALTH_TIMEOUT_SECONDS }}
+          OPENCLAW_CHANNELS_PROBE_TIMEOUT_SECONDS: ${{ secrets.OPENCLAW_CHANNELS_PROBE_TIMEOUT_SECONDS }}
+          OPENCLAW_PREFLIGHT_PORT: ${{ secrets.OPENCLAW_PREFLIGHT_PORT }}
+          OPENCLAW_PREFLIGHT_TIMEOUT_SECONDS: ${{ secrets.OPENCLAW_PREFLIGHT_TIMEOUT_SECONDS }}
+          OPENCLAW_RUN_CHANNELS_PROBE: ${{ secrets.OPENCLAW_RUN_CHANNELS_PROBE }}
         run: |
           set -euo pipefail
+          deploy_sha="${{ steps.target.outputs.sha }}"
+
           ssh \
             -i ~/.ssh/id_ed25519 \
             -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
-            "${VPS_DEPLOY_USER}@${VPS_DEPLOY_HOST}"
+            "${VPS_DEPLOY_USER}@${VPS_DEPLOY_HOST}" \
+            bash -se -- \
+            "$deploy_sha" \
+            "${VPS_DEPLOY_REPO_DIR:-}" \
+            "${OPENCLAW_DEPLOY_ROOT:-}" \
+            "${OPENCLAW_CURRENT_LINK:-}" \
+            "${OPENCLAW_LAST_KNOWN_GOOD_FILE:-}" \
+            "${OPENCLAW_GATEWAY_SERVICE:-}" \
+            "${OPENCLAW_GATEWAY_HEALTH_URL:-}" \
+            "${OPENCLAW_STABILITY_SECONDS:-}" \
+            "${OPENCLAW_HEALTH_TIMEOUT_SECONDS:-}" \
+            "${OPENCLAW_CHANNELS_PROBE_TIMEOUT_SECONDS:-}" \
+            "${OPENCLAW_PREFLIGHT_PORT:-}" \
+            "${OPENCLAW_PREFLIGHT_TIMEOUT_SECONDS:-}" \
+            "${OPENCLAW_RUN_CHANNELS_PROBE:-}" <<'EOF'
+          set -euo pipefail
+
+          deploy_sha="$1"
+          repo_dir_override="$2"
+          deploy_root_override="$3"
+          current_link_override="$4"
+          lkg_file_override="$5"
+          service_override="$6"
+          health_url_override="$7"
+          stability_override="$8"
+          health_timeout_override="$9"
+          channels_probe_timeout_override="${10}"
+          preflight_port_override="${11}"
+          preflight_timeout_override="${12}"
+          channels_probe_enabled_override="${13}"
+
+          if [ -n "$repo_dir_override" ]; then export OPENCLAW_REPO_DIR="$repo_dir_override"; fi
+          if [ -n "$deploy_root_override" ]; then export OPENCLAW_DEPLOY_ROOT="$deploy_root_override"; fi
+          if [ -n "$current_link_override" ]; then export OPENCLAW_CURRENT_LINK="$current_link_override"; fi
+          if [ -n "$lkg_file_override" ]; then export OPENCLAW_LAST_KNOWN_GOOD_FILE="$lkg_file_override"; fi
+          if [ -n "$service_override" ]; then export OPENCLAW_GATEWAY_SERVICE="$service_override"; fi
+          if [ -n "$health_url_override" ]; then export OPENCLAW_GATEWAY_HEALTH_URL="$health_url_override"; fi
+          if [ -n "$stability_override" ]; then export OPENCLAW_STABILITY_SECONDS="$stability_override"; fi
+          if [ -n "$health_timeout_override" ]; then export OPENCLAW_HEALTH_TIMEOUT_SECONDS="$health_timeout_override"; fi
+          if [ -n "$channels_probe_timeout_override" ]; then export OPENCLAW_CHANNELS_PROBE_TIMEOUT_SECONDS="$channels_probe_timeout_override"; fi
+          if [ -n "$preflight_port_override" ]; then export OPENCLAW_PREFLIGHT_PORT="$preflight_port_override"; fi
+          if [ -n "$preflight_timeout_override" ]; then export OPENCLAW_PREFLIGHT_TIMEOUT_SECONDS="$preflight_timeout_override"; fi
+          if [ -n "$channels_probe_enabled_override" ]; then export OPENCLAW_RUN_CHANNELS_PROBE="$channels_probe_enabled_override"; fi
+
+          repo_dir="${OPENCLAW_REPO_DIR:-$HOME/openclaw}"
+          if [ ! -d "$repo_dir" ]; then
+            echo "repo dir does not exist: $repo_dir" >&2
+            exit 1
+          fi
+
+          git -C "$repo_dir" fetch origin main --prune
+
+          tmp_script="$(mktemp /tmp/openclaw-promote-release.XXXXXX.sh)"
+          git -C "$repo_dir" show "${deploy_sha}:ops/vps/promote-release.sh" > "$tmp_script"
+          chmod +x "$tmp_script"
+          "$tmp_script" "$deploy_sha"
+          rm -f "$tmp_script"
+          EOF

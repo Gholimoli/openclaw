@@ -419,6 +419,15 @@ export async function startGatewayServer(
 
   const feedEvolutionEvent = (event: string, payload: unknown) => {
     if (event === "chat") {
+      const chatState =
+        payload &&
+        typeof payload === "object" &&
+        typeof (payload as { state?: unknown }).state === "string"
+          ? ((payload as { state: string }).state ?? "")
+          : "";
+      if (chatState === "delta") {
+        return;
+      }
       void evolutionService.onChatEvent((payload ?? {}) as Record<string, unknown>).catch((err) => {
         logEvolution.warn(`chat forwarding failed: ${String(err)}`);
       });
@@ -560,6 +569,19 @@ export async function startGatewayServer(
     ? null
     : onAgentEvent((evt) => {
         agentEventHandler(evt);
+        const stream = typeof evt.stream === "string" ? evt.stream : "";
+        if (stream === "assistant") {
+          return;
+        }
+        if (stream === "tool") {
+          const phase =
+            evt.data && typeof evt.data === "object" && typeof evt.data.phase === "string"
+              ? evt.data.phase
+              : "";
+          if (phase === "update") {
+            return;
+          }
+        }
         void evolutionService.onAgentEvent((evt ?? {}) as Record<string, unknown>).catch((err) => {
           logEvolution.warn(`agent event forwarding failed: ${String(err)}`);
         });

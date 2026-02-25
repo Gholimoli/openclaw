@@ -100,10 +100,10 @@ export function buildExecApprovalDefaultButtons(
   }
   return [
     [
-      { text: "Allow once", callback_data: allowOnce },
-      { text: "Always allow", callback_data: always },
+      { text: "Approve", callback_data: allowOnce },
+      { text: "Deny", callback_data: deny },
     ],
-    [{ text: "Deny", callback_data: deny }],
+    [{ text: "Always allow", callback_data: always }],
   ];
 }
 

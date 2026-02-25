@@ -333,7 +333,6 @@ export function createExecTool(
         const approvals = resolveExecApprovals(agentId, { security, ask });
         const hostSecurity = minSecurity(security, approvals.agent.security);
         const hostAsk = maxAsk(ask, approvals.agent.ask);
-        const askFallback = approvals.agent.askFallback;
         if (hostSecurity === "deny") {
           throw new Error("exec denied: host=node security=deny");
         }
@@ -497,14 +496,7 @@ export function createExecTool(
             if (decision === "deny") {
               deniedReason = "user-denied";
             } else if (!decision) {
-              if (askFallback === "full") {
-                approvedByAsk = true;
-                approvalDecision = "allow-once";
-              } else if (askFallback === "allowlist") {
-                // Defer allowlist enforcement to the node host.
-              } else {
-                deniedReason = "approval-timeout";
-              }
+              deniedReason = "approval-timeout";
             } else if (decision === "allow-once") {
               approvedByAsk = true;
               approvalDecision = "allow-once";
@@ -607,7 +599,6 @@ export function createExecTool(
         const approvals = resolveExecApprovals(agentId, { security, ask });
         const hostSecurity = minSecurity(security, approvals.agent.security);
         const hostAsk = maxAsk(ask, approvals.agent.ask);
-        const askFallback = approvals.agent.askFallback;
         if (hostSecurity === "deny") {
           throw new Error("exec denied: host=gateway security=deny");
         }
@@ -680,17 +671,7 @@ export function createExecTool(
             if (decision === "deny") {
               deniedReason = "user-denied";
             } else if (!decision) {
-              if (askFallback === "full") {
-                approvedByAsk = true;
-              } else if (askFallback === "allowlist") {
-                if (!analysisOk || !allowlistSatisfied) {
-                  deniedReason = "approval-timeout (allowlist-miss)";
-                } else {
-                  approvedByAsk = true;
-                }
-              } else {
-                deniedReason = "approval-timeout";
-              }
+              deniedReason = "approval-timeout";
             } else if (decision === "allow-once") {
               approvedByAsk = true;
             } else if (decision === "allow-always") {
