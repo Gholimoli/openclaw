@@ -1,4 +1,6 @@
 import type { Api, Model } from "@mariozechner/pi-ai";
+import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
+import path from "node:path";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { ModelDefinitionConfig } from "../../config/types.js";
 import { resolveOpenClawAgentDir } from "../agent-paths.js";
@@ -7,12 +9,6 @@ import { buildModelAliasLines } from "../model-alias-lines.js";
 import { normalizeModelCompat } from "../model-compat.js";
 import { resolveForwardCompatModel } from "../model-forward-compat.js";
 import { normalizeProviderId } from "../model-selection.js";
-import {
-  discoverAuthStorage,
-  discoverModels,
-  type AuthStorage,
-  type ModelRegistry,
-} from "../pi-model-discovery.js";
 
 type InlineModelEntry = ModelDefinitionConfig & { provider: string; baseUrl?: string };
 type InlineProviderConfig = {
@@ -22,6 +18,14 @@ type InlineProviderConfig = {
 };
 
 export { buildModelAliasLines };
+
+function discoverAuthStorage(agentDir: string): AuthStorage {
+  return new AuthStorage(path.join(agentDir, "auth.json"));
+}
+
+function discoverModels(authStorage: AuthStorage, agentDir: string): ModelRegistry {
+  return new ModelRegistry(authStorage, path.join(agentDir, "models.json"));
+}
 
 export function buildInlineProviderModels(
   providers: Record<string, InlineProviderConfig>,

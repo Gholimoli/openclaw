@@ -1,11 +1,20 @@
 import type { Api, Context, Model } from "@mariozechner/pi-ai";
 import { complete } from "@mariozechner/pi-ai";
+import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
+import path from "node:path";
 import type { ImageDescriptionRequest, ImageDescriptionResult } from "../types.js";
 import { minimaxUnderstandImage } from "../../agents/minimax-vlm.js";
 import { getApiKeyForModel, requireApiKey } from "../../agents/model-auth.js";
 import { ensureOpenClawModelsJson } from "../../agents/models-config.js";
-import { discoverAuthStorage, discoverModels } from "../../agents/pi-model-discovery.js";
 import { coerceImageAssistantText } from "../../agents/tools/image-tool.helpers.js";
+
+function discoverAuthStorage(agentDir: string): AuthStorage {
+  return new AuthStorage(path.join(agentDir, "auth.json"));
+}
+
+function discoverModels(authStorage: AuthStorage, agentDir: string): ModelRegistry {
+  return new ModelRegistry(authStorage, path.join(agentDir, "models.json"));
+}
 
 export async function describeImageWithModel(
   params: ImageDescriptionRequest,

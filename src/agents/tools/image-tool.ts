@@ -1,4 +1,5 @@
 import { type Api, type Context, complete, type Model } from "@mariozechner/pi-ai";
+import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import path from "node:path";
 import type { OpenClawConfig } from "../../config/config.js";
@@ -13,7 +14,6 @@ import { getApiKeyForModel, requireApiKey, resolveEnvApiKey } from "../model-aut
 import { runWithImageModelFallback } from "../model-fallback.js";
 import { resolveConfiguredModelRef } from "../model-selection.js";
 import { ensureOpenClawModelsJson } from "../models-config.js";
-import { discoverAuthStorage, discoverModels } from "../pi-model-discovery.js";
 import { normalizeWorkspaceDir } from "../workspace-dir.js";
 import {
   coerceImageAssistantText,
@@ -67,6 +67,14 @@ function hasAuthForProvider(params: { provider: string; agentDir: string }): boo
     allowKeychainPrompt: false,
   });
   return listProfilesForProvider(store, params.provider).length > 0;
+}
+
+function discoverAuthStorage(agentDir: string): AuthStorage {
+  return new AuthStorage(path.join(agentDir, "auth.json"));
+}
+
+function discoverModels(authStorage: AuthStorage, agentDir: string): ModelRegistry {
+  return new ModelRegistry(authStorage, path.join(agentDir, "models.json"));
 }
 
 /**

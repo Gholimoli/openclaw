@@ -234,20 +234,22 @@ vi.mock("../agents/pi-model-discovery.js", async () => {
     "../agents/pi-model-discovery.js",
   );
 
-  class MockModelRegistry extends actual.ModelRegistry {
-    override getAll(): ReturnType<typeof actual.ModelRegistry.prototype.getAll> {
-      if (!piSdkMock.enabled) {
-        return super.getAll();
-      }
-      piSdkMock.discoverCalls += 1;
-      // Cast to expected type for testing purposes
-      return piSdkMock.models as ReturnType<typeof actual.ModelRegistry.prototype.getAll>;
-    }
-  }
-
   return {
     ...actual,
-    ModelRegistry: MockModelRegistry,
+    discoverModels: (...args: Parameters<typeof actual.discoverModels>) => {
+      const registry = actual.discoverModels(...args);
+      if (!piSdkMock.enabled) {
+        return registry;
+      }
+
+      const wrappedRegistry = Object.create(registry) as typeof registry;
+      wrappedRegistry.getAll = () => {
+        piSdkMock.discoverCalls += 1;
+        // Cast to expected type for testing purposes
+        return piSdkMock.models as ReturnType<typeof registry.getAll>;
+      };
+      return wrappedRegistry;
+    },
   };
 });
 
