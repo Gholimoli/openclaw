@@ -2550,14 +2550,18 @@ public struct EvolutionSourcesListResult: Codable, Sendable {
 
 public struct EvolutionSourcesUpsertParams: Codable, Sendable {
     public let source: EvolutionSourceSpec
+    public let manualinsight: [String: AnyCodable]?
 
     public init(
-        source: EvolutionSourceSpec
+        source: EvolutionSourceSpec,
+        manualinsight: [String: AnyCodable]?
     ) {
         self.source = source
+        self.manualinsight = manualinsight
     }
     private enum CodingKeys: String, CodingKey {
         case source
+        case manualinsight = "manualInsight"
     }
 }
 

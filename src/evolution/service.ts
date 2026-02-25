@@ -36,12 +36,61 @@ function makeRun(stage: EvolutionRun["stage"]): EvolutionRun {
   };
 }
 
+type ManualInsightSeed = {
+  evidenceText: string;
+  url?: string;
+  author?: string;
+  publishedAt?: string;
+  tags?: string[];
+  confidence?: number;
+};
+
+function clampConfidence(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(1, value));
+}
+
+function defaultManualConfidence(source: EvolutionSource) {
+  return source.reliabilityTier === "high" ? 0.8 : source.reliabilityTier === "low" ? 0.45 : 0.6;
+}
+
+function createManualInsight(source: EvolutionSource, seed: ManualInsightSeed): EvolutionInsight {
+  const evidenceText = seed.evidenceText.trim();
+  const url = seed.url?.trim() || source.url || `manual://${source.id}`;
+  const publishedAt = seed.publishedAt?.trim() || undefined;
+  const fetchedAt = new Date().toISOString();
+  const contentHash = crypto
+    .createHash("sha256")
+    .update(`${url}\n${publishedAt ?? ""}\n${evidenceText}`)
+    .digest("hex");
+  return {
+    id: crypto.randomUUID(),
+    sourceId: source.id,
+    fetchedAt,
+    url,
+    author: seed.author?.trim() || undefined,
+    publishedAt,
+    contentHash,
+    evidenceText,
+    confidence:
+      typeof seed.confidence === "number"
+        ? clampConfidence(seed.confidence)
+        : defaultManualConfidence(source),
+    tags: Array.from(new Set(["manual", ...source.tags, ...(seed.tags ?? [])])),
+  };
+}
+
 export type EvolutionService = {
   start: () => Promise<void>;
   stop: () => Promise<void>;
   status: () => Promise<EvolutionStatus>;
   listSources: () => Promise<EvolutionSource[]>;
-  upsertSource: (spec: EvolutionSourceSpec) => Promise<EvolutionSource>;
+  upsertSource: (
+    spec: EvolutionSourceSpec,
+    opts?: { manualInsight?: ManualInsightSeed },
+  ) => Promise<EvolutionSource>;
   listInsights: (opts?: { limit?: number }) => Promise<EvolutionInsight[]>;
   listProposals: (opts?: { limit?: number }) => Promise<EvolutionProposal[]>;
   actProposal: (params: {
@@ -61,6 +110,7 @@ export type EvolutionService = {
   officeLayoutGet: () => Promise<OfficeLayout>;
   officeLayoutSet: (layout: OfficeLayout) => Promise<OfficeLayout>;
   onAgentEvent: (payload: Record<string, unknown>) => Promise<void>;
+  onChatEvent: (payload: Record<string, unknown>) => Promise<void>;
   onExecApprovalRequested: (payload: Record<string, unknown>) => Promise<void>;
   onExecApprovalResolved: (payload: Record<string, unknown>) => Promise<void>;
   onCronEvent: (payload: Record<string, unknown>) => Promise<void>;
@@ -70,6 +120,10 @@ export function createEvolutionService(params: {
   getConfig: () => OpenClawConfig;
   repoRoot: string;
   stateDir?: string;
+  executorOverrides?: {
+    gateCommands?: Array<string[]>;
+    committerScript?: string;
+  };
   broadcast?: (
     event: "evolution" | "office",
     payload: EvolutionEventPayload | OfficeEventPayload,
@@ -85,6 +139,8 @@ export function createEvolutionService(params: {
   const executor = createEvolutionExecutor({
     targetRepoDir: params.repoRoot,
     mirrorDir: paths.mirrorDir,
+    gateCommands: params.executorOverrides?.gateCommands,
+    committerScript: params.executorOverrides?.committerScript,
   });
 
   let scheduler: EvolutionScheduler | null = null;
@@ -305,7 +361,32 @@ export function createEvolutionService(params: {
       await appendRunFinished(run, true, "scout completed", {
         added: result.newInsights.length,
         skipped: result.skipped,
+        malformedBySource: result.malformedBySource,
+        malformedBurstSources: result.malformedBurstSources,
       });
+
+      if (result.malformedBurstSources.length > 0) {
+        const currentPause = await readPauseState();
+        const reason = `auto: malformed payload bursts from ${result.malformedBurstSources.join(", ")}`;
+        const preserveManualPause =
+          currentPause.paused && currentPause.reason?.startsWith("manual");
+        if (!preserveManualPause) {
+          await writePauseState({
+            ...currentPause,
+            paused: true,
+            reason,
+            updatedAtMs: Date.now(),
+          });
+          await store.appendAudit(
+            createAuditEntry({
+              proposalId: "n/a",
+              action: "pause",
+              ok: true,
+              message: reason,
+            }),
+          );
+        }
+      }
 
       return {
         added: result.newInsights.length,
@@ -548,7 +629,10 @@ export function createEvolutionService(params: {
 
   const listSources = async () => (await store.readSources()).sources;
 
-  const upsertSource = async (spec: EvolutionSourceSpec) => {
+  const upsertSource = async (
+    spec: EvolutionSourceSpec,
+    opts?: { manualInsight?: ManualInsightSeed },
+  ) => {
     const now = Date.now();
     return await store.withLock(async () => {
       const sources = await store.readSources();
@@ -574,6 +658,16 @@ export function createEvolutionService(params: {
       }
       sources.sources = sources.sources.toSorted((a, b) => a.id.localeCompare(b.id));
       await store.writeSources(sources);
+
+      const evidenceText = opts?.manualInsight?.evidenceText?.trim();
+      if (evidenceText) {
+        const manualInsight = createManualInsight(normalized, {
+          ...opts?.manualInsight,
+          evidenceText,
+        });
+        await store.appendInsight(manualInsight);
+      }
+
       return normalized;
     });
   };
@@ -593,6 +687,14 @@ export function createEvolutionService(params: {
   const onAgentEvent = async (payload: Record<string, unknown>) => {
     const state = await ensureOfficeState();
     const events = state.applyAgentEvent(payload);
+    for (const event of events) {
+      await emitOffice(event);
+    }
+  };
+
+  const onChatEvent = async (payload: Record<string, unknown>) => {
+    const state = await ensureOfficeState();
+    const events = state.applyChatEvent(payload);
     for (const event of events) {
       await emitOffice(event);
     }
@@ -641,6 +743,7 @@ export function createEvolutionService(params: {
     officeLayoutGet,
     officeLayoutSet,
     onAgentEvent,
+    onChatEvent,
     onExecApprovalRequested,
     onExecApprovalResolved,
     onCronEvent,

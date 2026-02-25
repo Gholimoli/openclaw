@@ -55,6 +55,7 @@ const hoisted = vi.hoisted(() => {
     officeLayoutGet: vi.fn(async () => ({ version: 1 })),
     officeLayoutSet: vi.fn(async () => ({ version: 1 })),
     onAgentEvent: vi.fn(async () => {}),
+    onChatEvent: vi.fn(async () => {}),
     onExecApprovalRequested: vi.fn(async () => {}),
     onExecApprovalResolved: vi.fn(async () => {}),
     onCronEvent: vi.fn(async () => {}),

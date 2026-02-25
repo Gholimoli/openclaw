@@ -39,6 +39,7 @@ function createContext() {
     })),
     officeLayoutSet: vi.fn(async (layout: unknown) => layout),
     onAgentEvent: vi.fn(async () => {}),
+    onChatEvent: vi.fn(async () => {}),
     onExecApprovalRequested: vi.fn(async () => {}),
     onExecApprovalResolved: vi.fn(async () => {}),
     onCronEvent: vi.fn(async () => {}),
@@ -119,6 +120,39 @@ describe("gateway evolution methods", () => {
         code: "INVALID_REQUEST",
         message: "missing scope: operator.admin",
       }),
+    );
+  });
+
+  it("accepts manual insight seed when upserting a source", async () => {
+    const respond = vi.fn();
+    const context = createContext();
+
+    await handleGatewayRequest({
+      req: buildReq("evolution.sources.upsert", {
+        source: {
+          id: "manual-1",
+          kind: "manual_url",
+          url: "https://example.com/post",
+        },
+        manualInsight: {
+          evidenceText: "Manual evidence",
+          tags: ["manual"],
+        },
+      }),
+      respond,
+      client: { connect: { role: "operator", scopes: ["operator.admin"] } },
+      isWebchatConnect: () => false,
+      context,
+    });
+
+    expect(context.evolution?.upsertSource).toHaveBeenCalledWith(
+      { id: "manual-1", kind: "manual_url", url: "https://example.com/post" },
+      { manualInsight: { evidenceText: "Manual evidence", tags: ["manual"] } },
+    );
+    expect(respond).toHaveBeenCalledWith(
+      true,
+      { source: expect.objectContaining({ id: "manual-1" }) },
+      undefined,
     );
   });
 });

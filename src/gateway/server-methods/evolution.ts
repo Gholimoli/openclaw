@@ -77,9 +77,20 @@ export const evolutionHandlers: GatewayRequestHandlers = {
       respond(false, undefined, evolutionUnavailableError());
       return;
     }
-    const source = await context.evolution.upsertSource(
-      (params as { source: EvolutionSourceSpec }).source,
-    );
+    const parsed = params as {
+      source: EvolutionSourceSpec;
+      manualInsight?: {
+        evidenceText: string;
+        url?: string;
+        author?: string;
+        publishedAt?: string;
+        tags?: string[];
+        confidence?: number;
+      };
+    };
+    const source = await context.evolution.upsertSource(parsed.source, {
+      manualInsight: parsed.manualInsight,
+    });
     respond(true, { source }, undefined);
   },
 

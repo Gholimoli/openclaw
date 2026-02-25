@@ -418,6 +418,12 @@ export async function startGatewayServer(
   });
 
   const feedEvolutionEvent = (event: string, payload: unknown) => {
+    if (event === "chat") {
+      void evolutionService.onChatEvent((payload ?? {}) as Record<string, unknown>).catch((err) => {
+        logEvolution.warn(`chat forwarding failed: ${String(err)}`);
+      });
+      return;
+    }
     if (event === "exec.approval.requested") {
       void evolutionService
         .onExecApprovalRequested((payload ?? {}) as Record<string, unknown>)

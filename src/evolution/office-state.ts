@@ -47,6 +47,7 @@ export type OfficeStateManager = {
   };
   setLayout: (layout: OfficeLayout) => OfficeEventPayload;
   applyAgentEvent: (payload: Record<string, unknown>) => OfficeEventPayload[];
+  applyChatEvent: (payload: Record<string, unknown>) => OfficeEventPayload[];
   applyExecApprovalRequested: (payload: Record<string, unknown>) => OfficeEventPayload[];
   applyExecApprovalResolved: (payload: Record<string, unknown>) => OfficeEventPayload[];
   applyCronEvent: (payload: Record<string, unknown>) => OfficeEventPayload[];
@@ -105,6 +106,14 @@ export function createOfficeStateManager(params: {
     return next;
   };
 
+  const resolveAgentIdFromSessionKey = (sessionKey: unknown): string => {
+    const raw = typeof sessionKey === "string" ? sessionKey : "";
+    if (!raw.startsWith("agent:")) {
+      return "main";
+    }
+    return raw.split(":")[1] || "main";
+  };
+
   return {
     snapshot: () => ({
       agents: Array.from(agents.values()).toSorted((a, b) => a.id.localeCompare(b.id)),
@@ -129,7 +138,7 @@ export function createOfficeStateManager(params: {
           : {};
       const state = inferVisualStateFromAgentEvent({ stream, data });
       const phase = typeof data.phase === "string" ? data.phase : stream;
-      const agentId = sessionKey.startsWith("agent:") ? sessionKey.split(":")[1] || "main" : "main";
+      const agentId = resolveAgentIdFromSessionKey(sessionKey);
       const nextAgent = upsertAgent(agentId, {
         state,
         runId,
@@ -149,6 +158,47 @@ export function createOfficeStateManager(params: {
       return [
         { kind: "agent.delta", agent: nextAgent },
         { kind: "activity.append", entry: activityEntry },
+      ];
+    },
+    applyChatEvent: (payload) => {
+      const agentId = resolveAgentIdFromSessionKey(payload.sessionKey);
+      const runId = typeof payload.runId === "string" ? payload.runId : undefined;
+      const chatState = typeof payload.state === "string" ? payload.state : "delta";
+
+      const nextState: OfficeVisualState =
+        chatState === "error"
+          ? "failed"
+          : chatState === "final" || chatState === "aborted"
+            ? "waiting-input"
+            : "typing";
+
+      const details =
+        chatState === "error"
+          ? typeof payload.errorMessage === "string"
+            ? payload.errorMessage.slice(0, 120)
+            : "chat error"
+          : `chat ${chatState}`;
+
+      const agent = upsertAgent(agentId, {
+        state: nextState,
+        runId,
+        details,
+        blocked: false,
+        failed: nextState === "failed",
+        lastUpdateMs: Date.now(),
+      });
+
+      const entry = appendActivity({
+        kind: `chat.${chatState}`,
+        label: `${agentId}: chat ${chatState}`,
+        details,
+        agentId,
+        runId,
+      });
+
+      return [
+        { kind: "agent.delta", agent },
+        { kind: "activity.append", entry },
       ];
     },
     applyExecApprovalRequested: (payload) => {

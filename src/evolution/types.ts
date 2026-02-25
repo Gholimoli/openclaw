@@ -175,6 +175,9 @@ export type EvolutionSourceCursor = {
   etag?: string;
   cursor?: string;
   fetchedAtMs?: number;
+  lastMalformedCount?: number;
+  lastMalformedAtMs?: number;
+  malformedBurstCount?: number;
 };
 
 export type EvolutionSourceStore = {

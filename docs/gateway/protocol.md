@@ -194,6 +194,8 @@ Evolution and Office are additive protocol surfaces on version `3`.
 - `evolution.proposals.act` (`approve`, `reject`, `execute`, `pause`)
 - `office.layout.set`
 
+`evolution.sources.upsert` accepts optional `manualInsight` fields so operators can seed evidence text directly without waiting for a fetch cycle.
+
 ### Events
 
 - `evolution`

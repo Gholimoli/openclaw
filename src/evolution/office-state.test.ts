@@ -41,4 +41,23 @@ describe("office state projector", () => {
     state.applyExecApprovalResolved({ decision: "allow-once" });
     expect(state.snapshot().agents[0]?.state).toBe("idle");
   });
+
+  it("maps chat final to waiting-input and chat error to failed", () => {
+    const state = createOfficeStateManager({ initialLayout: BASE_LAYOUT });
+
+    state.applyChatEvent({
+      sessionKey: "agent:main:main",
+      runId: "run-1",
+      state: "final",
+    });
+    expect(state.snapshot().agents[0]?.state).toBe("waiting-input");
+
+    state.applyChatEvent({
+      sessionKey: "agent:main:main",
+      runId: "run-2",
+      state: "error",
+      errorMessage: "boom",
+    });
+    expect(state.snapshot().agents[0]?.state).toBe("failed");
+  });
 });

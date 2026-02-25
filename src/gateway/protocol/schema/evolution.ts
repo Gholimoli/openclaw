@@ -29,6 +29,18 @@ export const EvolutionSourceSpecSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const EvolutionManualInsightSeedSchema = Type.Object(
+  {
+    evidenceText: NonEmptyString,
+    url: Type.Optional(Type.String()),
+    author: Type.Optional(Type.String()),
+    publishedAt: Type.Optional(Type.String()),
+    tags: Type.Optional(Type.Array(Type.String())),
+    confidence: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+  },
+  { additionalProperties: false },
+);
+
 export const EvolutionSourceSchema = Type.Object(
   {
     id: NonEmptyString,
@@ -174,6 +186,7 @@ export const EvolutionSourcesListParamsSchema = Type.Object({}, { additionalProp
 export const EvolutionSourcesUpsertParamsSchema = Type.Object(
   {
     source: EvolutionSourceSpecSchema,
+    manualInsight: Type.Optional(EvolutionManualInsightSeedSchema),
   },
   { additionalProperties: false },
 );

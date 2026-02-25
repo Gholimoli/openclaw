@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { EvolutionInsight } from "./types.js";
-import { runScout } from "./scout.js";
+import {
+  MALFORMED_BURST_RUNS_BEFORE_PAUSE,
+  MALFORMED_ITEMS_BURST_THRESHOLD,
+  runScout,
+} from "./scout.js";
 
 const { mockFetchGithubInsights, mockFetchManualInsight } = vi.hoisted(() => ({
   mockFetchGithubInsights: vi.fn(),
@@ -35,6 +39,7 @@ describe("evolution scout", () => {
     mockFetchGithubInsights.mockResolvedValueOnce({
       insights: [duplicate, { ...duplicate, id: "insight-dup-2" }],
       cursor: {},
+      malformedCount: 0,
     });
     mockFetchManualInsight.mockResolvedValueOnce({ ...duplicate, id: "manual-dup" });
 
@@ -50,5 +55,43 @@ describe("evolution scout", () => {
 
     expect(result.newInsights).toHaveLength(0);
     expect(result.skipped).toBeGreaterThanOrEqual(2);
+    expect(result.malformedBurstSources).toEqual([]);
+  });
+
+  it("flags malformed github payload bursts after repeated runs", async () => {
+    mockFetchGithubInsights.mockResolvedValue({
+      insights: [],
+      cursor: {},
+      malformedCount: MALFORMED_ITEMS_BURST_THRESHOLD,
+    });
+
+    let sources = {
+      version: 1 as const,
+      sources: [],
+      cursors: {},
+    };
+
+    for (let i = 0; i < MALFORMED_BURST_RUNS_BEFORE_PAUSE; i += 1) {
+      const result = await runScout({
+        existingSources: sources,
+        sourceSpecs: [
+          {
+            id: "s1",
+            kind: "github_repo",
+            githubOwner: "openclaw",
+            githubRepo: "openclaw",
+          },
+        ],
+        existingInsights: [],
+        githubToken: undefined,
+      });
+      sources = result.sources;
+
+      if (i < MALFORMED_BURST_RUNS_BEFORE_PAUSE - 1) {
+        expect(result.malformedBurstSources).toEqual([]);
+      } else {
+        expect(result.malformedBurstSources).toEqual(["s1"]);
+      }
+    }
   });
 });

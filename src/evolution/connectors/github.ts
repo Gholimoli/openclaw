@@ -6,6 +6,7 @@ import { retryAsync } from "../../infra/retry.js";
 type GithubFetchResult = {
   insights: EvolutionInsight[];
   cursor: EvolutionSourceCursor;
+  malformedCount: number;
 };
 
 function parsePublishedAt(value: unknown): string | undefined {
@@ -162,11 +163,13 @@ export async function fetchGithubInsights(params: {
         ...params.cursor,
         fetchedAtMs: Date.now(),
       },
+      malformedCount: 0,
     };
   }
 
   const cursor = { ...params.cursor };
   const insights: EvolutionInsight[] = [];
+  let malformedCount = 0;
   const include =
     params.source.include.length > 0 ? params.source.include : ["releases", "commits"];
 
@@ -192,6 +195,7 @@ export async function fetchGithubInsights(params: {
     const rows = Array.isArray(result.body) ? result.body : [];
     for (const row of rows) {
       if (!row || typeof row !== "object") {
+        malformedCount += 1;
         continue;
       }
       const insight = normalizeInsight({
@@ -201,10 +205,12 @@ export async function fetchGithubInsights(params: {
       });
       if (insight) {
         insights.push(insight);
+      } else {
+        malformedCount += 1;
       }
     }
   }
 
   cursor.fetchedAtMs = Date.now();
-  return { insights, cursor };
+  return { insights, cursor, malformedCount };
 }

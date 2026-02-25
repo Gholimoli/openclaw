@@ -135,6 +135,10 @@
   );
 }
 
+.office-sprite--waiting-input .office-sprite__body {
+  background: linear-gradient(135deg, var(--ok), color-mix(in oklab, var(--ok), black 22%));
+}
+
 .office-sprite--approval-blocked .office-sprite__body {
   background: linear-gradient(135deg, var(--warn), color-mix(in oklab, var(--warn), black 26%));
 }
