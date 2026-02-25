@@ -43,7 +43,7 @@ function parseSet(source, name) {
   if (!match) {
     throw new Error(`Could not parse set ${name}`);
   }
-  return parseStringArrayFromLiteral(match[1]).toSorted();
+  return parseStringArrayFromLiteral(match[1]).toSorted((a, b) => a.localeCompare(b));
 }
 
 function parseArray(source, name) {
@@ -51,7 +51,7 @@ function parseArray(source, name) {
   if (!match) {
     throw new Error(`Could not parse array ${name}`);
   }
-  return parseStringArrayFromLiteral(match[1]).toSorted();
+  return parseStringArrayFromLiteral(match[1]).toSorted((a, b) => a.localeCompare(b));
 }
 
 function parseCoreChannels() {
@@ -127,11 +127,11 @@ function parseGatewayScopeData() {
   const adminStartsWith = Array.from(
     adminConditional.matchAll(/method\.startsWith\("([^"]+)"\)/g),
     (m) => m[1],
-  ).toSorted();
+  ).toSorted((a, b) => a.localeCompare(b));
   const adminExact = Array.from(
     adminConditional.matchAll(/method === "([^"]+)"/g),
     (m) => m[1],
-  ).toSorted();
+  ).toSorted((a, b) => a.localeCompare(b));
 
   return {
     nodeRoleMethods,
@@ -185,7 +185,7 @@ function parseEventScopeGuards() {
       .map((token) => token.trim())
       .filter(Boolean)
       .map((token) => constantMap.get(token) || token.replace(/["']/g, ""));
-    rows.push({ event, scopes: values.toSorted() });
+    rows.push({ event, scopes: values.toSorted((a, b) => a.localeCompare(b)) });
   }
 
   return rows.toSorted((a, b) => a.event.localeCompare(b.event));
