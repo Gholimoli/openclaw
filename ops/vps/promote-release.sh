@@ -11,6 +11,7 @@ Environment overrides:
   OPENCLAW_RELEASES_DIR                   Releases directory (default: $OPENCLAW_DEPLOY_ROOT/releases)
   OPENCLAW_CURRENT_LINK                   Live release symlink (default: $HOME/openclaw-current)
   OPENCLAW_LAST_KNOWN_GOOD_FILE           Last-known-good SHA file (default: $OPENCLAW_DEPLOY_ROOT/last-known-good.sha)
+  OPENCLAW_ENV_FILE                       Env file loaded before preflight/probes (default: $HOME/.openclaw/.env)
   OPENCLAW_GATEWAY_SERVICE                systemd user service (default: openclaw-gateway.service)
   OPENCLAW_GATEWAY_HEALTH_URL             Health URL (default: http://127.0.0.1:18789/health)
   OPENCLAW_PREFLIGHT_PORT                 Candidate preflight port (default: 29879)
@@ -95,6 +96,18 @@ EOF
 require_cmd() {
   local cmd="$1"
   command -v "$cmd" >/dev/null 2>&1 || fail "required command not found: $cmd"
+}
+
+load_env_file() {
+  if [[ ! -f "$env_file" ]]; then
+    warn "env file not found; continuing without it: $env_file"
+    return 0
+  fi
+
+  set -a
+  # shellcheck source=/dev/null
+  . "$env_file"
+  set +a
 }
 
 is_integer() {
@@ -274,6 +287,7 @@ deploy_root="${OPENCLAW_DEPLOY_ROOT:-$HOME/deploy/openclaw}"
 releases_dir="${OPENCLAW_RELEASES_DIR:-$deploy_root/releases}"
 current_link="${OPENCLAW_CURRENT_LINK:-$HOME/openclaw-current}"
 last_known_good_file="${OPENCLAW_LAST_KNOWN_GOOD_FILE:-$deploy_root/last-known-good.sha}"
+env_file="${OPENCLAW_ENV_FILE:-${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/.env}"
 gateway_service="${OPENCLAW_GATEWAY_SERVICE:-openclaw-gateway.service}"
 gateway_health_url="${OPENCLAW_GATEWAY_HEALTH_URL:-http://127.0.0.1:18789/health}"
 preflight_port="${OPENCLAW_PREFLIGHT_PORT:-29879}"
@@ -295,6 +309,7 @@ if [[ ! -d "$repo_dir" ]]; then
 fi
 
 mkdir -p "$deploy_root" "$releases_dir" "$(dirname "$last_known_good_file")"
+load_env_file
 
 git -C "$repo_dir" fetch origin main --prune
 git -C "$repo_dir" cat-file -e "${target_sha}^{commit}" 2>/dev/null || fail "unknown commit: $target_sha"
