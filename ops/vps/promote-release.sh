@@ -15,7 +15,7 @@ Environment overrides:
   OPENCLAW_GATEWAY_SERVICE                systemd user service (default: openclaw-gateway.service)
   OPENCLAW_GATEWAY_HEALTH_URL             Health URL (default: http://127.0.0.1:18789/health)
   OPENCLAW_PREFLIGHT_PORT                 Candidate preflight port (default: 29879)
-  OPENCLAW_PREFLIGHT_TIMEOUT_SECONDS      Candidate boot timeout (default: 35)
+  OPENCLAW_PREFLIGHT_TIMEOUT_SECONDS      Candidate boot timeout (default: 90)
   OPENCLAW_PREFLIGHT_TMP_ROOT             Writable root for preflight state/logs (default: ${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/openclaw-preflight)
   OPENCLAW_HEALTH_TIMEOUT_SECONDS         Post-restart health timeout (default: 90)
   OPENCLAW_STABILITY_SECONDS              Stability window seconds (default: 45)
@@ -291,7 +291,7 @@ env_file="${OPENCLAW_ENV_FILE:-${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/.env}"
 gateway_service="${OPENCLAW_GATEWAY_SERVICE:-openclaw-gateway.service}"
 gateway_health_url="${OPENCLAW_GATEWAY_HEALTH_URL:-http://127.0.0.1:18789/health}"
 preflight_port="${OPENCLAW_PREFLIGHT_PORT:-29879}"
-preflight_timeout_seconds="${OPENCLAW_PREFLIGHT_TIMEOUT_SECONDS:-35}"
+preflight_timeout_seconds="${OPENCLAW_PREFLIGHT_TIMEOUT_SECONDS:-90}"
 preflight_tmp_root="${OPENCLAW_PREFLIGHT_TMP_ROOT:-${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/openclaw-preflight}"
 health_timeout_seconds="${OPENCLAW_HEALTH_TIMEOUT_SECONDS:-90}"
 stability_seconds="${OPENCLAW_STABILITY_SECONDS:-45}"
@@ -326,6 +326,7 @@ if [[ ! -f "$release_ready_marker" ]]; then
     cd "$release_dir"
     pnpm install --frozen-lockfile
     pnpm build
+    pnpm ui:build
   )
   run_candidate_preflight "$release_dir"
   touch "$release_ready_marker"
