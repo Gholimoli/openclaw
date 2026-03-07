@@ -12,9 +12,10 @@ Environment overrides:
   OPENCLAW_CURRENT_LINK                   Live release symlink (default: $HOME/openclaw-current)
   OPENCLAW_LAST_KNOWN_GOOD_FILE           Last-known-good SHA file (default: $OPENCLAW_DEPLOY_ROOT/last-known-good.sha)
   OPENCLAW_GATEWAY_SERVICE                systemd user service (default: openclaw-gateway.service)
-  OPENCLAW_GATEWAY_HEALTH_URL             Health URL (default: http://127.0.0.1:18789/api/v1/check)
+  OPENCLAW_GATEWAY_HEALTH_URL             Health URL (default: http://127.0.0.1:18789/health)
   OPENCLAW_PREFLIGHT_PORT                 Candidate preflight port (default: 29879)
   OPENCLAW_PREFLIGHT_TIMEOUT_SECONDS      Candidate boot timeout (default: 35)
+  OPENCLAW_PREFLIGHT_TMP_ROOT             Writable root for preflight state/logs (default: ${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/openclaw-preflight)
   OPENCLAW_HEALTH_TIMEOUT_SECONDS         Post-restart health timeout (default: 90)
   OPENCLAW_STABILITY_SECONDS              Stability window seconds (default: 45)
   OPENCLAW_CHANNELS_PROBE_TIMEOUT_SECONDS channels status probe timeout (default: 90)
@@ -171,8 +172,9 @@ notify_deploy_success() {
 run_candidate_preflight() {
   local candidate_dir="$1"
   local preflight_state_dir
-  preflight_state_dir="$(mktemp -d "${deploy_root}/preflight-state.XXXXXX")"
-  local preflight_log="${deploy_root}/preflight-${target_sha}.log"
+  mkdir -p "$preflight_tmp_root"
+  preflight_state_dir="$(mktemp -d "${preflight_tmp_root}/state.XXXXXX")"
+  local preflight_log="${preflight_tmp_root}/preflight-${target_sha}.log"
 
   log "boot preflight: candidate=${candidate_dir} port=${preflight_port}"
   (
@@ -191,7 +193,7 @@ run_candidate_preflight() {
   local ok=0
   local deadline=$((SECONDS + preflight_timeout_seconds))
   while ((SECONDS < deadline)); do
-    if curl -fsS --max-time 2 "http://127.0.0.1:${preflight_port}/api/v1/check" >/dev/null 2>&1; then
+    if curl -fsS --max-time 2 "http://127.0.0.1:${preflight_port}/health" >/dev/null 2>&1; then
       ok=1
       break
     fi
@@ -273,9 +275,10 @@ releases_dir="${OPENCLAW_RELEASES_DIR:-$deploy_root/releases}"
 current_link="${OPENCLAW_CURRENT_LINK:-$HOME/openclaw-current}"
 last_known_good_file="${OPENCLAW_LAST_KNOWN_GOOD_FILE:-$deploy_root/last-known-good.sha}"
 gateway_service="${OPENCLAW_GATEWAY_SERVICE:-openclaw-gateway.service}"
-gateway_health_url="${OPENCLAW_GATEWAY_HEALTH_URL:-http://127.0.0.1:18789/api/v1/check}"
+gateway_health_url="${OPENCLAW_GATEWAY_HEALTH_URL:-http://127.0.0.1:18789/health}"
 preflight_port="${OPENCLAW_PREFLIGHT_PORT:-29879}"
 preflight_timeout_seconds="${OPENCLAW_PREFLIGHT_TIMEOUT_SECONDS:-35}"
+preflight_tmp_root="${OPENCLAW_PREFLIGHT_TMP_ROOT:-${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/openclaw-preflight}"
 health_timeout_seconds="${OPENCLAW_HEALTH_TIMEOUT_SECONDS:-90}"
 stability_seconds="${OPENCLAW_STABILITY_SECONDS:-45}"
 channels_probe_timeout_seconds="${OPENCLAW_CHANNELS_PROBE_TIMEOUT_SECONDS:-90}"
