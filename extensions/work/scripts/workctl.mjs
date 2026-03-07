@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -84,10 +85,14 @@ async function invokeTool({ tool, action, args, sessionKey, extraHeaders }) {
 
 async function execViaGateway(params) {
   const sessionKey = String(params.sessionKey || "").trim();
-  const { sessionKey: _ignored, ...args } = params;
+  const { sessionKey: _ignored, env, ...args } = params;
+  const githubEnv = await resolveGitHubEnv();
   const result = await invokeTool({
     tool: "exec",
-    args,
+    args: {
+      ...args,
+      env: { ...githubEnv, ...(env || {}) },
+    },
     sessionKey,
   });
   const details = result?.details || {};
@@ -99,6 +104,99 @@ async function execViaGateway(params) {
     exitCode: details.exitCode ?? null,
     cwd: details.cwd,
     tail,
+  };
+}
+
+const githubTokenCache = {
+  token: "",
+  expiresAtMs: 0,
+};
+
+function base64UrlEncode(value) {
+  return Buffer.from(value)
+    .toString("base64")
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll(/=+$/g, "");
+}
+
+function resolveGitHubAppPrivateKey() {
+  const explicit = String(process.env.GITHUB_APP_PRIVATE_KEY || "").trim();
+  if (explicit) {
+    return explicit.replaceAll("\\n", "\n");
+  }
+  const keyFile = String(process.env.GITHUB_APP_PRIVATE_KEY_FILE || "").trim();
+  if (!keyFile) {
+    return "";
+  }
+  return fs.readFileSync(keyFile, "utf8").replaceAll("\\n", "\n").trim();
+}
+
+async function mintGitHubAppToken() {
+  const directToken = String(process.env.GH_TOKEN || process.env.GITHUB_TOKEN || "").trim();
+  if (directToken) {
+    return directToken;
+  }
+  const nowMs = Date.now();
+  if (githubTokenCache.token && githubTokenCache.expiresAtMs - nowMs > 60_000) {
+    return githubTokenCache.token;
+  }
+  const appId = String(process.env.GITHUB_APP_ID || "").trim();
+  const installationId = String(process.env.GITHUB_APP_INSTALLATION_ID || "").trim();
+  const privateKey = resolveGitHubAppPrivateKey();
+  if (!appId || !installationId || !privateKey) {
+    return "";
+  }
+  const nowSec = Math.floor(nowMs / 1000);
+  const header = base64UrlEncode(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const payload = base64UrlEncode(
+    JSON.stringify({
+      iat: nowSec - 30,
+      exp: nowSec + 9 * 60,
+      iss: appId,
+    }),
+  );
+  const unsigned = `${header}.${payload}`;
+  const signature = crypto.sign("RSA-SHA256", Buffer.from(unsigned), privateKey);
+  const jwt = `${unsigned}.${base64UrlEncode(signature)}`;
+  const res = await fetch(
+    `https://api.github.com/app/installations/${encodeURIComponent(installationId)}/access_tokens`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${jwt}`,
+        "User-Agent": "openclaw-workctl",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    },
+  );
+  const text = await res.text();
+  let parsed = null;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = null;
+  }
+  if (!res.ok || !parsed?.token) {
+    throw new Error(
+      parsed?.message || `GitHub App token mint failed (HTTP ${res.status}): ${text.slice(0, 300)}`,
+    );
+  }
+  const expiresAtMs = parsed?.expires_at ? Date.parse(parsed.expires_at) : nowMs + 50 * 60_000;
+  githubTokenCache.token = String(parsed.token);
+  githubTokenCache.expiresAtMs = Number.isFinite(expiresAtMs) ? expiresAtMs : nowMs + 50 * 60_000;
+  return githubTokenCache.token;
+}
+
+async function resolveGitHubEnv() {
+  const token = await mintGitHubAppToken();
+  if (!token) {
+    return {};
+  }
+  return {
+    GH_TOKEN: token,
+    GITHUB_TOKEN: token,
   };
 }
 
@@ -126,6 +224,116 @@ function ensureDir(p) {
   fs.mkdirSync(p, { recursive: true });
 }
 
+function resolveStateRoot() {
+  const explicit = String(
+    process.env.OPENCLAW_STATE_DIR || process.env.CLAWDBOT_STATE_DIR || "",
+  ).trim();
+  if (explicit) {
+    return explicit;
+  }
+  return path.join(os.homedir(), ".openclaw");
+}
+
+function resolveAutomationEventsPath() {
+  return path.join(resolveStateRoot(), "automation", "events.jsonl");
+}
+
+function appendAutomationRawEvent(event) {
+  const filePath = resolveAutomationEventsPath();
+  ensureDir(path.dirname(filePath));
+  fs.appendFileSync(filePath, `${JSON.stringify(event)}\n`, "utf8");
+}
+
+function resolveRunContextPath(repoDir) {
+  return path.join(repoDir, ".openclaw", "automation-run.json");
+}
+
+function readRunContext(repoDir) {
+  const filePath = resolveRunContextPath(repoDir);
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function writeRunContext(repoDir, value) {
+  const filePath = resolveRunContextPath(repoDir);
+  ensureDir(path.dirname(filePath));
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function currentRun(repoDir) {
+  return readRunContext(repoDir)?.run || null;
+}
+
+function upsertRun(repoDir, run) {
+  writeRunContext(repoDir, { run });
+  appendAutomationRawEvent({
+    kind: "run.upsert",
+    ts: Date.now(),
+    run,
+  });
+  return run;
+}
+
+function withRun(repoDir, mutate) {
+  const run = currentRun(repoDir);
+  if (!run) {
+    return null;
+  }
+  const next = mutate({
+    ...run,
+    updatedAtMs: Date.now(),
+  });
+  return upsertRun(repoDir, next);
+}
+
+function appendRunStep(repoDir, step) {
+  const run = currentRun(repoDir);
+  if (!run) {
+    return null;
+  }
+  const entry = {
+    id: step.id || crypto.randomUUID(),
+    runId: run.id,
+    ts: Date.now(),
+    ...step,
+  };
+  appendAutomationRawEvent({
+    kind: "step.append",
+    ts: entry.ts,
+    step: entry,
+  });
+  withRun(repoDir, (current) => ({
+    ...current,
+    lastStepLabel: entry.label,
+    status: entry.status === "failed" ? "failed" : current.status,
+  }));
+  return entry;
+}
+
+function appendRunAudit(repoDir, entry) {
+  const run = currentRun(repoDir);
+  const auditEntry = {
+    id: entry.id || crypto.randomUUID(),
+    runId: run?.id,
+    repo: run?.repo,
+    branch: run?.branch,
+    ts: Date.now(),
+    ...entry,
+  };
+  appendAutomationRawEvent({
+    kind: "audit.append",
+    ts: auditEntry.ts,
+    entry: auditEntry,
+  });
+  return auditEntry;
+}
+
 function copyDir(src, dst) {
   ensureDir(dst);
   for (const ent of fs.readdirSync(src, { withFileTypes: true })) {
@@ -151,9 +359,16 @@ function resolveTemplateRepoDir() {
 }
 
 function normalizeRepoName(repo) {
-  // Accept: "name" or "owner/name". Return { owner, name, full } best-effort.
   const trimmed = repo.trim();
   if (!trimmed) return null;
+  const httpsMatch =
+    /^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i.exec(trimmed) ??
+    /^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/i.exec(trimmed);
+  if (httpsMatch?.[1] && httpsMatch?.[2]) {
+    const owner = httpsMatch[1];
+    const name = httpsMatch[2];
+    return { owner, name, full: `${owner}/${name}` };
+  }
   if (trimmed.includes("/")) {
     const [owner, name] = trimmed.split("/", 2);
     if (!owner || !name) return null;
@@ -163,7 +378,7 @@ function normalizeRepoName(repo) {
 }
 
 function resolveWorkRoot(raw) {
-  const p = raw?.trim() || "~/work";
+  const p = raw?.trim() || "~/work/repos";
   if (p.startsWith("~/")) {
     return path.join(os.homedir(), p.slice(2));
   }
@@ -173,7 +388,7 @@ function resolveWorkRoot(raw) {
 function repoDirFor(workRoot, repo) {
   const n = normalizeRepoName(repo);
   if (!n) return null;
-  return path.join(workRoot, n.name);
+  return n.owner ? path.join(workRoot, n.owner, n.name) : path.join(workRoot, n.name);
 }
 
 function validateGitRefName(value, label) {
@@ -360,15 +575,14 @@ function detectPm(cwd) {
   return null;
 }
 
-async function runChecks(sessionKey, cwd, opts = {}) {
+function buildCheckCommands(cwd, opts = {}) {
   const pm = detectPm(cwd);
-  if (!pm)
-    return { ok: true, ran: [], note: "No JS package manager lockfile found; skipping checks." };
-
+  if (!pm) {
+    return [];
+  }
   const clawforge = opts?.clawforge?.enabled ? opts.clawforge : null;
   const riskTier = String(clawforge?.riskTier || "").trim();
   const requireUiEvidence = Boolean(clawforge?.requireUiEvidence);
-
   const cmds = [];
   if (pm === "pnpm") {
     cmds.push("pnpm install --frozen-lockfile");
@@ -387,7 +601,6 @@ async function runChecks(sessionKey, cwd, opts = {}) {
         cmds.push("pnpm test");
       }
     } else {
-      // Backward-compatible default.
       cmds.push("pnpm test");
     }
 
@@ -399,19 +612,29 @@ async function runChecks(sessionKey, cwd, opts = {}) {
         cmds.push("pnpm test:ui");
       }
     }
-  } else if (pm === "npm") {
-    cmds.push("npm ci");
-    cmds.push("npm run lint || true");
-    cmds.push("npm test || true");
-  } else if (pm === "bun") {
-    cmds.push("bun install --frozen-lockfile");
-    cmds.push("bun run lint || true");
-    cmds.push("bun test || true");
-  } else if (pm === "yarn") {
-    cmds.push("yarn install --frozen-lockfile");
-    cmds.push("yarn lint || true");
-    cmds.push("yarn test || true");
+    return cmds;
   }
+  if (pm === "npm") {
+    return ["npm ci", "npm run lint || true", "npm test || true"];
+  }
+  if (pm === "bun") {
+    return ["bun install --frozen-lockfile", "bun run lint || true", "bun test || true"];
+  }
+  if (pm === "yarn") {
+    return ["yarn install --frozen-lockfile", "yarn lint || true", "yarn test || true"];
+  }
+  return [];
+}
+
+async function runChecks(sessionKey, cwd, opts = {}) {
+  const pm = detectPm(cwd);
+  if (!pm)
+    return { ok: true, ran: [], note: "No JS package manager lockfile found; skipping checks." };
+
+  const clawforge = opts?.clawforge?.enabled ? opts.clawforge : null;
+  const riskTier = String(clawforge?.riskTier || "").trim();
+  const requireUiEvidence = Boolean(clawforge?.requireUiEvidence);
+  const cmds = buildCheckCommands(cwd, opts);
 
   const ran = [];
   for (const cmd of cmds) {
@@ -442,6 +665,124 @@ async function runChecks(sessionKey, cwd, opts = {}) {
     }
   }
   return { ok: true, ran };
+}
+
+async function resolveRepoMetadata(sessionKey, repoDir) {
+  const remote = await execViaGateway({
+    sessionKey,
+    command: "git remote get-url origin",
+    workdir: repoDir,
+    timeout: 120,
+  }).catch(() => null);
+  const remoteUrl = remote?.status === "completed" ? String(remote.tail || "").trim() : "";
+  const repo = normalizeRepoName(remoteUrl);
+  const baseMeta = {
+    repo: repo?.full || path.basename(repoDir),
+    repoUrl: remoteUrl || undefined,
+    defaultBranch: "",
+    activePrNumbers: [],
+  };
+  const gh = await execViaGateway({
+    sessionKey,
+    command: "gh repo view --json nameWithOwner,url,defaultBranchRef",
+    workdir: repoDir,
+    timeout: 120,
+  }).catch(() => null);
+  if (gh?.status === "completed") {
+    try {
+      const parsed = JSON.parse(gh.tail || "{}");
+      baseMeta.repo = String(parsed.nameWithOwner || baseMeta.repo).trim() || baseMeta.repo;
+      baseMeta.repoUrl = String(parsed.url || baseMeta.repoUrl || "").trim() || undefined;
+      baseMeta.defaultBranch =
+        String(parsed?.defaultBranchRef?.name || "").trim() || baseMeta.defaultBranch;
+    } catch {}
+  }
+  const prs = await execViaGateway({
+    sessionKey,
+    command: "gh pr list --state open --json number --limit 20",
+    workdir: repoDir,
+    timeout: 120,
+  }).catch(() => null);
+  if (prs?.status === "completed") {
+    try {
+      const parsed = JSON.parse(prs.tail || "[]");
+      if (Array.isArray(parsed)) {
+        baseMeta.activePrNumbers = parsed
+          .map((entry) => Number.parseInt(String(entry?.number || ""), 10))
+          .filter((value) => Number.isFinite(value) && value > 0);
+      }
+    } catch {}
+  }
+  return baseMeta;
+}
+
+async function probeToolchain(sessionKey, cwd) {
+  const res = await execViaGateway({
+    sessionKey,
+    command:
+      "bash -lc 'for bin in codex gemini gh git coderabbit; do " +
+      'if command -v "$bin" >/dev/null 2>&1; then printf "%s=ok\\n" "$bin"; else printf "%s=missing\\n" "$bin"; fi; ' +
+      "done; " +
+      'if [ -n "$OPENAI_API_KEY" ]; then echo OPENAI_API_KEY=ok; else echo OPENAI_API_KEY=missing; fi; ' +
+      'if [ -n "$GEMINI_API_KEY" ]; then echo GEMINI_API_KEY=ok; else echo GEMINI_API_KEY=missing; fi\'',
+    workdir: cwd,
+    timeout: 120,
+  });
+  const lines = String(res.tail || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const map = {};
+  for (const line of lines) {
+    const [key, value] = line.split("=", 2);
+    if (!key || !value) continue;
+    map[key] = value;
+  }
+  return map;
+}
+
+function defaultAcceptanceCriteria(message) {
+  return [
+    "Implement the requested change in the target repository.",
+    "Run the required local validation commands for the repo risk tier.",
+    "Prepare the branch for review and PR creation without broadening approvals.",
+    `Address this request: ${message}`,
+  ];
+}
+
+function buildSpecPacket(params) {
+  return {
+    repo: params.repo,
+    repoUrl: params.repoUrl,
+    repoDir: params.repoDir,
+    base: params.base,
+    branch: params.branch,
+    defaultBranch: params.defaultBranch || undefined,
+    userRequest: params.message,
+    goal: params.message,
+    nonGoals: [
+      "Do not modify deployment policy or network exposure.",
+      "Do not bypass approvals for commit, push, merge, or deploy.",
+      "Do not introduce unrelated refactors.",
+    ],
+    acceptanceCriteria: defaultAcceptanceCriteria(params.message),
+    riskTier: params.clawforge?.riskTier || "high",
+    checks: buildCheckCommands(params.repoDir, { clawforge: params.clawforge }),
+    approvalRequirements: ["commit changes", "push branch + open PR"],
+    activePrNumbers: params.activePrNumbers || [],
+    planner: {
+      agentId: params.plannerAgentId || "main",
+      displayName: params.plannerDisplayName || "Ted",
+      model: params.plannerModel || "gpt-5.4",
+    },
+    implementation: {
+      agentId: params.implementationAgentId || "coder",
+      primaryCli: "codex",
+      fallbackCli: "gemini",
+      model: params.implementationModel || undefined,
+      fallbackModel: params.fallbackModel || undefined,
+    },
+  };
 }
 
 async function gitHeadSha(sessionKey, cwd) {
@@ -495,8 +836,10 @@ async function coderabbitReview(sessionKey, cwd, base) {
   return { code: 1, status: "completed", tail: "coderabbit review failed", headSha, attempts };
 }
 
-async function codexImplement(sessionKey, cwd, prompt) {
-  const cmd = `codex exec --full-auto ${JSON.stringify(prompt)}`;
+async function codexImplement(sessionKey, cwd, prompt, model) {
+  const modelArg =
+    typeof model === "string" && model.trim() ? ` --model ${JSON.stringify(model.trim())}` : "";
+  const cmd = `codex exec --full-auto${modelArg} ${JSON.stringify(prompt)}`;
   const res = await execViaGateway({
     sessionKey,
     command: cmd,
@@ -511,8 +854,10 @@ async function codexImplement(sessionKey, cwd, prompt) {
   };
 }
 
-async function geminiImplement(sessionKey, cwd, prompt) {
-  const cmd = `gemini ${JSON.stringify(prompt)}`;
+async function geminiImplement(sessionKey, cwd, prompt, model) {
+  const modelArg =
+    typeof model === "string" && model.trim() ? ` --model ${JSON.stringify(model.trim())}` : "";
+  const cmd = `gemini${modelArg} ${JSON.stringify(prompt)}`;
   const res = await execViaGateway({
     sessionKey,
     command: cmd,
@@ -1146,6 +1491,11 @@ async function main() {
     const repoDir = String(args["repo-dir"] || args.repoDir || "").trim();
     const base = String(args.base || "main");
     const message = String(args.message || "").trim();
+    const plannerModel = String(args["planner-model"] || args.plannerModel || "").trim();
+    const implementationModel = String(
+      args["implementation-model"] || args.implementationModel || "",
+    ).trim();
+    const fallbackModel = String(args["fallback-model"] || args.fallbackModel || "").trim();
     const maxFixLoops = Number.parseInt(
       String(args["max-fix-loops"] || args.maxFixLoops || "3"),
       10,
@@ -1155,25 +1505,122 @@ async function main() {
     if (cmd === "task" && !message) die("--message required");
 
     const workPrompt = cmd === "task" ? message : "Fix outstanding issues and make CI pass.";
+    const branch = await currentBranch(sessionKey, repoDir).catch(() => "");
+    let clawforge = computeClawforgeContext(repoDir, base);
+    if (clawforge?.enabled === false) die("clawforge contract error", { error: clawforge.error });
+    const repoMeta = await resolveRepoMetadata(sessionKey, repoDir);
+    const toolchain = await probeToolchain(sessionKey, repoDir).catch(() => ({}));
 
-    const impl = await codexImplement(sessionKey, repoDir, workPrompt);
+    if (cmd === "task" || !currentRun(repoDir)) {
+      const specPacket = buildSpecPacket({
+        repo: repoMeta.repo,
+        repoUrl: repoMeta.repoUrl,
+        repoDir,
+        base,
+        branch,
+        defaultBranch: repoMeta.defaultBranch || base,
+        message: workPrompt,
+        clawforge,
+        activePrNumbers: repoMeta.activePrNumbers,
+        plannerModel,
+        implementationModel,
+        fallbackModel,
+      });
+      upsertRun(repoDir, {
+        id: crypto.randomUUID(),
+        repo: repoMeta.repo,
+        repoUrl: repoMeta.repoUrl,
+        repoDir,
+        base,
+        branch,
+        defaultBranch: repoMeta.defaultBranch || base,
+        status: "running",
+        title: workPrompt.slice(0, 120),
+        userRequest: workPrompt,
+        riskTier: specPacket.riskTier,
+        plannerAgentId: "main",
+        plannerDisplayName: "Ted",
+        plannerModel: plannerModel || "gpt-5.4",
+        implementationAgentId: "coder",
+        implementationCli: "codex",
+        implementationFallbackCli: "gemini",
+        implementationModel: implementationModel || undefined,
+        fallbackModel: fallbackModel || undefined,
+        startedAtMs: Date.now(),
+        updatedAtMs: Date.now(),
+        specPacket,
+        summary: "Spec prepared and implementation started.",
+      });
+      appendRunAudit(repoDir, {
+        kind: "run.started",
+        status: "running",
+        message: "Structured implementation packet prepared.",
+        actor: { id: "main", type: "agent", label: "Ted" },
+        data: {
+          specPacket,
+          toolchain,
+        },
+      });
+    }
+    appendRunStep(repoDir, {
+      status: "running",
+      label: "Implementation",
+      detail: "Dispatching the structured packet to the coder sandbox.",
+      actor: { id: "coder", type: "agent", label: "coder" },
+      data: { toolchain },
+    });
+
+    const impl = await codexImplement(sessionKey, repoDir, workPrompt, implementationModel);
     if (impl.code !== 0 || impl.status !== "completed") {
       // Fallback to gemini if codex failed.
-      const g = await geminiImplement(sessionKey, repoDir, workPrompt);
-      if (g.code !== 0 || g.status !== "completed")
+      appendRunAudit(repoDir, {
+        kind: "implementation.fallback",
+        status: "degraded",
+        message: "Codex CLI failed; attempting Gemini fallback.",
+        actor: { id: "coder", type: "agent", label: "coder" },
+        data: { codex: impl },
+      });
+      const g = await geminiImplement(sessionKey, repoDir, workPrompt, fallbackModel);
+      if (g.code !== 0 || g.status !== "completed") {
+        withRun(repoDir, (run) => ({
+          ...run,
+          status: "failed",
+          finishedAtMs: Date.now(),
+          summary: "Implementation failed in both Codex and Gemini fallback.",
+        }));
+        appendRunStep(repoDir, {
+          status: "failed",
+          label: "Implementation",
+          detail: "Both Codex and Gemini failed.",
+          actor: { id: "coder", type: "agent", label: "coder" },
+          data: { codex: impl, gemini: g },
+        });
         die("coding agent failed", { codex: impl, gemini: g });
+      }
     }
 
     let loops = 0;
-    let clawforge = computeClawforgeContext(repoDir, base);
-    if (clawforge?.enabled === false) die("clawforge contract error", { error: clawforge.error });
     let checks = await runChecks(sessionKey, repoDir, { clawforge });
+    appendRunStep(repoDir, {
+      status: checks.ok ? "completed" : "running",
+      label: "Validation",
+      detail: checks.ok ? "Required local checks passed." : "Validation failed; entering fix loop.",
+      actor: { id: "coder", type: "agent", label: "coder" },
+      data: { checks },
+    });
     while (!checks.ok && loops < Math.max(1, maxFixLoops)) {
       loops++;
       const fixPrompt = `Fix the failing checks. Context:\\nFAILED=${checks.failed}\\nTAIL=${checks.tail || ""}`;
-      const fix = await codexImplement(sessionKey, repoDir, fixPrompt);
+      appendRunAudit(repoDir, {
+        kind: "validation.retry",
+        status: "running",
+        message: `Validation retry ${loops} started.`,
+        actor: { id: "coder", type: "agent", label: "coder" },
+        data: { failed: checks.failed, tail: checks.tail || "" },
+      });
+      const fix = await codexImplement(sessionKey, repoDir, fixPrompt, implementationModel);
       if (fix.code !== 0 || fix.status !== "completed") {
-        const g = await geminiImplement(sessionKey, repoDir, fixPrompt);
+        const g = await geminiImplement(sessionKey, repoDir, fixPrompt, fallbackModel);
         if (g.code !== 0 || g.status !== "completed") break;
       }
       clawforge = computeClawforgeContext(repoDir, base);
@@ -1182,8 +1629,34 @@ async function main() {
     }
 
     const review = await coderabbitReview(sessionKey, repoDir, base);
+    appendRunStep(repoDir, {
+      status: review.code === 0 ? "completed" : "failed",
+      label: "AI review",
+      detail:
+        review.code === 0 ? "CodeRabbit review completed." : "CodeRabbit review reported an issue.",
+      actor: { id: "coderabbit", type: "tool", label: "CodeRabbit" },
+      data: { review },
+    });
+    withRun(repoDir, (run) => ({
+      ...run,
+      status: checks.ok && review.code === 0 ? "awaiting_approval" : "failed",
+      summary:
+        checks.ok && review.code === 0
+          ? "Implementation complete; awaiting commit approval."
+          : "Implementation finished with outstanding validation or review failures.",
+      finishedAtMs: checks.ok && review.code === 0 ? undefined : Date.now(),
+    }));
 
-    ok({ repoDir, base, loops, clawforge, checks, review });
+    ok({
+      repoDir,
+      base,
+      loops,
+      clawforge,
+      checks,
+      review,
+      runId: currentRun(repoDir)?.id || null,
+      specPacket: currentRun(repoDir)?.specPacket || null,
+    });
     return;
   }
 
@@ -1206,6 +1679,19 @@ async function main() {
     const sessionKey = String(args["session-key"] || args.sessionKey || "agent:coder:main").trim();
     if (!repoDir) die("--repo-dir required");
     const res = await commitAll(sessionKey, repoDir, base);
+    appendRunStep(repoDir, {
+      status: "completed",
+      label: "Commit",
+      detail: `Committed ${res.branch} with "${res.message}".`,
+      actor: { id: "git", type: "tool", label: "git" },
+      data: res,
+    });
+    withRun(repoDir, (run) => ({
+      ...run,
+      branch: res.branch,
+      status: "awaiting_approval",
+      summary: "Commit created; awaiting PR push approval.",
+    }));
     ok(res);
     return;
   }
@@ -1216,6 +1702,20 @@ async function main() {
     const sessionKey = String(args["session-key"] || args.sessionKey || "agent:coder:main").trim();
     if (!repoDir) die("--repo-dir required");
     const res = await pushAndPr(sessionKey, repoDir, base);
+    appendRunStep(repoDir, {
+      status: "completed",
+      label: "Push and PR",
+      detail: "Branch pushed and pull request opened.",
+      actor: { id: "gh", type: "tool", label: "GitHub CLI" },
+      data: res,
+    });
+    withRun(repoDir, (run) => ({
+      ...run,
+      branch: res.branch,
+      status: "completed",
+      finishedAtMs: Date.now(),
+      summary: "Pull request opened and ready for CI/merge automation.",
+    }));
     ok(res);
     return;
   }
@@ -1229,6 +1729,19 @@ async function main() {
     if (!repo) die("--repo required");
     if (!Number.isFinite(pr) || pr <= 0) die("--pr required");
     const res = await mergePr(sessionKey, repoDir, repo, pr);
+    appendRunStep(repoDir, {
+      status: "completed",
+      label: "Merge",
+      detail: `PR #${pr} merge requested.`,
+      actor: { id: "gh", type: "tool", label: "GitHub CLI" },
+      data: res,
+    });
+    withRun(repoDir, (run) => ({
+      ...run,
+      status: "completed",
+      finishedAtMs: Date.now(),
+      summary: `Merge triggered for PR #${pr}.`,
+    }));
     ok(res);
     return;
   }

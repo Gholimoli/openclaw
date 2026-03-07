@@ -20,6 +20,21 @@ function repoBasename(repo: string): string {
   return parts.length > 0 ? (parts[parts.length - 1] ?? trimmed) : trimmed;
 }
 
+function repoRelativePath(repo: string): string {
+  const trimmed = repo.trim();
+  const httpsMatch =
+    /^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i.exec(trimmed) ??
+    /^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/i.exec(trimmed);
+  if (httpsMatch?.[1] && httpsMatch?.[2]) {
+    return path.join(httpsMatch[1], httpsMatch[2]);
+  }
+  const parts = trimmed.split("/").filter(Boolean);
+  if (parts.length >= 2) {
+    return path.join(parts[0] ?? "", parts[1] ?? "");
+  }
+  return repoBasename(repo);
+}
+
 function resolveConfigString(value: unknown): string | undefined {
   if (typeof value !== "string") {
     return undefined;
@@ -30,7 +45,7 @@ function resolveConfigString(value: unknown): string | undefined {
 
 function resolveWorkRoot(api: OpenClawPluginApi): string {
   const cfg = resolveConfigString(api.pluginConfig?.workRoot);
-  return api.resolvePath(cfg ?? "~/work");
+  return api.resolvePath(cfg ?? "~/work/repos");
 }
 
 function resolveDefaultBase(api: OpenClawPluginApi): string {
@@ -91,6 +106,15 @@ export function createWorkTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolCo
       ),
       token: Type.Optional(Type.String({ description: "Resume token (for action=resume)." })),
       approve: Type.Optional(Type.Boolean({ description: "Approve resume? (for action=resume)." })),
+      plannerModel: Type.Optional(
+        Type.String({ description: "Planner/orchestrator model override." }),
+      ),
+      implementationModel: Type.Optional(
+        Type.String({ description: "Primary implementation model override for Codex CLI." }),
+      ),
+      fallbackModel: Type.Optional(
+        Type.String({ description: "Fallback implementation model override for Gemini CLI." }),
+      ),
       timeoutMs: Type.Optional(Type.Number()),
       maxStdoutBytes: Type.Optional(Type.Number()),
     }),
@@ -156,7 +180,7 @@ export function createWorkTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolCo
           throw new Error("repo required");
         }
         args.repo = repo;
-        args.repoDir = path.join(workRoot, repoBasename(repo));
+        args.repoDir = path.join(workRoot, repoRelativePath(repo));
       }
 
       if (action === "task") {
@@ -165,6 +189,16 @@ export function createWorkTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolCo
           throw new Error("message required");
         }
         args.message = message;
+      }
+
+      if (typeof params.plannerModel === "string" && params.plannerModel.trim()) {
+        args.plannerModel = params.plannerModel.trim();
+      }
+      if (typeof params.implementationModel === "string" && params.implementationModel.trim()) {
+        args.implementationModel = params.implementationModel.trim();
+      }
+      if (typeof params.fallbackModel === "string" && params.fallbackModel.trim()) {
+        args.fallbackModel = params.fallbackModel.trim();
       }
 
       if (action === "merge") {

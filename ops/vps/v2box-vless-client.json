@@ -1,0 +1,138 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "sniffing": {
+        "enabled": true,
+        "domainsExcluded": ["courier.push.apple.com"],
+        "destOverride": ["tls", "http", "quic"]
+      },
+      "protocol": "socks",
+      "tag": "socks",
+      "listen": "127.0.0.1",
+      "settings": {
+        "udp": true,
+        "auth": "noauth",
+        "userLevel": 8
+      },
+      "port": 51486
+    },
+    {
+      "protocol": "socks",
+      "tag": "directSocks",
+      "port": 1087,
+      "listen": "127.0.0.1",
+      "settings": {
+        "udp": true,
+        "auth": "noauth",
+        "userLevel": 8
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "streamSettings": {
+        "network": "raw",
+        "security": "reality",
+        "realitySettings": {
+          "fingerprint": "chrome",
+          "serverName": "www.microsoft.com",
+          "publicKey": "M0gtVEsjc0c8MGRsb0VRnu_iD8DKoBlIYJJisHbAiiU",
+          "shortId": "d354b62c2d3dec39",
+          "spiderX": "/"
+        },
+        "sockopt": {
+          "tcpNoDelay": true
+        }
+      },
+      "mux": {
+        "xudpConcurrency": 128,
+        "xudpProxyUDP443": "allow",
+        "concurrency": 50,
+        "enabled": false
+      },
+      "protocol": "vless",
+      "tag": "proxy",
+      "settings": {
+        "vnext": [
+          {
+            "users": [
+              {
+                "level": 8,
+                "flow": "xtls-rprx-vision",
+                "encryption": "none",
+                "email": "",
+                "id": "c93177ee-e55b-4ce6-b2d3-bb8059cfbfb6"
+              }
+            ],
+            "port": 443,
+            "address": "83.229.71.240"
+          }
+        ]
+      }
+    },
+    {
+      "streamSettings": {
+        "sockopt": {
+          "tcpNoDelay": true
+        }
+      },
+      "protocol": "freedom",
+      "tag": "fragment",
+      "settings": {
+        "userLevel": 8,
+        "fragment": {
+          "length": "80-250",
+          "interval": "10-100",
+          "packets": "tlshello"
+        }
+      }
+    },
+    {
+      "protocol": "freedom",
+      "tag": "direct",
+      "settings": {}
+    },
+    {
+      "protocol": "blackhole",
+      "tag": "block",
+      "settings": {}
+    }
+  ],
+  "dns": {
+    "disableCache": true,
+    "queryStrategy": "UseIP",
+    "disableFallbackIfMatch": true,
+    "servers": [
+      {
+        "skipFallback": false,
+        "address": "8.8.8.8"
+      }
+    ],
+    "disableFallback": true
+  },
+  "routing": {
+    "rules": [
+      {
+        "inboundTag": ["directSocks"],
+        "type": "field",
+        "outboundTag": "direct"
+      }
+    ],
+    "domainStrategy": "AsIs",
+    "balancers": []
+  },
+  "policy": {
+    "levels": {
+      "8": {
+        "bufferSize": 0,
+        "downlinkOnly": 1,
+        "handshake": 4,
+        "uplinkOnly": 1,
+        "connIdle": 30
+      }
+    }
+  }
+}

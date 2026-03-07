@@ -10,12 +10,12 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
-echo "[1/8] Base packages"
+echo "[1/9] Base packages"
 apt-get update
 apt-get install -y --no-install-recommends \
   ca-certificates curl gnupg lsb-release jq git ufw
 
-echo "[2/8] UFW (lock down public exposure)"
+echo "[2/9] UFW (lock down public exposure)"
 if command -v ufw >/dev/null 2>&1; then
   ssh_port="22"
   if command -v sshd >/dev/null 2>&1; then
@@ -30,12 +30,12 @@ if command -v ufw >/dev/null 2>&1; then
   ufw --force enable
 fi
 
-echo "[3/8] Tailscale (private access)"
+echo "[3/9] Tailscale (private access)"
 if ! command -v tailscale >/dev/null 2>&1; then
   curl -fsSL https://tailscale.com/install.sh | sh
 fi
 
-echo "[4/8] Docker (for OpenClaw sandbox)"
+echo "[4/9] Docker (for OpenClaw sandbox)"
 if ! command -v docker >/dev/null 2>&1; then
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
@@ -48,7 +48,7 @@ if ! command -v docker >/dev/null 2>&1; then
   apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
 
-echo "[5/8] Node 22 (for OpenClaw CLI)"
+echo "[5/9] Node 22 (for OpenClaw CLI)"
 node_major=""
 if command -v node >/dev/null 2>&1; then
   node_major="$(node -p "process.versions.node.split('.')[0]" 2>/dev/null || true)"
@@ -58,17 +58,29 @@ if [[ -z "${node_major:-}" || "${node_major}" -lt 22 ]]; then
   apt-get install -y --no-install-recommends nodejs
 fi
 
-echo "[6/8] Install OpenClaw CLI"
+echo "[6/9] Install OpenClaw CLI"
 if ! command -v openclaw >/dev/null 2>&1; then
   npm install -g openclaw@latest
 fi
 
-echo "[7/8] Install Lobster CLI"
+echo "[7/9] Install Lobster CLI"
 if ! command -v lobster >/dev/null 2>&1; then
   npm install -g @openclaw/lobster@latest
 fi
 
-echo "[8/8] Build coder sandbox image"
+echo "[8/9] Install host coding CLIs"
+missing_host_cli=0
+for cli in codex gemini; do
+  if ! command -v "$cli" >/dev/null 2>&1; then
+    missing_host_cli=1
+    break
+  fi
+done
+if [[ "$missing_host_cli" -eq 1 ]]; then
+  npm install -g @openai/codex @google/gemini-cli
+fi
+
+echo "[9/9] Build coder sandbox image"
 if ! docker image inspect openclaw-sandbox:bookworm-slim >/dev/null 2>&1; then
   echo "Building openclaw-sandbox:bookworm-slim"
   docker build -t openclaw-sandbox:bookworm-slim -f Dockerfile.sandbox .
@@ -92,7 +104,9 @@ Optional power tools:
 1) Create ~/.openclaw/.env with required secrets:
    TELEGRAM_BOT_TOKEN=
    OPENCLAW_GATEWAY_TOKEN=
-   GH_TOKEN=
+   GITHUB_APP_ID=
+   GITHUB_APP_INSTALLATION_ID=
+   GITHUB_APP_PRIVATE_KEY_FILE=
    OPENAI_API_KEY=
    GEMINI_API_KEY=
    CODERABBIT_API_KEY=

@@ -148,6 +148,9 @@ describe("exec approval forwarder", () => {
   it("forwards to explicit targets and expires", async () => {
     vi.useFakeTimers();
     const deliver = vi.fn().mockResolvedValue([]);
+    const editTelegramMessage = vi
+      .fn()
+      .mockResolvedValue({ ok: true, messageId: "m1", chatId: "123" });
     const cfg = {
       approvals: {
         exec: {
@@ -161,6 +164,7 @@ describe("exec approval forwarder", () => {
     const forwarder = createExecApprovalForwarder({
       getConfig: () => cfg,
       deliver,
+      editTelegramMessage,
       nowMs: () => 1000,
       resolveSessionTarget: () => null,
     });
@@ -170,6 +174,7 @@ describe("exec approval forwarder", () => {
 
     await vi.runAllTimersAsync();
     expect(deliver).toHaveBeenCalledTimes(2);
+    expect(editTelegramMessage).not.toHaveBeenCalled();
   });
 
   it("formats single-line commands as inline code", async () => {
@@ -341,5 +346,82 @@ describe("exec approval forwarder", () => {
     });
 
     expect(getFirstDeliveryText(deliver)).toContain("Command:\n````\necho ```danger```\n````");
+  });
+
+  it("clears telegram buttons when a direct-message approval resolves elsewhere", async () => {
+    vi.useFakeTimers();
+    const deliver = vi.fn().mockResolvedValue([{ channel: "telegram", messageId: "42" }]);
+    const editTelegramMessage = vi
+      .fn()
+      .mockResolvedValue({ ok: true, messageId: "42", chatId: "123" });
+    const cfg = {
+      approvals: {
+        exec: {
+          enabled: true,
+          mode: "targets",
+          targets: [{ channel: "telegram", to: "123" }],
+        },
+      },
+    } as OpenClawConfig;
+
+    const forwarder = createExecApprovalForwarder({
+      getConfig: () => cfg,
+      deliver,
+      editTelegramMessage,
+      nowMs: () => 1000,
+      resolveSessionTarget: () => null,
+    });
+
+    await forwarder.handleRequested(baseRequest);
+    await forwarder.handleResolved({
+      id: baseRequest.id,
+      decision: "deny",
+      resolvedBy: "operator",
+      ts: 2000,
+    });
+
+    expect(editTelegramMessage).toHaveBeenCalledTimes(1);
+    expect(editTelegramMessage).toHaveBeenCalledWith(
+      "123",
+      "42",
+      expect.stringContaining("Exec approval required"),
+      expect.objectContaining({ buttons: [] }),
+    );
+  });
+
+  it("clears telegram buttons when a direct-message approval expires", async () => {
+    vi.useFakeTimers();
+    const deliver = vi.fn().mockResolvedValue([{ channel: "telegram", messageId: "43" }]);
+    const editTelegramMessage = vi
+      .fn()
+      .mockResolvedValue({ ok: true, messageId: "43", chatId: "123" });
+    const cfg = {
+      approvals: {
+        exec: {
+          enabled: true,
+          mode: "targets",
+          targets: [{ channel: "telegram", to: "123" }],
+        },
+      },
+    } as OpenClawConfig;
+
+    const forwarder = createExecApprovalForwarder({
+      getConfig: () => cfg,
+      deliver,
+      editTelegramMessage,
+      nowMs: () => 1000,
+      resolveSessionTarget: () => null,
+    });
+
+    await forwarder.handleRequested(baseRequest);
+    await vi.runAllTimersAsync();
+
+    expect(editTelegramMessage).toHaveBeenCalledTimes(1);
+    expect(editTelegramMessage).toHaveBeenCalledWith(
+      "123",
+      "43",
+      expect.stringContaining("Exec approval required"),
+      expect.objectContaining({ buttons: [] }),
+    );
   });
 });

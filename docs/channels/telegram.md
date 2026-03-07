@@ -208,10 +208,59 @@ curl "https://api.telegram.org/bot<bot_token>/getUpdates"
   </Tab>
 </Tabs>
 
+## Client chats and takeover
+
+You can allowlist specific Telegram client chats and route them to a chosen agent for support or delivery work.
+
+- Client routes are disabled by default.
+- A chat only becomes eligible when you add it to `channels.telegram.clients`.
+- Runtime takeover is controlled with `/client` and is limited to allowlisted agents for that chat.
+- Peer ids use the same Telegram routing keys OpenClaw already uses:
+  - DM: the private chat peer id
+  - Group: the group id
+  - Forum topic: `<groupId>:topic:<threadId>`
+
+Example:
+
+```json5
+{
+  channels: {
+    telegram: {
+      clients: {
+        "123456789": {
+          label: "Acme client DM",
+          defaultAgentId: "main",
+          allowedAgents: ["main", "coder", "devops"],
+        },
+        "-1001234567890": {
+          label: "Beta support room",
+          defaultAgentId: "devops",
+          allowedAgents: ["main", "devops", "power"],
+        },
+      },
+    },
+  },
+}
+```
+
+Operator commands:
+
+- `/client` or `/client status` shows the current chat route
+- `/client list` lists configured client routes
+- `/client assign <agent> [peer]` assigns takeover to an allowed agent
+- `/client clear [peer]` removes the runtime override and falls back to `defaultAgentId`
+
+Operational notes:
+
+- Configure the chat first, then let the operator reassign it at runtime.
+- `/client assign` writes state under the OpenClaw state dir and survives gateway restarts.
+- If a client route is disabled in config, runtime overrides are ignored.
+
 ## Runtime behavior
 
 - Telegram is owned by the gateway process.
 - Routing is deterministic: Telegram inbound replies back to Telegram (the model does not pick channels).
+- Configured Telegram client routes can override the routed agent for specific chats without changing the underlying binding model.
 - Inbound messages normalize into the shared channel envelope with reply metadata and media placeholders.
 - Group sessions are isolated by group ID. Forum topics append `:topic:<threadId>` to keep topics isolated.
 - DM messages can carry `message_thread_id`; OpenClaw routes them with thread-aware session keys and preserves thread ID for replies.
@@ -707,6 +756,11 @@ Primary reference:
 - `channels.telegram.tokenFile`: read token from file path.
 - `channels.telegram.dmPolicy`: `pairing | allowlist | open | disabled` (default: pairing).
 - `channels.telegram.allowFrom`: DM allowlist (numeric Telegram user IDs). `open` requires `"*"`. `openclaw doctor --fix` can resolve legacy `@username` entries to IDs.
+- `channels.telegram.clients`: allowlisted Telegram client-chat routes keyed by peer id.
+  - `channels.telegram.clients.<peer>.enabled`: disable the route when `false`.
+  - `channels.telegram.clients.<peer>.label`: operator-facing label for the client chat.
+  - `channels.telegram.clients.<peer>.defaultAgentId`: default agent for that client chat.
+  - `channels.telegram.clients.<peer>.allowedAgents`: optional allowlist of agents that `/client assign` may choose.
 - `channels.telegram.groupPolicy`: `open | allowlist | disabled` (default: allowlist).
 - `channels.telegram.groupAllowFrom`: group sender allowlist (numeric Telegram user IDs). `openclaw doctor --fix` can resolve legacy `@username` entries to IDs.
 - `channels.telegram.groups`: per-group defaults + allowlist (use `"*"` for global defaults).

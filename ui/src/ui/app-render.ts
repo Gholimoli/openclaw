@@ -342,6 +342,8 @@ export function renderApp(state: AppViewState) {
                 error: state.officeError ?? state.evolutionError,
                 savingLayout: state.officeSavingLayout,
                 evolutionStatus: state.evolutionStatus,
+                automationRuns: state.automationRuns,
+                approvals: state.execApprovalQueue,
                 proposals: state.evolutionProposals,
                 agents: state.officeAgents,
                 layout: state.officeLayout,
@@ -353,9 +355,11 @@ export function renderApp(state: AppViewState) {
                   runClass: state.officeFilterRunClass,
                 },
                 onRefresh: () =>
-                  Promise.all([state.loadEvolution(), state.loadOfficeSnapshot()]).then(
-                    () => undefined,
-                  ),
+                  Promise.all([
+                    state.loadAutomationRuns(),
+                    state.loadEvolution(),
+                    state.loadOfficeSnapshot(),
+                  ]).then(() => undefined),
                 onTogglePause: () => state.toggleEvolutionPause(),
                 onProposalAction: (proposalId, action) =>
                   state.actEvolutionProposal(proposalId, action),

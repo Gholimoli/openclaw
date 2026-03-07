@@ -27,6 +27,17 @@ struct ControlAgentEvent: Codable, Sendable, Identifiable {
     let summary: String?
 }
 
+struct AutomationGatewayEvent: Codable {
+    struct Run: Codable {
+        let repo: String
+        let status: String
+        let title: String
+    }
+
+    let kind: String
+    let run: Run?
+}
+
 enum ControlChannelError: Error, LocalizedError {
     case disconnected
     case badResponse(String)
@@ -364,6 +375,18 @@ final class ControlChannel {
                let data = try? JSONEncoder().encode(heartbeat)
             {
                 NotificationCenter.default.post(name: .controlHeartbeat, object: data)
+            }
+        case let .event(evt) where evt.event == "automation":
+            guard let payload = evt.payload else { return }
+            if let data = try? JSONEncoder().encode(payload),
+               let event = try? JSONDecoder().decode(AutomationGatewayEvent.self, from: data),
+               event.kind == "run.updated",
+               let run = event.run
+            {
+                WorkActivityStore.shared.handleAutomationRun(
+                    repo: run.repo,
+                    status: run.status,
+                    title: run.title)
             }
         case let .event(evt) where evt.event == "shutdown":
             self.state = .degraded("gateway shutdown")

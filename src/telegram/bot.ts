@@ -26,7 +26,6 @@ import { formatUncaughtError } from "../infra/errors.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
 import { getChildLogger } from "../logging.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
-import { resolveAgentRoute } from "../routing/resolve-route.js";
 import { resolveTelegramAccount } from "./accounts.js";
 import { withTelegramApiErrorLogging } from "./api-logging.js";
 import { registerTelegramHandlers } from "./bot-handlers.js";
@@ -44,6 +43,7 @@ import {
   resolveTelegramForumThreadId,
   resolveTelegramStreamMode,
 } from "./bot/helpers.js";
+import { resolveTelegramClientRoute } from "./client-routing.js";
 import { resolveTelegramFetch } from "./fetch.js";
 import { wasSentByBot } from "./sent-message-cache.js";
 
@@ -454,13 +454,12 @@ export function createTelegramBot(opts: TelegramBotOptions) {
       const peerId = isGroup ? buildTelegramGroupPeerId(chatId, resolvedThreadId) : String(chatId);
       const parentPeer = buildTelegramParentPeer({ isGroup, resolvedThreadId, chatId });
       // Fresh config for bindings lookup; other routing inputs are payload-derived.
-      const route = resolveAgentRoute({
+      const route = resolveTelegramClientRoute({
         cfg: loadConfig(),
-        channel: "telegram",
         accountId: account.accountId,
         peer: { kind: isGroup ? "group" : "direct", id: peerId },
         parentPeer,
-      });
+      }).route;
       const sessionKey = route.sessionKey;
 
       // Enqueue system event for each added reaction

@@ -358,7 +358,7 @@ Recommended split for hardened VPS setups:
 - `main`: chat and routing, minimal tools, no host exec
 - `coder`: sandboxed filesystem and exec workflow tools
 - `power`: explicit approvals for high risk tools
-- `ops`: maintenance only, usually disabled or tightly constrained
+- `devops`: maintenance only, usually tightly constrained and routed from dedicated devops chats
 
 ## Channel and plugin architecture
 
@@ -412,11 +412,13 @@ Source: `ops/vps/openclaw.vps-coding.json5`
 | Gateway auth mode            | `token`                                                        |
 | Gateway tool deny list       | `gateway`, `sessions_send`, `sessions_spawn`, `whatsapp_login` |
 | Telegram dmPolicy            | `allowlist`                                                    |
-| Telegram groupPolicy         | `disabled`                                                     |
+| Telegram groupPolicy         | `allowlist`                                                    |
+| Telegram groups allowlist    | three dedicated worker groups                                  |
+| Telegram worker bindings     | one group each for `coder`, `power`, `devops`                  |
 | Telegram configWrites        | `false`                                                        |
 | Telegram streamMode          | `off`                                                          |
 | Session dmScope              | `per-channel-peer`                                             |
-| Agent ids                    | `main`, `coder`, `power`, `ops`                                |
+| Agent ids                    | `main`, `coder`, `power`, `devops`                             |
 | Work plugin enabled          | `true`                                                         |
 | Work plugin coderSessionKey  | `agent:coder:main`                                             |
 | Exec approvals enabled       | `true`                                                         |
@@ -435,6 +437,7 @@ Source: `ops/vps/openclaw.vps-coding.json5`
 4. Restart service and run `openclaw channels status --probe`
 5. Hold stability window and verify restart count stays stable
 6. Mark as last known good release
+7. Enqueue deployment success system event and wake heartbeat delivery
 
 Rollback path:
 
@@ -453,12 +456,40 @@ flowchart LR
   D --> E[Probe and status checks]
   E --> F{Stable window passes}
   F -->|Yes| G[Mark last known good]
+  G --> I[Queue system event now mode]
+  I --> J[Heartbeat delivery to Telegram]
   F -->|No| H[Rollback to last known good]
   H --> D
 ```
 
 Caption: release safety depends on preflight plus post restart probes and a
 stability window.
+
+### Telegram worker chat split
+
+For VPS coding operations, Telegram is split into four intentional lanes:
+
+- `main`: owner DM and default fallback routing
+- `coder`: dedicated Telegram group bound to agent `coder`
+- `power`: dedicated Telegram group bound to agent `power`
+- `devops`: dedicated Telegram group bound to agent `devops`
+
+This keeps coding, privileged operations, and maintenance conversations isolated
+while preserving a single Telegram bot surface.
+
+### Telegram client takeover lanes
+
+Client-facing Telegram chats remain disabled by default and only activate when
+they are explicitly allowlisted under `channels.telegram.clients`.
+
+Once a client chat is allowlisted:
+
+- it can be pinned to a default agent
+- operators can reassign it at runtime with `/client assign`
+- reassignment stays scoped to the allowlisted agent set for that client chat
+
+This keeps external/client chat automation fail-closed while still allowing
+live handoff from Ted to implementation or support agents.
 
 ## Best practices and anti patterns
 

@@ -2,6 +2,7 @@ import type { GatewayRequestHandlers, GatewayRequestOptions } from "./server-met
 import { ErrorCodes, errorShape } from "./protocol/index.js";
 import { agentHandlers } from "./server-methods/agent.js";
 import { agentsHandlers } from "./server-methods/agents.js";
+import { automationHandlers } from "./server-methods/automation.js";
 import { browserHandlers } from "./server-methods/browser.js";
 import { channelsHandlers } from "./server-methods/channels.js";
 import { chatHandlers } from "./server-methods/chat.js";
@@ -86,6 +87,9 @@ const READ_METHODS = new Set([
   "evolution.proposals.list",
   "office.snapshot",
   "office.layout.get",
+  "automation.runs.list",
+  "automation.runs.get",
+  "automation.audit.query",
 ]);
 const WRITE_METHODS = new Set([
   "send",
@@ -102,6 +106,8 @@ const WRITE_METHODS = new Set([
   "chat.send",
   "chat.abort",
   "browser.request",
+  "automation.runs.resume",
+  "automation.runs.cancel",
 ]);
 
 function authorizeGatewayMethod(method: string, client: GatewayRequestOptions["client"]) {
@@ -202,6 +208,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...usageHandlers,
   ...agentHandlers,
   ...agentsHandlers,
+  ...automationHandlers,
   ...browserHandlers,
 };
 

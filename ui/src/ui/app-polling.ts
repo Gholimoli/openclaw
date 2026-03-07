@@ -1,4 +1,5 @@
 import type { OpenClawApp } from "./app.ts";
+import { loadAutomationRuns } from "./controllers/automation.ts";
 import { loadDebug } from "./controllers/debug.ts";
 import { loadLogs } from "./controllers/logs.ts";
 import { loadNodes } from "./controllers/nodes.ts";
@@ -78,6 +79,7 @@ export function startOfficePolling(host: PollingHost) {
     if (host.tab !== "office") {
       return;
     }
+    void loadAutomationRuns(host as unknown as OpenClawApp, { quiet: true, limit: 50 });
     void loadOfficeSnapshot(host as unknown as OpenClawApp, { quiet: true });
   }, 15_000);
 }

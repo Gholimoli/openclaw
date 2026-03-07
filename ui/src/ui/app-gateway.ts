@@ -67,6 +67,8 @@ type GatewayHost = {
   evolutionStatus: EvolutionStatus | null;
   evolutionProposals: EvolutionProposal[];
   evolutionError: string | null;
+  automationRuns: import("./types.ts").AutomationRun[];
+  automationError: string | null;
   officeAgents: OfficeAgentState[];
   officeLayout: OfficeLayout | null;
   officeActivity: OfficeActivityEntry[];
@@ -322,6 +324,33 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     }
     if (payload.kind === "run.finished" || payload.kind === "report.published") {
       host.evolutionError = null;
+    }
+    return;
+  }
+
+  if (evt.event === "automation") {
+    const payload = evt.payload as
+      | {
+          kind?: string;
+          run?: import("./types.ts").AutomationRun;
+        }
+      | undefined;
+    if (!payload?.kind) {
+      return;
+    }
+    if (payload.kind === "run.updated" && payload.run) {
+      const existing = host.automationRuns.findIndex((entry) => entry.id === payload.run?.id);
+      if (existing >= 0) {
+        host.automationRuns = host.automationRuns.map((entry, index) =>
+          index === existing ? payload.run! : entry,
+        );
+      } else {
+        host.automationRuns = [payload.run, ...host.automationRuns];
+      }
+      host.automationRuns = host.automationRuns
+        .toSorted((a, b) => b.updatedAtMs - a.updatedAtMs)
+        .slice(0, 50);
+      host.automationError = null;
     }
     return;
   }

@@ -55,6 +55,7 @@ import {
   resolveTelegramForumThreadId,
   resolveTelegramThreadSpec,
 } from "./bot/helpers.js";
+import { resolveTelegramClientRoute } from "./client-routing.js";
 import { buildInlineKeyboard } from "./send.js";
 
 const EMPTY_RESPONSE_FALLBACK = "No response generated. Please try again.";
@@ -455,9 +456,8 @@ export const registerTelegramNativeCommands = ({
             return;
           }
           const parentPeer = buildTelegramParentPeer({ isGroup, resolvedThreadId, chatId });
-          const route = resolveAgentRoute({
+          const resolvedClientRoute = resolveTelegramClientRoute({
             cfg,
-            channel: "telegram",
             accountId,
             peer: {
               kind: isGroup ? "group" : "direct",
@@ -465,6 +465,7 @@ export const registerTelegramNativeCommands = ({
             },
             parentPeer,
           });
+          const route = resolvedClientRoute.route;
           const baseSessionKey = route.sessionKey;
           // DMs: use raw messageThreadId for thread sessions (not resolvedThreadId which is for forums)
           const dmThreadId = threadSpec.scope === "dm" ? threadSpec.id : undefined;
@@ -489,10 +490,11 @@ export const registerTelegramNativeCommands = ({
           const groupSystemPrompt =
             systemPromptParts.length > 0 ? systemPromptParts.join("\n\n") : undefined;
           const conversationLabel = isGroup
-            ? msg.chat.title
-              ? `${msg.chat.title} id:${chatId}`
-              : `group:${chatId}`
-            : (buildSenderName(msg) ?? String(senderId || chatId));
+            ? resolvedClientRoute.clientConfig?.label?.trim() ||
+              (msg.chat.title ? `${msg.chat.title} id:${chatId}` : `group:${chatId}`)
+            : resolvedClientRoute.clientConfig?.label?.trim() ||
+              buildSenderName(msg) ||
+              String(senderId || chatId);
           const ctxPayload = finalizeInboundContext({
             Body: prompt,
             BodyForAgent: prompt,

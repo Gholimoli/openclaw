@@ -34,6 +34,24 @@ import type {
   SkillsUpdateParamsSchema,
 } from "./agents-models-skills.js";
 import type {
+  AutomationActorSchema,
+  AutomationApprovalEventSchema,
+  AutomationAuditEntrySchema,
+  AutomationAuditQueryParamsSchema,
+  AutomationAuditQueryResultSchema,
+  AutomationRunSchema,
+  AutomationRunsCancelParamsSchema,
+  AutomationRunsCancelResultSchema,
+  AutomationRunsGetParamsSchema,
+  AutomationRunsGetResultSchema,
+  AutomationRunsListParamsSchema,
+  AutomationRunsListResultSchema,
+  AutomationRunsResumeParamsSchema,
+  AutomationRunsResumeResultSchema,
+  AutomationSpecPacketSchema,
+  AutomationStepSchema,
+} from "./automation.js";
+import type {
   ChannelsLogoutParamsSchema,
   TalkConfigParamsSchema,
   TalkConfigResultSchema,
@@ -173,6 +191,22 @@ export type PresenceEntry = Static<typeof PresenceEntrySchema>;
 export type ErrorShape = Static<typeof ErrorShapeSchema>;
 export type StateVersion = Static<typeof StateVersionSchema>;
 export type AgentEvent = Static<typeof AgentEventSchema>;
+export type AutomationActor = Static<typeof AutomationActorSchema>;
+export type AutomationSpecPacket = Static<typeof AutomationSpecPacketSchema>;
+export type AutomationRun = Static<typeof AutomationRunSchema>;
+export type AutomationStep = Static<typeof AutomationStepSchema>;
+export type AutomationAuditEntry = Static<typeof AutomationAuditEntrySchema>;
+export type AutomationApprovalEvent = Static<typeof AutomationApprovalEventSchema>;
+export type AutomationRunsListParams = Static<typeof AutomationRunsListParamsSchema>;
+export type AutomationRunsListResult = Static<typeof AutomationRunsListResultSchema>;
+export type AutomationRunsGetParams = Static<typeof AutomationRunsGetParamsSchema>;
+export type AutomationRunsGetResult = Static<typeof AutomationRunsGetResultSchema>;
+export type AutomationRunsResumeParams = Static<typeof AutomationRunsResumeParamsSchema>;
+export type AutomationRunsResumeResult = Static<typeof AutomationRunsResumeResultSchema>;
+export type AutomationRunsCancelParams = Static<typeof AutomationRunsCancelParamsSchema>;
+export type AutomationRunsCancelResult = Static<typeof AutomationRunsCancelResultSchema>;
+export type AutomationAuditQueryParams = Static<typeof AutomationAuditQueryParamsSchema>;
+export type AutomationAuditQueryResult = Static<typeof AutomationAuditQueryResultSchema>;
 export type AgentIdentityParams = Static<typeof AgentIdentityParamsSchema>;
 export type AgentIdentityResult = Static<typeof AgentIdentityResultSchema>;
 export type PollParams = Static<typeof PollParamsSchema>;

@@ -27,6 +27,7 @@ import type {
   SkillStatusReport,
   StatusSummary,
   NostrProfile,
+  AutomationRun,
   EvolutionProposal,
   EvolutionStatus,
   OfficeActivityEntry,
@@ -83,6 +84,7 @@ import {
 } from "./app-tool-stream.ts";
 import { resolveInjectedAssistantIdentity } from "./assistant-identity.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
+import { loadAutomationRuns as loadAutomationRunsInternal } from "./controllers/automation.ts";
 import {
   actEvolutionProposal as actEvolutionProposalInternal,
   loadEvolution as loadEvolutionInternal,
@@ -314,6 +316,9 @@ export class OpenClawApp extends LitElement {
   @state() officeAgents: OfficeAgentState[] = [];
   @state() officeLayout: OfficeLayout | null = null;
   @state() officeActivity: OfficeActivityEntry[] = [];
+  @state() automationLoading = false;
+  @state() automationError: string | null = null;
+  @state() automationRuns: AutomationRun[] = [];
   @state() officeFilterAgent = "";
   @state() officeFilterSource = "";
   @state() officeFilterProposal = "";
@@ -467,6 +472,13 @@ export class OpenClawApp extends LitElement {
   async loadOfficeSnapshot(opts?: { quiet?: boolean }) {
     await loadOfficeSnapshotInternal(
       this as unknown as Parameters<typeof loadOfficeSnapshotInternal>[0],
+      opts,
+    );
+  }
+
+  async loadAutomationRuns(opts?: { quiet?: boolean; limit?: number }) {
+    await loadAutomationRunsInternal(
+      this as unknown as Parameters<typeof loadAutomationRunsInternal>[0],
       opts,
     );
   }

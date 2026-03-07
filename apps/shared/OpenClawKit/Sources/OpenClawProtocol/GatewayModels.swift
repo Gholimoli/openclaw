@@ -386,6 +386,554 @@ public struct AgentEvent: Codable, Sendable {
     }
 }
 
+public struct AutomationActor: Codable, Sendable {
+    public let id: String
+    public let type: AnyCodable
+    public let label: String?
+
+    public init(
+        id: String,
+        type: AnyCodable,
+        label: String?
+    ) {
+        self.id = id
+        self.type = type
+        self.label = label
+    }
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case type
+        case label
+    }
+}
+
+public struct AutomationSpecPacket: Codable, Sendable {
+    public let repo: String
+    public let repourl: String?
+    public let repodir: String?
+    public let base: String
+    public let branch: String?
+    public let defaultbranch: String?
+    public let userrequest: String
+    public let goal: String
+    public let nongoals: [String]
+    public let acceptancecriteria: [String]
+    public let risktier: AnyCodable
+    public let checks: [String]
+    public let approvalrequirements: [String]
+    public let activeprnumbers: [Int]?
+    public let planner: [String: AnyCodable]
+    public let implementation: [String: AnyCodable]
+
+    public init(
+        repo: String,
+        repourl: String?,
+        repodir: String?,
+        base: String,
+        branch: String?,
+        defaultbranch: String?,
+        userrequest: String,
+        goal: String,
+        nongoals: [String],
+        acceptancecriteria: [String],
+        risktier: AnyCodable,
+        checks: [String],
+        approvalrequirements: [String],
+        activeprnumbers: [Int]?,
+        planner: [String: AnyCodable],
+        implementation: [String: AnyCodable]
+    ) {
+        self.repo = repo
+        self.repourl = repourl
+        self.repodir = repodir
+        self.base = base
+        self.branch = branch
+        self.defaultbranch = defaultbranch
+        self.userrequest = userrequest
+        self.goal = goal
+        self.nongoals = nongoals
+        self.acceptancecriteria = acceptancecriteria
+        self.risktier = risktier
+        self.checks = checks
+        self.approvalrequirements = approvalrequirements
+        self.activeprnumbers = activeprnumbers
+        self.planner = planner
+        self.implementation = implementation
+    }
+    private enum CodingKeys: String, CodingKey {
+        case repo
+        case repourl = "repoUrl"
+        case repodir = "repoDir"
+        case base
+        case branch
+        case defaultbranch = "defaultBranch"
+        case userrequest = "userRequest"
+        case goal
+        case nongoals = "nonGoals"
+        case acceptancecriteria = "acceptanceCriteria"
+        case risktier = "riskTier"
+        case checks
+        case approvalrequirements = "approvalRequirements"
+        case activeprnumbers = "activePrNumbers"
+        case planner
+        case implementation
+    }
+}
+
+public struct AutomationRun: Codable, Sendable {
+    public let id: String
+    public let repo: String
+    public let repourl: String?
+    public let repodir: String?
+    public let base: String
+    public let branch: String?
+    public let defaultbranch: String?
+    public let status: AnyCodable
+    public let title: String
+    public let userrequest: String
+    public let risktier: AnyCodable
+    public let planneragentid: String
+    public let plannerdisplayname: String?
+    public let plannermodel: String?
+    public let implementationagentid: String
+    public let implementationcli: String
+    public let implementationfallbackcli: String?
+    public let implementationmodel: String?
+    public let fallbackmodel: String?
+    public let startedatms: Int
+    public let updatedatms: Int
+    public let finishedatms: Int?
+    public let specpacket: AutomationSpecPacket
+    public let summary: String?
+    public let laststeplabel: String?
+    public let lastapprovalid: String?
+
+    public init(
+        id: String,
+        repo: String,
+        repourl: String?,
+        repodir: String?,
+        base: String,
+        branch: String?,
+        defaultbranch: String?,
+        status: AnyCodable,
+        title: String,
+        userrequest: String,
+        risktier: AnyCodable,
+        planneragentid: String,
+        plannerdisplayname: String?,
+        plannermodel: String?,
+        implementationagentid: String,
+        implementationcli: String,
+        implementationfallbackcli: String?,
+        implementationmodel: String?,
+        fallbackmodel: String?,
+        startedatms: Int,
+        updatedatms: Int,
+        finishedatms: Int?,
+        specpacket: AutomationSpecPacket,
+        summary: String?,
+        laststeplabel: String?,
+        lastapprovalid: String?
+    ) {
+        self.id = id
+        self.repo = repo
+        self.repourl = repourl
+        self.repodir = repodir
+        self.base = base
+        self.branch = branch
+        self.defaultbranch = defaultbranch
+        self.status = status
+        self.title = title
+        self.userrequest = userrequest
+        self.risktier = risktier
+        self.planneragentid = planneragentid
+        self.plannerdisplayname = plannerdisplayname
+        self.plannermodel = plannermodel
+        self.implementationagentid = implementationagentid
+        self.implementationcli = implementationcli
+        self.implementationfallbackcli = implementationfallbackcli
+        self.implementationmodel = implementationmodel
+        self.fallbackmodel = fallbackmodel
+        self.startedatms = startedatms
+        self.updatedatms = updatedatms
+        self.finishedatms = finishedatms
+        self.specpacket = specpacket
+        self.summary = summary
+        self.laststeplabel = laststeplabel
+        self.lastapprovalid = lastapprovalid
+    }
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case repo
+        case repourl = "repoUrl"
+        case repodir = "repoDir"
+        case base
+        case branch
+        case defaultbranch = "defaultBranch"
+        case status
+        case title
+        case userrequest = "userRequest"
+        case risktier = "riskTier"
+        case planneragentid = "plannerAgentId"
+        case plannerdisplayname = "plannerDisplayName"
+        case plannermodel = "plannerModel"
+        case implementationagentid = "implementationAgentId"
+        case implementationcli = "implementationCli"
+        case implementationfallbackcli = "implementationFallbackCli"
+        case implementationmodel = "implementationModel"
+        case fallbackmodel = "fallbackModel"
+        case startedatms = "startedAtMs"
+        case updatedatms = "updatedAtMs"
+        case finishedatms = "finishedAtMs"
+        case specpacket = "specPacket"
+        case summary
+        case laststeplabel = "lastStepLabel"
+        case lastapprovalid = "lastApprovalId"
+    }
+}
+
+public struct AutomationStep: Codable, Sendable {
+    public let id: String
+    public let runid: String
+    public let ts: Int
+    public let status: AnyCodable
+    public let label: String
+    public let detail: String?
+    public let actor: [String: AnyCodable]?
+    public let command: String?
+    public let exitcode: Int?
+    public let data: [String: AnyCodable]?
+
+    public init(
+        id: String,
+        runid: String,
+        ts: Int,
+        status: AnyCodable,
+        label: String,
+        detail: String?,
+        actor: [String: AnyCodable]?,
+        command: String?,
+        exitcode: Int?,
+        data: [String: AnyCodable]?
+    ) {
+        self.id = id
+        self.runid = runid
+        self.ts = ts
+        self.status = status
+        self.label = label
+        self.detail = detail
+        self.actor = actor
+        self.command = command
+        self.exitcode = exitcode
+        self.data = data
+    }
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case runid = "runId"
+        case ts
+        case status
+        case label
+        case detail
+        case actor
+        case command
+        case exitcode = "exitCode"
+        case data
+    }
+}
+
+public struct AutomationAuditEntry: Codable, Sendable {
+    public let id: String
+    public let runid: String?
+    public let ts: Int
+    public let kind: String
+    public let status: String?
+    public let message: String
+    public let repo: String?
+    public let branch: String?
+    public let actor: [String: AnyCodable]?
+    public let data: [String: AnyCodable]?
+
+    public init(
+        id: String,
+        runid: String?,
+        ts: Int,
+        kind: String,
+        status: String?,
+        message: String,
+        repo: String?,
+        branch: String?,
+        actor: [String: AnyCodable]?,
+        data: [String: AnyCodable]?
+    ) {
+        self.id = id
+        self.runid = runid
+        self.ts = ts
+        self.kind = kind
+        self.status = status
+        self.message = message
+        self.repo = repo
+        self.branch = branch
+        self.actor = actor
+        self.data = data
+    }
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case runid = "runId"
+        case ts
+        case kind
+        case status
+        case message
+        case repo
+        case branch
+        case actor
+        case data
+    }
+}
+
+public struct AutomationApprovalEvent: Codable, Sendable {
+    public let id: String
+    public let ts: Int
+    public let runid: String?
+    public let approvalid: String
+    public let state: AnyCodable
+    public let decision: AnyCodable?
+    public let resolvedby: String?
+    public let agentid: String?
+    public let sessionkey: String?
+    public let command: String?
+    public let host: String?
+    public let cwd: String?
+    public let security: String?
+    public let ask: String?
+
+    public init(
+        id: String,
+        ts: Int,
+        runid: String?,
+        approvalid: String,
+        state: AnyCodable,
+        decision: AnyCodable?,
+        resolvedby: String?,
+        agentid: String?,
+        sessionkey: String?,
+        command: String?,
+        host: String?,
+        cwd: String?,
+        security: String?,
+        ask: String?
+    ) {
+        self.id = id
+        self.ts = ts
+        self.runid = runid
+        self.approvalid = approvalid
+        self.state = state
+        self.decision = decision
+        self.resolvedby = resolvedby
+        self.agentid = agentid
+        self.sessionkey = sessionkey
+        self.command = command
+        self.host = host
+        self.cwd = cwd
+        self.security = security
+        self.ask = ask
+    }
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case ts
+        case runid = "runId"
+        case approvalid = "approvalId"
+        case state
+        case decision
+        case resolvedby = "resolvedBy"
+        case agentid = "agentId"
+        case sessionkey = "sessionKey"
+        case command
+        case host
+        case cwd
+        case security
+        case ask
+    }
+}
+
+public struct AutomationRunsListParams: Codable, Sendable {
+    public let limit: Int?
+    public let repo: String?
+    public let status: String?
+
+    public init(
+        limit: Int?,
+        repo: String?,
+        status: String?
+    ) {
+        self.limit = limit
+        self.repo = repo
+        self.status = status
+    }
+    private enum CodingKeys: String, CodingKey {
+        case limit
+        case repo
+        case status
+    }
+}
+
+public struct AutomationRunsListResult: Codable, Sendable {
+    public let runs: [AutomationRun]
+
+    public init(
+        runs: [AutomationRun]
+    ) {
+        self.runs = runs
+    }
+    private enum CodingKeys: String, CodingKey {
+        case runs
+    }
+}
+
+public struct AutomationRunsGetParams: Codable, Sendable {
+    public let runid: String
+
+    public init(
+        runid: String
+    ) {
+        self.runid = runid
+    }
+    private enum CodingKeys: String, CodingKey {
+        case runid = "runId"
+    }
+}
+
+public struct AutomationRunsGetResult: Codable, Sendable {
+    public let run: AnyCodable
+    public let steps: [AutomationStep]
+    public let audit: [AutomationAuditEntry]
+
+    public init(
+        run: AnyCodable,
+        steps: [AutomationStep],
+        audit: [AutomationAuditEntry]
+    ) {
+        self.run = run
+        self.steps = steps
+        self.audit = audit
+    }
+    private enum CodingKeys: String, CodingKey {
+        case run
+        case steps
+        case audit
+    }
+}
+
+public struct AutomationRunsResumeParams: Codable, Sendable {
+    public let runid: String
+
+    public init(
+        runid: String
+    ) {
+        self.runid = runid
+    }
+    private enum CodingKeys: String, CodingKey {
+        case runid = "runId"
+    }
+}
+
+public struct AutomationRunsResumeResult: Codable, Sendable {
+    public let ok: Bool
+    public let run: AnyCodable
+
+    public init(
+        ok: Bool,
+        run: AnyCodable
+    ) {
+        self.ok = ok
+        self.run = run
+    }
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case run
+    }
+}
+
+public struct AutomationRunsCancelParams: Codable, Sendable {
+    public let runid: String
+    public let reason: String?
+
+    public init(
+        runid: String,
+        reason: String?
+    ) {
+        self.runid = runid
+        self.reason = reason
+    }
+    private enum CodingKeys: String, CodingKey {
+        case runid = "runId"
+        case reason
+    }
+}
+
+public struct AutomationRunsCancelResult: Codable, Sendable {
+    public let ok: Bool
+    public let run: AnyCodable
+
+    public init(
+        ok: Bool,
+        run: AnyCodable
+    ) {
+        self.ok = ok
+        self.run = run
+    }
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case run
+    }
+}
+
+public struct AutomationAuditQueryParams: Codable, Sendable {
+    public let runid: String?
+    public let repo: String?
+    public let branch: String?
+    public let actorid: String?
+    public let kind: String?
+    public let limit: Int?
+
+    public init(
+        runid: String?,
+        repo: String?,
+        branch: String?,
+        actorid: String?,
+        kind: String?,
+        limit: Int?
+    ) {
+        self.runid = runid
+        self.repo = repo
+        self.branch = branch
+        self.actorid = actorid
+        self.kind = kind
+        self.limit = limit
+    }
+    private enum CodingKeys: String, CodingKey {
+        case runid = "runId"
+        case repo
+        case branch
+        case actorid = "actorId"
+        case kind
+        case limit
+    }
+}
+
+public struct AutomationAuditQueryResult: Codable, Sendable {
+    public let entries: [AutomationAuditEntry]
+
+    public init(
+        entries: [AutomationAuditEntry]
+    ) {
+        self.entries = entries
+    }
+    private enum CodingKeys: String, CodingKey {
+        case entries
+    }
+}
+
 public struct SendParams: Codable, Sendable {
     public let to: String
     public let message: String?

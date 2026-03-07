@@ -140,11 +140,13 @@
 
   <rect x="190" y="1570" width="5560" height="620" class="panel"/>
   <text x="250" y="1640" class="layer-title">Layer 3  Agent isolation and tool boundaries</text>
+  <rect x="280" y="1668" width="5380" height="50" class="chip"/>
+  <text x="335" y="1701" class="node-body">Telegram group lanes by bindings: coder group -&gt; coder | power group -&gt; power | devops group -&gt; devops</text>
 
   <rect x="280" y="1730" width="1320" height="390" class="chip"/>
   <text x="335" y="1805" class="node-title">Agent main</text>
   <text x="335" y="1850" class="node-body">chat and routing, minimal tools</text>
-  <text x="335" y="1890" class="node-body">subagent delegation to coder and power</text>
+  <text x="335" y="1890" class="node-body">subagent delegation to coder, power, and devops</text>
   <text x="335" y="1930" class="node-body">low blast radius by default</text>
 
   <rect x="1660" y="1730" width="1320" height="390" class="chip"/>
@@ -160,14 +162,17 @@
   <text x="3095" y="1930" class="node-body">high trust operator path</text>
 
   <rect x="4420" y="1730" width="1240" height="390" class="chip"/>
-  <text x="4475" y="1805" class="node-title">Agent ops</text>
-  <text x="4475" y="1850" class="node-body">maintenance profile and status checks</text>
-  <text x="4475" y="1890" class="node-body">normally disabled or heavily constrained</text>
-  <text x="4475" y="1930" class="node-body">separate intent and session context</text>
+  <text x="4475" y="1805" class="node-title">Agent devops</text>
+  <text x="4475" y="1850" class="node-body">maintenance profile and deploy checks</text>
+  <text x="4475" y="1890" class="node-body">constrained tooling and isolated ops sessions</text>
+  <text x="4475" y="1930" class="node-body">dedicated Telegram lane for operations</text>
 
   <path d="M1600 1925 L1660 1925" class="thin" marker-end="url(#arrow)"/>
   <path d="M2980 1925 L3040 1925" class="thin" marker-end="url(#arrow)"/>
   <path d="M4360 1925 L4420 1925" class="thin" marker-end="url(#arrow)"/>
+  <path d="M925 650 L925 1700 L2320 1700 L2320 1730" class="thin dashed" marker-end="url(#arrow)"/>
+  <path d="M925 650 L925 1690 L3700 1690 L3700 1730" class="thin dashed" marker-end="url(#arrow)"/>
+  <path d="M925 650 L925 1680 L5040 1680 L5040 1730" class="thin dashed" marker-end="url(#arrow)"/>
 
   <rect x="190" y="2240" width="5560" height="760" class="panel"/>
   <text x="250" y="2310" class="layer-title">Layer 4  Node execution plane and approvals interlocks</text>
@@ -212,9 +217,12 @@
   <text x="2810" y="3400" class="node-body">3 promote live symlink and restart service</text>
   <text x="2810" y="3440" class="node-body">4 run channels status probe and security audit deep</text>
   <text x="2810" y="3480" class="node-body">5 hold stability window, check restart count, then mark last known good</text>
-  <text x="2810" y="3520" class="node-body">6 rollback by repointing symlink and reprobing if instability occurs</text>
+  <text x="2810" y="3520" class="node-body">6 enqueue deploy success system event, wake heartbeat, deliver Telegram confirmation</text>
+  <text x="2810" y="3560" class="node-body">7 rollback by repointing symlink and reprobing if instability occurs</text>
 
   <path d="M2680 3500 L2750 3500" class="thick" marker-end="url(#arrow)"/>
+  <path d="M5650 3440 L5720 3440 L5720 560 L1140 560" class="thin dashed" marker-end="url(#arrow)"/>
+  <text x="3860" y="885" class="legend">deploy success: system event -> heartbeat -> Telegram confirmation</text>
 
   <rect x="180" y="350" width="5580" height="3550" class="boundary"/>
   <text x="5040" y="3960" class="legend">Trust boundary of Gateway host and local state</text>

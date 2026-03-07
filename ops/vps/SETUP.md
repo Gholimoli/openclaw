@@ -37,6 +37,7 @@ This installs:
 - Docker (for OpenClaw sandboxing)
 - Node 22 (for OpenClaw + Lobster CLIs)
 - `openclaw` CLI + `lobster` CLI
+- Host `codex` and `gemini` CLIs for emergency/manual use on the VPS
 - Tailscale (installed, but not joined)
 - `openclaw-sandbox-coder:bookworm` Docker image used by the `coder` agent
 
@@ -71,7 +72,9 @@ TELEGRAM_BOT_TOKEN="..."
 TELEGRAM_OWNER_ID="123456789"
 OPENCLAW_GATEWAY_TOKEN="..."
 
-GH_TOKEN="..."
+GITHUB_APP_ID="..."
+GITHUB_APP_INSTALLATION_ID="..."
+GITHUB_APP_PRIVATE_KEY_FILE="$HOME/.openclaw/github-app.pem"
 OPENAI_API_KEY="..."
 GEMINI_API_KEY="..."
 CODERABBIT_API_KEY="..."
@@ -85,7 +88,9 @@ GIT_AUTHOR_EMAIL="you@example.com"
 Notes:
 
 - Keep file permissions tight: `chmod 600 ~/.openclaw/.env`
+- Store the GitHub App private key file with tight permissions too: `chmod 600 ~/.openclaw/github-app.pem`
 - `OPENCLAW_GATEWAY_TOKEN` is required because `workctl` uses the Gateway HTTP API (`POST /tools/invoke`).
+- `/work` prefers GitHub App auth and mints a short-lived installation token for each coding run. A fallback `GH_TOKEN` or `GITHUB_TOKEN` still works, but it should not be your steady-state setup.
 - `TELEGRAM_OWNER_ID` is your numeric Telegram user id. If you don't know it yet, message the bot once and check:
   the bot's onboarding reply (it prints your user id). Then set `TELEGRAM_OWNER_ID` and restart the gateway.
 
@@ -103,11 +108,64 @@ cp ops/vps/openclaw.vps-coding.json5 ~/.openclaw/openclaw.json
 Key decisions in this config:
 
 - `gateway.bind: "loopback"` (private by default)
-- Telegram DMs use an owner allowlist; groups disabled; channel-initiated config writes disabled; no partial streaming
-- `main` agent: no shell/tooling access
+- Telegram DMs use an owner allowlist; three dedicated worker groups are allowlisted and routed by bindings; channel-initiated config writes disabled; no partial streaming
+- `main` agent presents as `Ted`, runs `openai/gpt-5.4`, and owns repo intake, research, specs, approvals, and orchestration
 - `coder` agent: all tool execution runs inside Docker sandbox (network enabled)
+- `coder` uses Codex CLI first and Gemini CLI as fallback, with GitHub tokens injected at runtime
 - `power` agent: browser + shell access (approval-gated), file mutation tools disabled
-- `work` plugin enabled with `coderSessionKey: "agent:coder:main"`
+- `devops` agent: maintenance profile with constrained tools and isolated session context
+- `work` plugin enabled with `coderSessionKey: "agent:coder:main"` and `workRoot: "~/work/repos"`
+- Telegram client takeover stays disabled until you add explicit `channels.telegram.clients.<peerId>` entries; operators then use `/client assign` and `/client clear` to hand a client chat to an allowlisted agent
+
+### Configure dedicated Telegram worker groups
+
+Create three private Telegram supergroups (or private group chats), add your bot,
+and use one per worker agent:
+
+- `coder` group
+- `power` group
+- `devops` group
+
+Then replace the placeholder group IDs in `~/.openclaw/openclaw.json`:
+
+- `channels.telegram.groups` keys:
+  - `-1001111111111`
+  - `-1002222222222`
+  - `-1003333333333`
+- `bindings[].match.peer.id` values for agents:
+  - `coder`
+  - `power`
+  - `devops`
+
+Reference snippet:
+
+```json5
+{
+  channels: {
+    telegram: {
+      groups: {
+        "-1001234567001": { requireMention: false },
+        "-1001234567002": { requireMention: false },
+        "-1001234567003": { requireMention: false },
+      },
+    },
+  },
+  bindings: [
+    {
+      agentId: "coder",
+      match: { channel: "telegram", peer: { kind: "group", id: "-1001234567001" } },
+    },
+    {
+      agentId: "power",
+      match: { channel: "telegram", peer: { kind: "group", id: "-1001234567002" } },
+    },
+    {
+      agentId: "devops",
+      match: { channel: "telegram", peer: { kind: "group", id: "-1001234567003" } },
+    },
+  ],
+}
+```
 
 OpenClaw reference:
 
@@ -133,7 +191,20 @@ sudo tailscale serve --bg --https=443 http://127.0.0.1:18789
 
 OpenClaw reference: `docs/gateway/remote.md`.
 
-## 8. Run the Coding Pipeline from Telegram
+## 8. Wake worker agents and verify group routing
+
+Run the wake helper from the repo root:
+
+```bash
+bash ops/vps/wake-agents.sh
+```
+
+Expected result:
+
+- One wake confirmation message appears in each dedicated Telegram worker group.
+- `coder`/`power`/`devops` replies stay isolated to their respective group sessions.
+
+## 9. Run the Coding Pipeline from Telegram
 
 In a Telegram DM with the bot:
 
@@ -142,9 +213,17 @@ In a Telegram DM with the bot:
 /work task demo-repo "add endpoint X"
 ```
 
+Repo intake also accepts:
+
+```text
+/work task openclaw/openclaw "add endpoint X"
+/work task https://github.com/openclaw/openclaw "add endpoint X"
+```
+
 Approvals:
 
 - Lobster will ask for approvals for commit/push/merge steps and provide a resume token.
+- Telegram DM approvals render inline `Approve` / `Deny` buttons for exec approval requests and clear those buttons once the request resolves or times out.
 - Resume from Telegram:
 
 ```text
@@ -152,7 +231,7 @@ Approvals:
 /work resume <token> --approve no
 ```
 
-## 9. Acceptance Checks
+## 10. Acceptance Checks
 
 Security:
 
@@ -163,9 +242,17 @@ Security:
 Workflow:
 
 - `/work new demo-repo` scaffolds a repo and (after approval) creates/pushes it.
-- `/work task ...` creates a `work/*` branch, runs coding CLIs, runs checks, runs CodeRabbit CLI, and (after approvals) commits + opens a PR.
+- `/work task ...` accepts `owner/repo` or a GitHub URL, syncs into `~/work/repos/<owner>/<repo>`, creates a `work/*` branch, produces a structured spec packet, runs coding CLIs, runs checks, runs CodeRabbit CLI, and (after approvals) commits + opens a PR.
+- `bash ops/vps/wake-agents.sh` sends one startup ping from each worker agent to its dedicated Telegram group.
+- Control UI / Office / macOS show the same live automation run state, approval queue, and outcome trail for a given run id.
 
-## 10. “Idea -> source” traceability (external)
+Deploy notifications:
+
+- Trigger a successful deploy (`.github/workflows/vps-deploy.yml` via push to `main` or manual dispatch).
+- Confirm Telegram receives one success notification including UTC time, commit hash, host, and service details.
+- Confirm failed deploys do not emit a false success message.
+
+## 11. “Idea -> source” traceability (external)
 
 - Harness-first, deterministic orchestration: https://openai.com/index/harness-engineering/
 - Context repositories pattern: https://www.letta.com/blog/context-repositories

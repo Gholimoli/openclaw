@@ -14,8 +14,12 @@ args:
     default: "main"
   maxFixLoops:
     default: 3
+  implementationModel:
+    description: "Primary implementation model override"
+  fallbackModel:
+    description: "Fallback implementation model override"
 steps:
   - id: ensure_repo
     command: node "$workctlPath" ensure-repo --repo "$repo" --work-root "$workRoot" --base "$base" --session-key "$coderSessionKey" --json
   - id: fix
-    command: node "$workctlPath" fix --repo-dir "$repoDir" --base "$base" --max-fix-loops "$maxFixLoops" --session-key "$coderSessionKey" --json
+    command: node "$workctlPath" fix --repo-dir "$repoDir" --base "$base" --max-fix-loops "$maxFixLoops" --implementation-model "$implementationModel" --fallback-model "$fallbackModel" --session-key "$coderSessionKey" --json

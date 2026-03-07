@@ -1,4 +1,5 @@
 import type { ModelCatalogEntry } from "../../agents/model-catalog.js";
+import type { AutomationService } from "../../automation/service.js";
 import type { createDefaultDeps } from "../../cli/deps.js";
 import type { HealthSummary } from "../../commands/health.js";
 import type { CronService } from "../../cron/service.js";
@@ -30,6 +31,7 @@ export type GatewayRequestContext = {
   deps: ReturnType<typeof createDefaultDeps>;
   cron: CronService;
   cronStorePath: string;
+  automation?: AutomationService;
   evolution?: EvolutionService;
   execApprovalManager?: ExecApprovalManager;
   loadGatewayModelCatalog: () => Promise<ModelCatalogEntry[]>;

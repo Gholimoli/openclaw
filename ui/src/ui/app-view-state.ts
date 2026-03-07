@@ -30,6 +30,7 @@ import type {
   SessionsListResult,
   SkillStatusReport,
   StatusSummary,
+  AutomationRun,
   EvolutionProposal,
   EvolutionStatus,
   OfficeActivityEntry,
@@ -205,6 +206,9 @@ export type AppViewState = {
   officeAgents: OfficeAgentState[];
   officeLayout: OfficeLayout | null;
   officeActivity: OfficeActivityEntry[];
+  automationLoading: boolean;
+  automationError: string | null;
+  automationRuns: AutomationRun[];
   officeFilterAgent: string;
   officeFilterSource: string;
   officeFilterProposal: string;
@@ -249,6 +253,7 @@ export type AppViewState = {
   loadCron: () => Promise<void>;
   loadEvolution: () => Promise<void>;
   loadOfficeSnapshot: (opts?: { quiet?: boolean }) => Promise<void>;
+  loadAutomationRuns: (opts?: { quiet?: boolean; limit?: number }) => Promise<void>;
   toggleEvolutionPause: () => Promise<void>;
   actEvolutionProposal: (
     proposalId: string,

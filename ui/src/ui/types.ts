@@ -694,3 +694,68 @@ export type OfficeSnapshot = {
   layout: OfficeLayout;
   activity: OfficeActivityEntry[];
 };
+
+export type AutomationSpecPacket = {
+  repo: string;
+  repoUrl?: string;
+  repoDir?: string;
+  base: string;
+  branch?: string;
+  defaultBranch?: string;
+  userRequest: string;
+  goal: string;
+  nonGoals: string[];
+  acceptanceCriteria: string[];
+  riskTier: "low" | "medium" | "high";
+  checks: string[];
+  approvalRequirements: string[];
+  activePrNumbers?: number[];
+  planner: {
+    agentId: string;
+    displayName?: string;
+    model?: string;
+  };
+  implementation: {
+    agentId: string;
+    primaryCli: "codex";
+    fallbackCli?: "gemini";
+    model?: string;
+    fallbackModel?: string;
+  };
+};
+
+export type AutomationRun = {
+  id: string;
+  repo: string;
+  repoUrl?: string;
+  repoDir?: string;
+  base: string;
+  branch?: string;
+  defaultBranch?: string;
+  status:
+    | "queued"
+    | "planning"
+    | "running"
+    | "awaiting_approval"
+    | "completed"
+    | "failed"
+    | "cancelled";
+  title: string;
+  userRequest: string;
+  riskTier: "low" | "medium" | "high";
+  plannerAgentId: string;
+  plannerDisplayName?: string;
+  plannerModel?: string;
+  implementationAgentId: string;
+  implementationCli: "codex";
+  implementationFallbackCli?: "gemini";
+  implementationModel?: string;
+  fallbackModel?: string;
+  startedAtMs: number;
+  updatedAtMs: number;
+  finishedAtMs?: number;
+  specPacket: AutomationSpecPacket;
+  summary?: string;
+  lastStepLabel?: string;
+  lastApprovalId?: string;
+};

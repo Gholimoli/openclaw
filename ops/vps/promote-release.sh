@@ -26,6 +26,10 @@ log() {
   printf '[vps-promote] %s\n' "$*"
 }
 
+warn() {
+  printf '[vps-promote] WARN: %s\n' "$*" >&2
+}
+
 fail() {
   log "ERROR: $*"
   exit 1
@@ -85,6 +89,27 @@ run_channels_probe() {
   require_cmd openclaw
   log "running channels status probe"
   timeout "${channels_probe_timeout_seconds}s" openclaw channels status --probe >/tmp/openclaw-channels-probe.log 2>&1
+}
+
+notify_deploy_success() {
+  if ! command -v openclaw >/dev/null 2>&1; then
+    warn "openclaw CLI not found; skipping deploy success notification"
+    return 0
+  fi
+
+  local ts_utc host short_sha event_text
+  ts_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  host="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo unknown-host)"
+  short_sha="${target_sha:0:12}"
+  event_text="Deployment succeeded: commit=${target_sha} short=${short_sha} utc=${ts_utc} host=${host} service=${gateway_service}"
+
+  if ! openclaw system event --mode now --text "$event_text" >/tmp/openclaw-deploy-notify.log 2>&1; then
+    warn "failed to enqueue deploy success system event; see /tmp/openclaw-deploy-notify.log"
+    return 0
+  fi
+
+  log "deploy success system event queued"
+  return 0
 }
 
 run_candidate_preflight() {
@@ -268,3 +293,4 @@ fi
 
 printf '%s\n' "$target_sha" > "$last_known_good_file"
 log "promotion succeeded: $target_sha"
+notify_deploy_success

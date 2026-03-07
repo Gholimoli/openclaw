@@ -20,9 +20,15 @@
   env: {
     // Optional: import missing vars from login shell (useful on VPS if you manage env in ~/.profile).
     shellEnv: { enabled: false },
+    // GitHub access should come from a GitHub App installation, not a broad personal PAT.
+    // The /work pipeline mints a short-lived installation token and injects it into coder jobs.
+    // Required env vars:
+    //   GITHUB_APP_ID
+    //   GITHUB_APP_INSTALLATION_ID
+    //   GITHUB_APP_PRIVATE_KEY or GITHUB_APP_PRIVATE_KEY_FILE
   },
 
-  // Telegram: owner-allowlisted DMs, groups disabled, and block channel-initiated config writes.
+  // Telegram: owner-allowlisted DMs + dedicated agent groups, and block channel-initiated config writes.
   channels: {
     telegram: {
       enabled: true,
@@ -33,7 +39,24 @@
       //   openclaw channels status --probe
       dmPolicy: "allowlist",
       allowFrom: ["${TELEGRAM_OWNER_ID}"],
-      groupPolicy: "disabled",
+      // Dedicated group chats are allowlisted and sender-restricted to the owner.
+      groupPolicy: "allowlist",
+      groupAllowFrom: ["${TELEGRAM_OWNER_ID}"],
+      groups: {
+        // Replace these with your dedicated Telegram supergroup IDs.
+        "-1001111111111": { requireMention: false },
+        "-1002222222222": { requireMention: false },
+        "-1003333333333": { requireMention: false },
+      },
+      // Optional phase-two client chat takeover lanes.
+      // Keep these absent until you explicitly allowlist a client chat.
+      // clients: {
+      //   "123456789": {
+      //     label: "Acme client DM",
+      //     defaultAgentId: "main",
+      //     allowedAgents: ["main", "coder", "devops"],
+      //   },
+      // },
       configWrites: false,
       // Never stream partial drafts to Telegram. Only send final replies.
       streamMode: "off",
@@ -53,7 +76,7 @@
         config: {
           // Prefer absolute lobsterPath in production (reduces PATH hijack risk).
           // lobsterPath: "/usr/local/bin/lobster",
-          workRoot: "~/work",
+          workRoot: "~/work/repos",
           defaultBase: "main",
           coderSessionKey: "agent:coder:main",
           maxFixLoops: 3,
@@ -117,15 +140,20 @@
     list: [
       {
         id: "main",
-        workspace: "~/.openclaw/workspace/main",
-        // Orchestrator only: no shell, no browser, no file mutation.
-        // Allow it to spawn limited sub-agent runs into worker agents.
-        subagents: { allowAgents: ["coder", "power"] },
+        model: "openai/gpt-5.4",
+        workspace: "~/work/repos",
+        identity: {
+          name: "Ted",
+          emoji: "🧭",
+          theme: "operator",
+        },
+        // Ted owns research, repo intake, and orchestration.
+        // Host execution is approval-gated and should prefer dispatch into the power lane.
+        subagents: { allowAgents: ["coder", "power", "devops"] },
         tools: {
           profile: "minimal",
+          allow: ["read", "exec", "process"],
           deny: [
-            "exec",
-            "process",
             "browser",
             "write",
             "edit",
@@ -141,7 +169,7 @@
       },
       {
         id: "coder",
-        workspace: "~/work",
+        workspace: "~/work/repos",
         // Run all tool execution for this agent in Docker.
         sandbox: {
           mode: "all",
@@ -155,7 +183,8 @@
             env: {
               LANG: "C.UTF-8",
               // Auth for CLI tools inside the sandbox:
-              GH_TOKEN: "${GH_TOKEN}",
+              // - GitHub access is injected at runtime by the /work pipeline.
+              // - OpenAI and Gemini remain long-lived service credentials.
               OPENAI_API_KEY: "${OPENAI_API_KEY}",
               GEMINI_API_KEY: "${GEMINI_API_KEY}",
               CODERABBIT_API_KEY: "${CODERABBIT_API_KEY}",
@@ -208,19 +237,37 @@
         },
       },
       {
-        id: "ops",
-        workspace: "~/.openclaw/workspace/ops",
+        id: "devops",
+        workspace: "~/.openclaw/workspace/devops",
         tools: { profile: "minimal", deny: ["exec", "process"] },
       },
     ],
   },
 
-  // Forward exec approvals to your Telegram DM (for the power agent only).
+  // Dedicated Telegram group routing for worker agents.
+  // Replace peer IDs to match your real Telegram group IDs.
+  bindings: [
+    {
+      agentId: "coder",
+      match: { channel: "telegram", peer: { kind: "group", id: "-1001111111111" } },
+    },
+    {
+      agentId: "power",
+      match: { channel: "telegram", peer: { kind: "group", id: "-1002222222222" } },
+    },
+    {
+      agentId: "devops",
+      match: { channel: "telegram", peer: { kind: "group", id: "-1003333333333" } },
+    },
+  ],
+
+  // Forward exec approvals to your Telegram DM.
+  // Ted may run low-risk diagnostics directly; high-risk host operations still require approval.
   approvals: {
     exec: {
       enabled: true,
       mode: "targets",
-      agentFilter: ["power"],
+      agentFilter: ["main", "power"],
       targets: [{ channel: "telegram", to: "${TELEGRAM_OWNER_ID}" }],
     },
   },

@@ -10,6 +10,7 @@ import { getActiveEmbeddedRunCount } from "../agents/pi-embedded-runner/runs.js"
 import { registerSkillsChangeListener } from "../agents/skills/refresh.js";
 import { initSubagentRegistry } from "../agents/subagent-registry.js";
 import { getTotalPendingReplies } from "../auto-reply/reply/dispatcher-registry.js";
+import { createAutomationService } from "../automation/service.js";
 import { type ChannelId, listChannelPlugins } from "../channels/plugins/index.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import { createDefaultDeps } from "../cli/deps.js";
@@ -404,6 +405,17 @@ export async function startGatewayServer(
   const nodeSubscribe = nodeSubscriptions.subscribe;
   const nodeUnsubscribe = nodeSubscriptions.unsubscribe;
   const nodeUnsubscribeAll = nodeSubscriptions.unsubscribeAll;
+  const automationService = createAutomationService({
+    getConfig: loadConfig,
+    broadcast: (event, payload) => {
+      broadcast(event, payload, { dropIfSlow: true });
+    },
+    log: {
+      info: (message) => log.info(message),
+      warn: (message) => log.warn(message),
+      error: (message) => log.error(message),
+    },
+  });
   const evolutionService = createEvolutionService({
     getConfig: loadConfig,
     repoRoot: process.cwd(),
@@ -434,6 +446,11 @@ export async function startGatewayServer(
       return;
     }
     if (event === "exec.approval.requested") {
+      void automationService
+        .onExecApprovalRequested((payload ?? {}) as Record<string, unknown>)
+        .catch((err) => {
+          log.warn(`automation approval request forwarding failed: ${String(err)}`);
+        });
       void evolutionService
         .onExecApprovalRequested((payload ?? {}) as Record<string, unknown>)
         .catch((err) => {
@@ -442,6 +459,11 @@ export async function startGatewayServer(
       return;
     }
     if (event === "exec.approval.resolved") {
+      void automationService
+        .onExecApprovalResolved((payload ?? {}) as Record<string, unknown>)
+        .catch((err) => {
+          log.warn(`automation approval resolution forwarding failed: ${String(err)}`);
+        });
       void evolutionService
         .onExecApprovalResolved((payload ?? {}) as Record<string, unknown>)
         .catch((err) => {
@@ -603,6 +625,9 @@ export async function startGatewayServer(
   if (!minimalTestGateway) {
     void cron.start().catch((err) => logCron.error(`failed to start: ${String(err)}`));
   }
+  await automationService.start().catch((err) => {
+    log.error(`automation: failed to start: ${String(err)}`);
+  });
   await evolutionService.start().catch((err) => {
     logEvolution.error(`failed to start: ${String(err)}`);
   });
@@ -652,6 +677,7 @@ export async function startGatewayServer(
       deps,
       cron,
       cronStorePath,
+      automation: automationService,
       evolution: evolutionService,
       execApprovalManager,
       loadGatewayModelCatalog,
@@ -788,6 +814,7 @@ export async function startGatewayServer(
     canvasHostServer,
     stopChannel,
     pluginServices,
+    automation: automationService,
     cron,
     heartbeatRunner,
     nodePresenceTimers,

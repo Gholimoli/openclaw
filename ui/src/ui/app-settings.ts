@@ -13,6 +13,7 @@ import { scheduleChatScroll, scheduleLogsScroll } from "./app-scroll.ts";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
 import { loadAgentSkills } from "./controllers/agent-skills.ts";
 import { loadAgents } from "./controllers/agents.ts";
+import { loadAutomationRuns } from "./controllers/automation.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadConfig, loadConfigSchema } from "./controllers/config.ts";
 import { loadCronJobs, loadCronStatus } from "./controllers/cron.ts";
@@ -251,6 +252,7 @@ export async function refreshActiveTab(host: SettingsHost) {
   }
   if (host.tab === "office") {
     await Promise.all([
+      loadAutomationRuns(host as unknown as OpenClawApp, { quiet: true }),
       loadEvolution(host as unknown as OpenClawApp),
       loadOfficeSnapshot(host as unknown as OpenClawApp),
     ]);

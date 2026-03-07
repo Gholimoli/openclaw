@@ -91,6 +91,30 @@ final class WorkActivityStore {
         }
     }
 
+    func handleAutomationRun(repo: String, status: String, title: String) {
+        let label = "\(repo): \(title)"
+        self.lastToolLabel = label
+        self.lastToolUpdatedAt = Date()
+
+        guard !self.iconState.isWorking else { return }
+        let normalized = status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if ["queued", "planning", "running", "awaiting_approval"].contains(normalized) {
+            let activity = Activity(
+                sessionKey: self.mainSessionKeyStorage,
+                role: .main,
+                kind: .job,
+                label: label,
+                startedAt: Date(),
+                lastUpdate: Date())
+            self.setJobActive(activity)
+            return
+        }
+
+        if self.jobs[self.mainSessionKeyStorage]?.label == label {
+            self.clearJob(sessionKey: self.mainSessionKeyStorage)
+        }
+    }
+
     func resolveIconState(override selection: IconOverrideSelection) {
         switch selection {
         case .system:

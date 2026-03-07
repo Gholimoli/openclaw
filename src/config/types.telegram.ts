@@ -33,6 +33,17 @@ export type TelegramCapabilitiesConfig =
       inlineButtons?: TelegramInlineButtonsScope;
     };
 
+export type TelegramClientConfig = {
+  /** If false, keep this client route disabled even if a runtime assignment exists. */
+  enabled?: boolean;
+  /** Friendly label for operator-facing status output. */
+  label?: string;
+  /** Default agent for this Telegram client chat. */
+  defaultAgentId?: string;
+  /** Optional allowlist of agents that may be assigned to this client. */
+  allowedAgents?: string[];
+};
+
 /** Custom command definition for Telegram bot menu. */
 export type TelegramCustomCommand = {
   /** Command name (without leading /). */
@@ -72,6 +83,8 @@ export type TelegramAccountConfig = {
   groups?: Record<string, TelegramGroupConfig>;
   /** DM allowlist (numeric Telegram user IDs). Onboarding can resolve @username to IDs. */
   allowFrom?: Array<string | number>;
+  /** Explicit Telegram client-chat routes keyed by peer id (DM user/chat id or group/topic peer id). */
+  clients?: Record<string, TelegramClientConfig>;
   /** Optional allowlist for Telegram group senders (numeric Telegram user IDs). */
   groupAllowFrom?: Array<string | number>;
   /**

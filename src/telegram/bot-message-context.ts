@@ -32,7 +32,6 @@ import { logVerbose, shouldLogVerbose } from "../globals.js";
 import { recordChannelActivity } from "../infra/channel-activity.js";
 import { buildPairingReply } from "../pairing/pairing-messages.js";
 import { upsertChannelPairingRequest } from "../pairing/pairing-store.js";
-import { resolveAgentRoute } from "../routing/resolve-route.js";
 import { resolveThreadSessionKeys } from "../routing/session-key.js";
 import { withTelegramApiErrorLogging } from "./api-logging.js";
 import {
@@ -56,6 +55,7 @@ import {
   hasBotMention,
   resolveTelegramThreadSpec,
 } from "./bot/helpers.js";
+import { resolveTelegramClientRoute } from "./client-routing.js";
 
 export type TelegramMediaRef = {
   path: string;
@@ -166,9 +166,8 @@ export const buildTelegramMessageContext = async ({
   const peerId = isGroup ? buildTelegramGroupPeerId(chatId, resolvedThreadId) : String(chatId);
   const parentPeer = buildTelegramParentPeer({ isGroup, resolvedThreadId, chatId });
   // Fresh config for bindings lookup; other routing inputs are payload-derived.
-  const route = resolveAgentRoute({
+  const resolvedClientRoute = resolveTelegramClientRoute({
     cfg: loadConfig(),
-    channel: "telegram",
     accountId: account.accountId,
     peer: {
       kind: isGroup ? "group" : "direct",
@@ -176,6 +175,7 @@ export const buildTelegramMessageContext = async ({
     },
     parentPeer,
   });
+  const route = resolvedClientRoute.route;
   const baseSessionKey = route.sessionKey;
   // DMs: use raw messageThreadId for thread sessions (not forum topic ids)
   const dmThreadId = threadSpec.scope === "dm" ? threadSpec.id : undefined;
@@ -555,8 +555,8 @@ export const buildTelegramMessageContext = async ({
   const groupLabel = isGroup ? buildGroupLabel(msg, chatId, resolvedThreadId) : undefined;
   const senderName = buildSenderName(msg);
   const conversationLabel = isGroup
-    ? (groupLabel ?? `group:${chatId}`)
-    : buildSenderLabel(msg, senderId || chatId);
+    ? resolvedClientRoute.clientConfig?.label?.trim() || groupLabel || `group:${chatId}`
+    : resolvedClientRoute.clientConfig?.label?.trim() || buildSenderLabel(msg, senderId || chatId);
   const storePath = resolveStorePath(cfg.session?.store, {
     agentId: route.agentId,
   });

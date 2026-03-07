@@ -18,7 +18,6 @@ import { writeConfigFile } from "../config/io.js";
 import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
 import { danger, logVerbose, warn } from "../globals.js";
 import { readChannelAllowFromStore } from "../pairing/pairing-store.js";
-import { resolveAgentRoute } from "../routing/resolve-route.js";
 import { resolveThreadSessionKeys } from "../routing/session-key.js";
 import { withTelegramApiErrorLogging } from "./api-logging.js";
 import { firstDefined, isSenderAllowed, normalizeAllowFromWithStore } from "./bot-access.js";
@@ -30,6 +29,7 @@ import {
   buildTelegramParentPeer,
   resolveTelegramForumThreadId,
 } from "./bot/helpers.js";
+import { resolveTelegramClientRoute } from "./client-routing.js";
 import {
   buildExecApprovalConfirmButtons,
   buildExecApprovalDefaultButtons,
@@ -173,16 +173,15 @@ export const registerTelegramHandlers = ({
       resolvedThreadId,
       chatId: params.chatId,
     });
-    const route = resolveAgentRoute({
+    const route = resolveTelegramClientRoute({
       cfg,
-      channel: "telegram",
       accountId,
       peer: {
         kind: params.isGroup ? "group" : "direct",
         id: peerId,
       },
       parentPeer,
-    });
+    }).route;
     const baseSessionKey = route.sessionKey;
     const dmThreadId = !params.isGroup ? params.messageThreadId : undefined;
     const threadKeys =

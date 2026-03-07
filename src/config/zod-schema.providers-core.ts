@@ -35,6 +35,15 @@ const TelegramCapabilitiesSchema = z.union([
     .strict(),
 ]);
 
+const TelegramClientSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    label: z.string().optional(),
+    defaultAgentId: z.string().optional(),
+    allowedAgents: z.array(z.string()).optional(),
+  })
+  .strict();
+
 export const TelegramTopicSchema = z
   .object({
     requireMention: z.boolean().optional(),
@@ -103,6 +112,7 @@ export const TelegramAccountSchemaBase = z
     replyToMode: ReplyToModeSchema.optional(),
     groups: z.record(z.string(), TelegramGroupSchema.optional()).optional(),
     allowFrom: z.array(z.union([z.string(), z.number()])).optional(),
+    clients: z.record(z.string(), TelegramClientSchema.optional()).optional(),
     groupAllowFrom: z.array(z.union([z.string(), z.number()])).optional(),
     groupPolicy: GroupPolicySchema.optional().default("allowlist"),
     historyLimit: z.number().int().min(0).optional(),

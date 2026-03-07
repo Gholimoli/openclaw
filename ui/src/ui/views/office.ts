@@ -1,5 +1,7 @@
 import { html, nothing } from "lit";
+import type { ExecApprovalRequest } from "../controllers/exec-approval.ts";
 import type {
+  AutomationRun,
   EvolutionProposal,
   EvolutionStatus,
   OfficeActivityEntry,
@@ -22,6 +24,8 @@ export type OfficeProps = {
   error: string | null;
   savingLayout: boolean;
   evolutionStatus: EvolutionStatus | null;
+  automationRuns: AutomationRun[];
+  approvals: ExecApprovalRequest[];
   proposals: EvolutionProposal[];
   agents: OfficeAgentState[];
   layout: OfficeLayout | null;
@@ -104,6 +108,7 @@ export function renderOffice(props: OfficeProps) {
     })
     .slice(-40)
     .toReversed();
+  const recentRuns = props.automationRuns.slice(0, 10);
 
   return html`
     <section class="card office-card">
@@ -111,7 +116,7 @@ export function renderOffice(props: OfficeProps) {
         <div>
           <div class="card-title">Evolution Office</div>
           <div class="card-sub">
-            Live agent states with reliability-first proposal execution controls.
+            Live agent states, approvals, and AI delivery runs.
           </div>
         </div>
         <div class="office-toolbar__actions">
@@ -156,6 +161,10 @@ export function renderOffice(props: OfficeProps) {
                 <div class="stat">
                   <div class="stat-label">Insights</div>
                   <div class="stat-value">${props.evolutionStatus.counts.insights}</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">Active Approvals</div>
+                  <div class="stat-value">${props.approvals.length}</div>
                 </div>
               </div>
             `
@@ -220,6 +229,77 @@ export function renderOffice(props: OfficeProps) {
             )}
           </select>
         </label>
+      </div>
+
+      <div class="office-grid">
+        <section class="office-panel">
+          <div class="office-panel__title">AI Delivery Runs</div>
+          ${
+            recentRuns.length === 0
+              ? html`
+                  <div class="muted">No automation runs recorded yet.</div>
+                `
+              : html`
+                  <div class="office-run-list">
+                    ${recentRuns.map(
+                      (run) => html`
+                        <article class="office-run">
+                          <div class="office-run__header">
+                            <strong>${run.repo}</strong>
+                            <span class="pill ${run.status}">${run.status}</span>
+                          </div>
+                          <div class="office-run__title">${run.title}</div>
+                          <div class="office-run__meta">
+                            ${run.specPacket.planner.displayName ?? run.plannerAgentId}
+                            /
+                            ${run.implementationCli}
+                            ${run.implementationModel ? `(${run.implementationModel})` : ""}
+                          </div>
+                          <div class="office-run__meta">
+                            ${run.branch ?? run.base} · ${run.riskTier} risk · updated
+                            ${formatMs(Math.max(0, Date.now() - run.updatedAtMs))} ago
+                          </div>
+                          ${
+                            run.summary
+                              ? html`<div class="office-run__summary">${run.summary}</div>`
+                              : nothing
+                          }
+                        </article>
+                      `,
+                    )}
+                  </div>
+                `
+          }
+        </section>
+
+        <section class="office-panel">
+          <div class="office-panel__title">Approval Queue</div>
+          ${
+            props.approvals.length === 0
+              ? html`
+                  <div class="muted">No pending approvals.</div>
+                `
+              : html`
+                  <div class="office-run-list">
+                    ${props.approvals.slice(0, 8).map(
+                      (approval) => html`
+                        <article class="office-run">
+                          <div class="office-run__header">
+                            <strong>${approval.request.agentId ?? "agent"}</strong>
+                            <span class="pill warn">approval</span>
+                          </div>
+                          <div class="office-run__title">${approval.request.command}</div>
+                          <div class="office-run__meta">
+                            expires in
+                            ${formatMs(Math.max(0, approval.expiresAtMs - Date.now()))}
+                          </div>
+                        </article>
+                      `,
+                    )}
+                  </div>
+                `
+          }
+        </section>
       </div>
 
       <div class="office-grid">

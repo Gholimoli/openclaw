@@ -27,6 +27,45 @@ function createProps(overrides: Partial<OfficeProps> = {}): OfficeProps {
         autoMergeCandidates: 1,
       },
     },
+    automationRuns: [
+      {
+        id: "run-1",
+        repo: "openclaw/openclaw",
+        repoUrl: "https://github.com/openclaw/openclaw",
+        repoDir: "/tmp/openclaw",
+        base: "main",
+        branch: "work/test",
+        defaultBranch: "main",
+        status: "running",
+        title: "Add AI delivery timeline",
+        userRequest: "Add AI delivery timeline",
+        riskTier: "medium",
+        plannerAgentId: "main",
+        plannerDisplayName: "Ted",
+        plannerModel: "gpt-5.4",
+        implementationAgentId: "coder",
+        implementationCli: "codex",
+        implementationFallbackCli: "gemini",
+        startedAtMs: Date.now(),
+        updatedAtMs: Date.now(),
+        specPacket: {
+          repo: "openclaw/openclaw",
+          base: "main",
+          branch: "work/test",
+          defaultBranch: "main",
+          userRequest: "Add AI delivery timeline",
+          goal: "Add AI delivery timeline",
+          nonGoals: [],
+          acceptanceCriteria: [],
+          riskTier: "medium",
+          checks: ["pnpm check"],
+          approvalRequirements: ["commit", "push"],
+          planner: { agentId: "main", displayName: "Ted", model: "gpt-5.4" },
+          implementation: { agentId: "coder", primaryCli: "codex", fallbackCli: "gemini" },
+        },
+      },
+    ],
+    approvals: [],
     proposals: [
       {
         id: "p-1",
@@ -105,6 +144,7 @@ describe("office view", () => {
     );
 
     expect(container.textContent).toContain("Evolution Office");
+    expect(container.textContent).toContain("AI Delivery Runs");
     expect(container.textContent).toContain("Improve docs reliability guidance");
 
     const executeButton = Array.from(container.querySelectorAll("button")).find(

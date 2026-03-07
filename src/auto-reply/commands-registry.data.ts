@@ -189,6 +189,14 @@ function buildChatCommands(): ChatCommandDefinition[] {
       category: "management",
     }),
     defineChatCommand({
+      key: "client",
+      nativeName: "client",
+      description: "Manage Telegram client-chat routing.",
+      textAlias: "/client",
+      acceptsArgs: true,
+      category: "management",
+    }),
+    defineChatCommand({
       key: "context",
       nativeName: "context",
       description: "Explain how context is built and used.",

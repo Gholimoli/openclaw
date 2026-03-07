@@ -3,6 +3,16 @@ import type { SessionsPatchResult } from "../session-utils.types.js";
 import {
   type AgentEvent,
   AgentEventSchema,
+  type AutomationAuditQueryParams,
+  AutomationAuditQueryParamsSchema,
+  type AutomationRunsCancelParams,
+  AutomationRunsCancelParamsSchema,
+  type AutomationRunsGetParams,
+  AutomationRunsGetParamsSchema,
+  type AutomationRunsListParams,
+  AutomationRunsListParamsSchema,
+  type AutomationRunsResumeParams,
+  AutomationRunsResumeParamsSchema,
   type AgentIdentityParams,
   AgentIdentityParamsSchema,
   type AgentIdentityResult,
@@ -266,6 +276,21 @@ export const validateRequestFrame = ajv.compile<RequestFrame>(RequestFrameSchema
 export const validateResponseFrame = ajv.compile<ResponseFrame>(ResponseFrameSchema);
 export const validateEventFrame = ajv.compile<EventFrame>(EventFrameSchema);
 export const validateSendParams = ajv.compile(SendParamsSchema);
+export const validateAutomationRunsListParams = ajv.compile<AutomationRunsListParams>(
+  AutomationRunsListParamsSchema,
+);
+export const validateAutomationRunsGetParams = ajv.compile<AutomationRunsGetParams>(
+  AutomationRunsGetParamsSchema,
+);
+export const validateAutomationRunsResumeParams = ajv.compile<AutomationRunsResumeParams>(
+  AutomationRunsResumeParamsSchema,
+);
+export const validateAutomationRunsCancelParams = ajv.compile<AutomationRunsCancelParams>(
+  AutomationRunsCancelParamsSchema,
+);
+export const validateAutomationAuditQueryParams = ajv.compile<AutomationAuditQueryParams>(
+  AutomationAuditQueryParamsSchema,
+);
 export const validatePollParams = ajv.compile<PollParams>(PollParamsSchema);
 export const validateAgentParams = ajv.compile(AgentParamsSchema);
 export const validateAgentIdentityParams =
