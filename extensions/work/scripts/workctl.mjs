@@ -745,7 +745,7 @@ async function probeToolchain(sessionKey, cwd) {
       'if [ -n "$OPENCLAW_GITHUB_AUTH_MODE" ]; then echo OPENCLAW_GITHUB_AUTH_MODE="$OPENCLAW_GITHUB_AUTH_MODE"; else echo OPENCLAW_GITHUB_AUTH_MODE=missing; fi; ' +
       'if [ -n "$OPENAI_API_KEY" ]; then echo OPENAI_API_KEY=ok; else echo OPENAI_API_KEY=missing; fi; ' +
       'if [ -n "$GEMINI_API_KEY" ]; then echo GEMINI_API_KEY=ok; else echo GEMINI_API_KEY=missing; fi; ' +
-      'if command -v gcloud >/dev/null 2>&1; then active="$(gcloud auth list --filter=status:ACTIVE --format='\''value(account)'\'' 2>/dev/null | head -n 1 || true)"; if [ -n "$active" ]; then echo GCLOUD_AUTH=ok; else echo GCLOUD_AUTH=missing; fi; else echo GCLOUD_AUTH=missing; fi\'',
+      'if command -v gcloud >/dev/null 2>&1; then active="$(gcloud auth list --filter=status:ACTIVE --format=\\"value(account)\\" 2>/dev/null | head -n 1 || true)"; if [ -n "$active" ]; then echo GCLOUD_AUTH=ok; else echo GCLOUD_AUTH=missing; fi; else echo GCLOUD_AUTH=missing; fi\'',
     workdir: cwd,
     timeout: 120,
   });
@@ -1098,7 +1098,10 @@ async function resolveMergePreflight(sessionKey, cwd, repo, pr) {
       requiredChecks.length === 0
         ? "no required checks reported"
         : requiredChecks
-            .map((entry) => `${entry.name || entry.workflow || "check"}:${entry.bucket || entry.state || "unknown"}`)
+            .map(
+              (entry) =>
+                `${entry.name || entry.workflow || "check"}:${entry.bucket || entry.state || "unknown"}`,
+            )
             .join(", "),
     blockedReasons,
     ok: blockedReasons.length === 0,
@@ -1764,7 +1767,12 @@ async function main() {
       },
     });
 
-    const impl = await codexImplement(sessionKey, repoDir, implementationPrompt, implementationModel);
+    const impl = await codexImplement(
+      sessionKey,
+      repoDir,
+      implementationPrompt,
+      implementationModel,
+    );
     let selectedCli = "codex";
     if (impl.code !== 0 || impl.status !== "completed") {
       // Fallback to gemini if codex failed.
@@ -1967,20 +1975,12 @@ async function main() {
     const repoDir = String(args["repo-dir"] || args.repoDir || "").trim();
     const repo = String(args.repo || "").trim();
     const pr = Number.parseInt(String(args.pr || ""), 10);
-    const expectedHeadSha = String(
-      args["expected-head-sha"] || args.expectedHeadSha || "",
-    ).trim();
+    const expectedHeadSha = String(args["expected-head-sha"] || args.expectedHeadSha || "").trim();
     const sessionKey = String(args["session-key"] || args.sessionKey || "agent:coder:main").trim();
     if (!repoDir) die("--repo-dir required");
     if (!repo) die("--repo required");
     if (!Number.isFinite(pr) || pr <= 0) die("--pr required");
-    const res = await mergePr(
-      sessionKey,
-      repoDir,
-      repo,
-      pr,
-      expectedHeadSha || undefined,
-    );
+    const res = await mergePr(sessionKey, repoDir, repo, pr, expectedHeadSha || undefined);
     appendRunStep(repoDir, {
       status: "completed",
       label: "Merge",

@@ -467,7 +467,7 @@ export function renderOffice(props: OfficeProps) {
                           if (reason === null) {
                             return;
                           }
-                          props.onCancelRun(selectedRun.id, reason.trim() || undefined);
+                          void props.onCancelRun(selectedRun.id, reason.trim() || undefined);
                         }}
                       >
                         Cancel
