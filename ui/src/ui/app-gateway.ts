@@ -6,6 +6,8 @@ import type { Tab } from "./navigation.ts";
 import type { UiSettings } from "./storage.ts";
 import type {
   AgentsListResult,
+  AutomationAuditEntry,
+  AutomationStep,
   EvolutionProposal,
   EvolutionStatus,
   HealthSnapshot,
@@ -69,6 +71,11 @@ type GatewayHost = {
   evolutionError: string | null;
   automationRuns: import("./types.ts").AutomationRun[];
   automationError: string | null;
+  automationSelectedRunId: string | null;
+  automationSelectedRun: import("./types.ts").AutomationRun | null;
+  automationSelectedSteps: AutomationStep[];
+  automationSelectedAudit: AutomationAuditEntry[];
+  automationSelectedRunError: string | null;
   officeAgents: OfficeAgentState[];
   officeLayout: OfficeLayout | null;
   officeActivity: OfficeActivityEntry[];
@@ -333,6 +340,7 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       | {
           kind?: string;
           run?: import("./types.ts").AutomationRun;
+          step?: AutomationStep;
         }
       | undefined;
     if (!payload?.kind) {
@@ -350,7 +358,30 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       host.automationRuns = host.automationRuns
         .toSorted((a, b) => b.updatedAtMs - a.updatedAtMs)
         .slice(0, 50);
+      if (host.automationSelectedRunId === payload.run.id) {
+        host.automationSelectedRun = payload.run;
+      }
       host.automationError = null;
+      host.automationSelectedRunError = null;
+      return;
+    }
+    if (payload.kind === "step.updated" && payload.step) {
+      if (host.automationSelectedRunId !== payload.step.runId) {
+        return;
+      }
+      const existing = host.automationSelectedSteps.findIndex(
+        (entry) => entry.id === payload.step?.id,
+      );
+      if (existing >= 0) {
+        host.automationSelectedSteps = host.automationSelectedSteps.map((entry, index) =>
+          index === existing ? payload.step! : entry,
+        );
+      } else {
+        host.automationSelectedSteps = [payload.step, ...host.automationSelectedSteps];
+      }
+      host.automationSelectedSteps = host.automationSelectedSteps
+        .toSorted((a, b) => b.ts - a.ts)
+        .slice(0, 200);
     }
     return;
   }

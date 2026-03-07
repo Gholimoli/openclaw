@@ -149,6 +149,7 @@
         },
         // Ted owns research, repo intake, and orchestration.
         // Host execution is approval-gated and should prefer dispatch into the power lane.
+        // Nested coding CLIs inside the coder sandbox manage their own permissive agent modes.
         subagents: { allowAgents: ["coder", "power", "devops"] },
         tools: {
           profile: "minimal",
@@ -185,8 +186,16 @@
               // Auth for CLI tools inside the sandbox:
               // - GitHub access is injected at runtime by the /work pipeline.
               // - OpenAI and Gemini remain long-lived service credentials.
+              // - Optional Google/X credentials are available for supporting CLIs.
               OPENAI_API_KEY: "${OPENAI_API_KEY}",
               GEMINI_API_KEY: "${GEMINI_API_KEY}",
+              GCLOUD_PROJECT: "${GCLOUD_PROJECT}",
+              GOOGLE_APPLICATION_CREDENTIALS: "${GCLOUD_SERVICE_ACCOUNT_KEY_FILE}",
+              X_API_KEY: "${X_API_KEY}",
+              X_API_SECRET: "${X_API_SECRET}",
+              X_BEARER_TOKEN: "${X_BEARER_TOKEN}",
+              X_ACCESS_TOKEN: "${X_ACCESS_TOKEN}",
+              X_ACCESS_TOKEN_SECRET: "${X_ACCESS_TOKEN_SECRET}",
               CODERABBIT_API_KEY: "${CODERABBIT_API_KEY}",
               // Git identity (required for commits):
               GIT_AUTHOR_NAME: "${GIT_AUTHOR_NAME}",

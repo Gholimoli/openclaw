@@ -14,6 +14,7 @@ struct MenuContent: View {
     private let heartbeatStore = HeartbeatStore.shared
     private let controlChannel = ControlChannel.shared
     private let activityStore = WorkActivityStore.shared
+    @Bindable private var automationStore = AutomationRunStore.shared
     @Bindable private var pairingPrompter = NodePairingApprovalPrompter.shared
     @Bindable private var devicePairingPrompter = DevicePairingApprovalPrompter.shared
     @Environment(\.openSettings) private var openSettings
@@ -104,6 +105,15 @@ struct MenuContent: View {
             .opacity(voiceWakeSupported ? 1 : 0.5)
             if self.showVoiceWakeMicPicker {
                 self.voiceWakeMicMenu
+            }
+            if !self.automationStore.pendingApprovals.isEmpty || !self.automationStore.recentRuns.isEmpty {
+                Divider()
+            }
+            if !self.automationStore.pendingApprovals.isEmpty {
+                self.pendingApprovalsSection
+            }
+            if !self.automationStore.recentRuns.isEmpty {
+                self.recentRunsSection
             }
             Divider()
             Button {
@@ -414,6 +424,79 @@ struct MenuContent: View {
                 .layoutPriority(1)
         }
         .padding(.top, 2)
+    }
+
+    @ViewBuilder
+    private var pendingApprovalsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Pending Approvals")
+                .font(.caption.weight(.semibold))
+            ForEach(self.automationStore.pendingApprovals.prefix(3)) { approval in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(approval.command)
+                        .font(.caption)
+                        .lineLimit(2)
+                    let meta = [approval.agentId, approval.sessionKey].compactMap { value in
+                        guard let value, !value.isEmpty else { return nil }
+                        return value
+                    }.joined(separator: " · ")
+                    if !meta.isEmpty {
+                        Text(meta)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let ask = approval.ask, !ask.isEmpty {
+                        Text(ask)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var recentRunsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Recent Runs")
+                .font(.caption.weight(.semibold))
+            ForEach(self.automationStore.recentRuns.prefix(4)) { run in
+                HStack(alignment: .top, spacing: 8) {
+                    Circle()
+                        .fill(self.automationStatusColor(run.status))
+                        .frame(width: 6, height: 6)
+                        .padding(.top, 5)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(run.repo)
+                            .font(.caption.weight(.medium))
+                        Text(run.title)
+                            .font(.caption)
+                            .lineLimit(2)
+                        Text("\(run.status) · \(run.implementationCli)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    private func automationStatusColor(_ status: String) -> Color {
+        switch status.lowercased() {
+        case "completed":
+            return .green
+        case "failed", "cancelled":
+            return .red
+        case "awaiting_approval":
+            return .orange
+        case "running", "planning", "queued":
+            return .accentColor
+        default:
+            return .secondary
+        }
     }
 
     private var activeBinding: Binding<Bool> {

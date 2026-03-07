@@ -1,6 +1,6 @@
 ---
 title: "Work Plugin"
-summary: "Deterministic, approval-gated coding workflows using Lobster plus a sandboxed coder agent session."
+summary: "Deterministic, approval-gated coding workflows using Lobster, GitHub App auth, and a sandboxed Codex-first coder session."
 read_when:
   - You want a CLI-first coding pipeline from chat with explicit approvals
   - You want to run Codex CLI, Gemini CLI, and CodeRabbit CLI inside a sandbox
@@ -32,6 +32,7 @@ The plugin runs as part of the Gateway process and follows this pattern:
 3. Workflow steps call a small helper script (`workctl`) that:
    - calls the Gateway HTTP endpoint `POST /tools/invoke`
    - targets a specific session key (usually a sandboxed `coder` agent session)
+   - builds a structured spec packet and sends that packet directly to the implementation CLI
 4. Lobster approvals pause the workflow and return a resume token.
 5. You resume from chat with `/work resume <token> --approve yes|no`.
 
@@ -66,6 +67,10 @@ For the full mental model of why something is blocked, see [Sandbox vs tool poli
   - `codex`
   - `gemini`
   - `coderabbit`
+- Service auth available to that environment:
+  - `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY` or `GITHUB_APP_PRIVATE_KEY_FILE`
+  - `OPENAI_API_KEY`
+  - `GEMINI_API_KEY`
 
 ## Install
 
@@ -121,6 +126,31 @@ Config keys:
 - `timeoutMs` (optional): Lobster execution timeout (default 30 minutes).
 - `defaultUpstreamRepo` (optional): default owner/name for `/work upstream` (default `openclaw/openclaw`).
 - `keepWorkflowFiles` (optional): keep local `.github/workflows` authoritative during upstream sync (default `true`).
+
+## Repo intake and implementation handoff
+
+`/work` accepts:
+
+- repo names already present under `workRoot`
+- `owner/repo`
+- full GitHub HTTPS URLs
+
+For task and fix runs, the plugin resolves the repo into `~/work/repos/<owner>/<repo>`, fetches the default branch, detects active PRs, and writes a structured spec packet that includes:
+
+- repo identity and working branch
+- goal and non-goals
+- acceptance criteria
+- risk tier
+- required local checks
+- approval requirements
+- implementation settings such as primary CLI, fallback CLI, available CLIs, access mode, and auth mode
+
+That packet is handed to Codex CLI as serialized input instead of being flattened into a plain ad hoc prompt. The run audit also records:
+
+- selected implementation CLI
+- probed toolchain
+- GitHub auth mode
+- approval and merge state
 
 ## Recommended policy and sandbox setup
 
@@ -203,7 +233,7 @@ For `task` and `fix`:
 
 1. Ensure a clean worktree.
 2. Check out `base` and create a `work/*` branch.
-3. Run a coding agent CLI (`codex` with a best-effort fallback to `gemini`).
+3. Run a coding agent CLI (`codex` with a best-effort fallback to `gemini`) using the serialized spec packet.
 4. Run deterministic checks based on the repo lockfile.
    - If the repo contains `.clawforge/contract.json`, `/work` uses it to choose risk-aware checks (for example `test:fast` on low risk changes, `build` and `protocol:check` on high risk changes, and `test:ui` when UI evidence is required).
 5. Run a CodeRabbit review pass.
@@ -236,6 +266,15 @@ Recommended approach:
 - Local `/work` loop makes the change clean before pushing.
 - GitHub Actions remains the merge gate (format, lint, typecheck, tests, build, security checks).
 - CodeRabbit is best treated as a PR signal (comments) and as a local loop input. If you make it blocking, keep it limited to high risk changes and enforce current head SHA discipline.
+
+`/work merge` also runs a merge preflight before calling `gh pr merge`. It blocks when:
+
+- the PR head SHA does not match the expected head SHA
+- the PR is still a draft
+- merge state is not clean enough to proceed
+- review decision is `CHANGES_REQUESTED`
+- required checks are failed or still pending
+- approvals are not fully resolved
 
 See [ClawForge](/automation/clawforge), [CI](/ci), and [Coding automation pipeline](/automation/coding-pipeline) for a reference gate template.
 

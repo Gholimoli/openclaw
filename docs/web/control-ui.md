@@ -78,7 +78,7 @@ you revoke it with `openclaw devices revoke --device <id> --role <role>`. See
 - Debug: status/health/models snapshots + event log + manual RPC calls (`status`, `health`, `models.list`)
 - Logs: live tail of gateway file logs with filter/export (`logs.tail`)
 - Update: run a package/git update + restart (`update.run`) with a restart report
-- Office: live evolution status/proposals plus pixel office activity map (`evolution.*`, `office.*`)
+- Office: live evolution status/proposals plus automation runs, run detail, step timeline, audit trail, approval queue, and pixel office activity map (`evolution.*`, `office.*`, `automation.*`)
 
 Cron jobs panel notes:
 
@@ -91,6 +91,11 @@ The Office tab is an operator-focused runtime view for the Evolution service and
 
 It includes:
 
+- AI delivery run list with repo, branch, planner, implementation CLI, and status
+- Per-run detail backed by `automation.runs.get`
+- Step timeline and audit trail for the selected run
+- Resume and cancel controls for the selected run
+- Run filters for repo, status, agent, and update date
 - Evolution status, pause/resume control, and proposal queue actions
 - Real-time agent sprites with visual run states
 - Blocked approval and failure alerts
@@ -99,7 +104,7 @@ It includes:
 
 Near-real-time behavior:
 
-- Event-driven updates from `office` and `evolution` gateway events
+- Event-driven updates from `office`, `evolution`, and `automation` gateway events
 - Snapshot fallback polling while the tab is active (15s cadence)
 
 ## Chat behavior

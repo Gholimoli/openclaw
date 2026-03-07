@@ -39,8 +39,11 @@ export type AutomationSpecPacket = {
   };
   implementation: {
     agentId: string;
-    primaryCli: "codex";
+    primaryCli: "codex" | "gemini";
     fallbackCli?: "gemini";
+    availableClis?: string[];
+    accessMode?: "full-access";
+    authMode?: "hybrid";
     model?: string;
     fallbackModel?: string;
   };
@@ -62,8 +65,9 @@ export type AutomationRun = {
   plannerDisplayName?: string;
   plannerModel?: string;
   implementationAgentId: string;
-  implementationCli: "codex";
+  implementationCli: "codex" | "gemini";
   implementationFallbackCli?: "gemini";
+  implementationUsedCli?: "codex" | "gemini";
   implementationModel?: string;
   fallbackModel?: string;
   startedAtMs: number;

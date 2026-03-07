@@ -1,7 +1,9 @@
 import { html, nothing } from "lit";
 import type { ExecApprovalRequest } from "../controllers/exec-approval.ts";
 import type {
+  AutomationAuditEntry,
   AutomationRun,
+  AutomationStep,
   EvolutionProposal,
   EvolutionStatus,
   OfficeActivityEntry,
@@ -14,6 +16,10 @@ const CLASS_OPTIONS = ["all", "auto_merge_low_risk", "needs_review", "reject_arc
 
 export type OfficeFilters = {
   agent: string;
+  repo: string;
+  status: string;
+  dateFrom: string;
+  dateTo: string;
   source: string;
   proposal: string;
   runClass: (typeof CLASS_OPTIONS)[number];
@@ -31,6 +37,12 @@ export type OfficeProps = {
   layout: OfficeLayout | null;
   activity: OfficeActivityEntry[];
   filters: OfficeFilters;
+  selectedRunId: string | null;
+  selectedRunLoading: boolean;
+  selectedRunError: string | null;
+  selectedRun: AutomationRun | null;
+  selectedRunSteps: AutomationStep[];
+  selectedRunAudit: AutomationAuditEntry[];
   onRefresh: () => void;
   onTogglePause: () => void;
   onProposalAction: (
@@ -38,6 +50,9 @@ export type OfficeProps = {
     action: "approve" | "reject" | "execute",
   ) => void | Promise<void>;
   onFiltersChange: (patch: Partial<OfficeFilters>) => void;
+  onSelectRun: (runId: string) => void | Promise<void>;
+  onResumeRun: (runId: string) => void | Promise<void>;
+  onCancelRun: (runId: string, reason?: string) => void | Promise<void>;
   onMoveAgent: (agentId: string, x: number, y: number) => void;
   onSaveLayout: () => void;
 };
@@ -54,6 +69,30 @@ function classLabel(value: EvolutionProposal["class"]) {
 
 function spriteClass(state: OfficeAgentState["state"]) {
   return `office-sprite office-sprite--${state}`;
+}
+
+function normalizeFilter(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function parseDateFloor(value: string) {
+  if (!value.trim()) {
+    return null;
+  }
+  const parsed = Date.parse(`${value}T00:00:00`);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseDateCeil(value: string) {
+  if (!value.trim()) {
+    return null;
+  }
+  const parsed = Date.parse(`${value}T23:59:59.999`);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatTimestamp(ts: number) {
+  return new Date(ts).toLocaleString();
 }
 
 function toTilePlacement(
@@ -75,6 +114,10 @@ function toTilePlacement(
 
 export function renderOffice(props: OfficeProps) {
   const layout = props.layout;
+  const repoFilter = normalizeFilter(props.filters.repo);
+  const statusFilter = normalizeFilter(props.filters.status);
+  const dateFloor = parseDateFloor(props.filters.dateFrom);
+  const dateCeil = parseDateCeil(props.filters.dateTo);
   const sourceIds = Array.from(
     new Set(props.proposals.flatMap((entry) => entry.sourceIds)),
   ).toSorted();
@@ -108,7 +151,35 @@ export function renderOffice(props: OfficeProps) {
     })
     .slice(-40)
     .toReversed();
-  const recentRuns = props.automationRuns.slice(0, 10);
+  const filteredRuns = props.automationRuns.filter((run) => {
+    if (repoFilter && !run.repo.toLowerCase().includes(repoFilter)) {
+      return false;
+    }
+    if (statusFilter && run.status !== statusFilter) {
+      return false;
+    }
+    if (
+      props.filters.agent &&
+      run.plannerAgentId !== props.filters.agent &&
+      run.implementationAgentId !== props.filters.agent
+    ) {
+      return false;
+    }
+    if (dateFloor != null && run.updatedAtMs < dateFloor) {
+      return false;
+    }
+    if (dateCeil != null && run.updatedAtMs > dateCeil) {
+      return false;
+    }
+    return true;
+  });
+  const selectedRun =
+    (props.selectedRun && filteredRuns.find((entry) => entry.id === props.selectedRun?.id)) ??
+    filteredRuns[0] ??
+    null;
+  const selectedRunId = selectedRun?.id ?? props.selectedRunId;
+  const selectedRunSteps = selectedRun?.id === props.selectedRun?.id ? props.selectedRunSteps : [];
+  const selectedRunAudit = selectedRun?.id === props.selectedRun?.id ? props.selectedRunAudit : [];
 
   return html`
     <section class="card office-card">
@@ -186,6 +257,60 @@ export function renderOffice(props: OfficeProps) {
           </select>
         </label>
         <label class="field">
+          <span>Repo</span>
+          <input
+            .value=${props.filters.repo}
+            placeholder="owner/repo"
+            @input=${(event: Event) => {
+              const value = (event.currentTarget as HTMLInputElement).value;
+              props.onFiltersChange({ repo: value });
+            }}
+          />
+        </label>
+        <label class="field">
+          <span>Run Status</span>
+          <select
+            .value=${props.filters.status}
+            @change=${(event: Event) => {
+              const value = (event.currentTarget as HTMLSelectElement).value;
+              props.onFiltersChange({ status: value });
+            }}
+          >
+            <option value="">All statuses</option>
+            ${[
+              "queued",
+              "planning",
+              "running",
+              "awaiting_approval",
+              "completed",
+              "failed",
+              "cancelled",
+            ].map((value) => html`<option value=${value}>${value}</option>`)}
+          </select>
+        </label>
+        <label class="field">
+          <span>Updated From</span>
+          <input
+            type="date"
+            .value=${props.filters.dateFrom}
+            @change=${(event: Event) => {
+              const value = (event.currentTarget as HTMLInputElement).value;
+              props.onFiltersChange({ dateFrom: value });
+            }}
+          />
+        </label>
+        <label class="field">
+          <span>Updated To</span>
+          <input
+            type="date"
+            .value=${props.filters.dateTo}
+            @change=${(event: Event) => {
+              const value = (event.currentTarget as HTMLInputElement).value;
+              props.onFiltersChange({ dateTo: value });
+            }}
+          />
+        </label>
+        <label class="field">
           <span>Source</span>
           <select
             .value=${props.filters.source}
@@ -235,15 +360,18 @@ export function renderOffice(props: OfficeProps) {
         <section class="office-panel">
           <div class="office-panel__title">AI Delivery Runs</div>
           ${
-            recentRuns.length === 0
+            filteredRuns.length === 0
               ? html`
                   <div class="muted">No automation runs recorded yet.</div>
                 `
               : html`
                   <div class="office-run-list">
-                    ${recentRuns.map(
+                    ${filteredRuns.slice(0, 20).map(
                       (run) => html`
-                        <article class="office-run">
+                        <article
+                          class=${`office-run ${selectedRunId === run.id ? "office-run--active" : ""}`}
+                          @click=${() => props.onSelectRun(run.id)}
+                        >
                           <div class="office-run__header">
                             <strong>${run.repo}</strong>
                             <span class="pill ${run.status}">${run.status}</span>
@@ -273,29 +401,175 @@ export function renderOffice(props: OfficeProps) {
         </section>
 
         <section class="office-panel">
-          <div class="office-panel__title">Approval Queue</div>
+          <div class="office-panel__title">Run Detail</div>
+          ${props.selectedRunError ? html`<div class="callout danger">${props.selectedRunError}</div>` : nothing}
           ${
-            props.approvals.length === 0
+            !selectedRun
               ? html`
-                  <div class="muted">No pending approvals.</div>
+                  <div class="muted">Select a run to inspect its timeline and audit trail.</div>
                 `
               : html`
-                  <div class="office-run-list">
-                    ${props.approvals.slice(0, 8).map(
-                      (approval) => html`
-                        <article class="office-run">
-                          <div class="office-run__header">
-                            <strong>${approval.request.agentId ?? "agent"}</strong>
-                            <span class="pill warn">approval</span>
-                          </div>
-                          <div class="office-run__title">${approval.request.command}</div>
-                          <div class="office-run__meta">
-                            expires in
-                            ${formatMs(Math.max(0, approval.expiresAtMs - Date.now()))}
-                          </div>
-                        </article>
-                      `,
-                    )}
+                  <div class="office-detail">
+                    <div class="office-detail__header">
+                      <div>
+                        <div class="office-run__title">${selectedRun.title}</div>
+                        <div class="office-run__meta">
+                          ${selectedRun.repo} · ${selectedRun.branch ?? selectedRun.base} ·
+                          ${selectedRun.riskTier} risk
+                        </div>
+                      </div>
+                      <span class="pill ${selectedRun.status}">${selectedRun.status}</span>
+                    </div>
+                    <div class="office-detail__meta">
+                      <span class="chip">
+                        Ted: ${selectedRun.specPacket.planner.displayName ?? selectedRun.plannerAgentId}
+                      </span>
+                      <span class="chip">
+                        CLI: ${selectedRun.implementationUsedCli ?? selectedRun.implementationCli}
+                      </span>
+                      ${
+                        selectedRun.specPacket.implementation.authMode
+                          ? html`<span class="chip">
+                              Auth: ${selectedRun.specPacket.implementation.authMode}
+                            </span>`
+                          : nothing
+                      }
+                    </div>
+                    <div class="office-run__summary">
+                      ${selectedRun.summary ?? selectedRun.userRequest}
+                    </div>
+                    <div class="office-proposal__actions">
+                      <button
+                        class="btn"
+                        ?disabled=${
+                          props.selectedRunLoading ||
+                          selectedRun.status === "running" ||
+                          selectedRun.status === "planning" ||
+                          selectedRun.status === "queued"
+                        }
+                        @click=${() => props.onResumeRun(selectedRun.id)}
+                      >
+                        ${props.selectedRunLoading ? "Refreshing..." : "Resume"}
+                      </button>
+                      <button
+                        class="btn"
+                        ?disabled=${
+                          props.selectedRunLoading ||
+                          selectedRun.status === "completed" ||
+                          selectedRun.status === "failed" ||
+                          selectedRun.status === "cancelled"
+                        }
+                        @click=${() => {
+                          const reason = window.prompt(
+                            "Cancel reason",
+                            "Run cancelled from Control UI",
+                          );
+                          if (reason === null) {
+                            return;
+                          }
+                          props.onCancelRun(selectedRun.id, reason.trim() || undefined);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    <div class="office-detail__section">
+                      <div class="card-sub">Approval Queue</div>
+                      ${
+                        props.approvals.length === 0
+                          ? html`
+                              <div class="muted">No pending approvals.</div>
+                            `
+                          : html`
+                              <div class="office-run-list office-run-list--compact">
+                                ${props.approvals.slice(0, 6).map(
+                                  (approval) => html`
+                                    <article class="office-run">
+                                      <div class="office-run__header">
+                                        <strong>${approval.request.agentId ?? "agent"}</strong>
+                                        <span class="pill warn">approval</span>
+                                      </div>
+                                      <div class="office-run__title">${approval.request.command}</div>
+                                      <div class="office-run__meta">
+                                        expires in
+                                        ${formatMs(Math.max(0, approval.expiresAtMs - Date.now()))}
+                                      </div>
+                                    </article>
+                                  `,
+                                )}
+                              </div>
+                            `
+                      }
+                    </div>
+                    <div class="office-detail__section">
+                      <div class="card-sub">Step Timeline</div>
+                      ${
+                        selectedRunSteps.length === 0
+                          ? html`
+                              <div class="muted">No step data recorded yet.</div>
+                            `
+                          : html`
+                              <div class="office-detail__list">
+                                ${selectedRunSteps.slice(0, 12).map(
+                                  (step) => html`
+                                    <div class="office-detail__item">
+                                      <div class="office-run__header">
+                                        <strong>${step.label}</strong>
+                                        <span class="pill ${step.status}">${step.status}</span>
+                                      </div>
+                                      <div class="office-run__meta">
+                                        ${formatTimestamp(step.ts)}
+                                        ${step.actor?.label ? `· ${step.actor.label}` : ""}
+                                        ${
+                                          typeof step.exitCode === "number"
+                                            ? `· exit ${step.exitCode}`
+                                            : ""
+                                        }
+                                      </div>
+                                      ${
+                                        step.detail
+                                          ? html`<div class="office-run__summary">${step.detail}</div>`
+                                          : nothing
+                                      }
+                                    </div>
+                                  `,
+                                )}
+                              </div>
+                            `
+                      }
+                    </div>
+                    <div class="office-detail__section">
+                      <div class="card-sub">Audit Trail</div>
+                      ${
+                        selectedRunAudit.length === 0
+                          ? html`
+                              <div class="muted">No audit records recorded yet.</div>
+                            `
+                          : html`
+                              <div class="office-detail__list">
+                                ${selectedRunAudit.slice(0, 12).map(
+                                  (entry) => html`
+                                    <div class="office-detail__item">
+                                      <div class="office-run__header">
+                                        <strong>${entry.kind}</strong>
+                                        ${
+                                          entry.status
+                                            ? html`<span class="pill ${entry.status}">${entry.status}</span>`
+                                            : nothing
+                                        }
+                                      </div>
+                                      <div class="office-run__meta">
+                                        ${formatTimestamp(entry.ts)}
+                                        ${entry.actor?.label ? `· ${entry.actor.label}` : ""}
+                                      </div>
+                                      <div class="office-run__summary">${entry.message}</div>
+                                    </div>
+                                  `,
+                                )}
+                              </div>
+                            `
+                      }
+                    </div>
                   </div>
                 `
           }

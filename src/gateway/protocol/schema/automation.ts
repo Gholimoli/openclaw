@@ -61,8 +61,13 @@ export const AutomationSpecPacketSchema = Type.Object(
     implementation: Type.Object(
       {
         agentId: NonEmptyString,
-        primaryCli: Type.Literal("codex"),
+        primaryCli: Type.Union([Type.Literal("codex"), Type.Literal("gemini")]),
         fallbackCli: Type.Optional(Type.Literal("gemini")),
+        availableClis: Type.Optional(
+          Type.Array(Type.Union([Type.Literal("codex"), Type.Literal("gemini")])),
+        ),
+        accessMode: Type.Optional(Type.Literal("full-access")),
+        authMode: Type.Optional(Type.Literal("hybrid")),
         model: Type.Optional(Type.String()),
         fallbackModel: Type.Optional(Type.String()),
       },
@@ -89,8 +94,11 @@ export const AutomationRunSchema = Type.Object(
     plannerDisplayName: Type.Optional(Type.String()),
     plannerModel: Type.Optional(Type.String()),
     implementationAgentId: NonEmptyString,
-    implementationCli: Type.Literal("codex"),
+    implementationCli: Type.Union([Type.Literal("codex"), Type.Literal("gemini")]),
     implementationFallbackCli: Type.Optional(Type.Literal("gemini")),
+    implementationUsedCli: Type.Optional(
+      Type.Union([Type.Literal("codex"), Type.Literal("gemini")]),
+    ),
     implementationModel: Type.Optional(Type.String()),
     fallbackModel: Type.Optional(Type.String()),
     startedAtMs: Type.Integer({ minimum: 0 }),

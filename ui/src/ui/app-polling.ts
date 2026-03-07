@@ -1,5 +1,5 @@
 import type { OpenClawApp } from "./app.ts";
-import { loadAutomationRuns } from "./controllers/automation.ts";
+import { loadAutomationRunDetail, loadAutomationRuns } from "./controllers/automation.ts";
 import { loadDebug } from "./controllers/debug.ts";
 import { loadLogs } from "./controllers/logs.ts";
 import { loadNodes } from "./controllers/nodes.ts";
@@ -11,6 +11,7 @@ type PollingHost = {
   debugPollInterval: number | null;
   officePollInterval: number | null;
   tab: string;
+  automationSelectedRunId: string | null;
 };
 
 export function startNodesPolling(host: PollingHost) {
@@ -80,6 +81,11 @@ export function startOfficePolling(host: PollingHost) {
       return;
     }
     void loadAutomationRuns(host as unknown as OpenClawApp, { quiet: true, limit: 50 });
+    if (host.automationSelectedRunId) {
+      void loadAutomationRunDetail(host as unknown as OpenClawApp, host.automationSelectedRunId, {
+        quiet: true,
+      });
+    }
     void loadOfficeSnapshot(host as unknown as OpenClawApp, { quiet: true });
   }, 15_000);
 }

@@ -1,6 +1,6 @@
 ---
 title: "Coding Automation Pipeline"
-summary: "CLI-first, approval-gated coding workflows (Codex CLI, Gemini CLI, CodeRabbit) orchestrated by Lobster and /work."
+summary: "Ted-led, CLI-first coding workflows with structured spec handoff, GitHub App auth, and approval-gated CI/CD orchestration."
 read_when:
   - You want a deterministic, bounded coding automation loop
   - You want explicit approvals for commits, pushes, PRs, and merges
@@ -11,8 +11,8 @@ read_when:
 
 This guide describes a secure, stable way to automate coding work with OpenClaw while keeping the LLM "thin":
 
-- Chat (Telegram, web) is the control plane.
-- Tool execution happens in a dedicated sandboxed `coder` agent session.
+- Chat (Telegram, web, macOS companion app) is the control plane.
+- Ted plans and approves; tool execution happens in a dedicated sandboxed `coder` agent session.
 - Multi-step orchestration is deterministic via Lobster.
 - Risky steps are approval-gated and resumable.
 
@@ -34,6 +34,8 @@ If you want the full VPS setup for this, start at [VPS coding automation](/insta
 - Docker sandbox: tool execution boundary for the `coder` agent.
 - Coding CLIs: `git`, `gh`, `codex`, `gemini`, `coderabbit`.
 - Lobster: workflow runtime with resumable approvals.
+- GitHub App: short-lived installation tokens for repo sync, PR operations, and merge automation.
+- Automation event store: append-only JSONL plus SQLite index for runs, steps, audit, approvals, and deploy outcomes.
 
 ## Workflow surface
 
@@ -86,18 +88,27 @@ This gives adaptive behavior without losing operator control.
 Recommended bounded loop for `task` and `fix`:
 
 1. Create branch `work/<date>-<slug>` off your base branch.
-2. Implementation pass using a coding CLI:
+2. Ted writes a structured spec packet:
+   - repo identity
+   - goal and non-goals
+   - acceptance criteria
+   - risk tier
+   - checks
+   - approval requirements
+   - implementation CLI settings
+3. Implementation pass using a coding CLI:
    - Prefer `codex` as primary, `gemini` as fallback.
-3. Deterministic local checks:
+   - Pass the serialized spec packet to the CLI instead of a free-form prompt.
+4. Deterministic local checks:
    - format and lint
    - typecheck (when applicable)
    - unit tests
-4. CodeRabbit review pass (CLI) to produce a fix list.
-5. If there are findings or checks failed:
+5. CodeRabbit review pass (CLI) to produce a fix list.
+6. If there are findings or checks failed:
    - summarize into a compact fix list
    - run one remediation pass
    - repeat up to `maxFixLoops` (default 3)
-6. Stop condition:
+7. Stop condition:
    - if still failing after `maxFixLoops`, halt and return a structured report (commands run, failures, log tail, suggested next action).
 
 Why bounded loops matter:
@@ -132,6 +143,10 @@ The key idea is to separate the chat surface from the execution surface.
 5. Use approvals for side effects:
    - Lobster approvals for commit, push, PR, merge
    - optional: forward exec approvals to chat with `/approve` (see [Exec approvals](/tools/exec-approvals))
+6. Keep auth split by intent:
+   - GitHub App for unattended repo and PR actions
+   - `OPENAI_API_KEY` and `GEMINI_API_KEY` for sandboxed coding CLIs
+   - optional interactive host login only for manual troubleshooting sessions
 
 Related reading:
 
@@ -160,6 +175,32 @@ Recommended merge blocking checks:
 - build (if applicable)
 - secret scanning
 - dependency scanning (Dependabot alerts; optionally SBOM)
+
+The merge step should also be pinned to the current PR head SHA. A merge must stop if:
+
+- the PR head changed after preflight
+- required checks are still pending
+- required checks failed
+- a human approval is still missing
+
+## Audit and control surfaces
+
+Each run should produce:
+
+- a run record with repo, branch, user request, planner, implementation CLI, and models
+- a step timeline
+- approval request and resolution events
+- local check results
+- CI and merge evidence
+- deploy outcome evidence
+
+The same data should surface in:
+
+- the Control UI Office tab
+- the macOS companion app
+- Telegram approval notifications
+
+The current Ted VPS flow stores automation data in an append-only JSONL stream with a SQLite index, and the UI reads it through automation RPC methods instead of parsing raw logs.
 
 Recommended CodeRabbit usage:
 

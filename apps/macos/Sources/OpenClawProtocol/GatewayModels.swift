@@ -498,6 +498,7 @@ public struct AutomationRun: Codable, Sendable {
     public let implementationagentid: String
     public let implementationcli: String
     public let implementationfallbackcli: String?
+    public let implementationusedcli: String?
     public let implementationmodel: String?
     public let fallbackmodel: String?
     public let startedatms: Int
@@ -526,6 +527,7 @@ public struct AutomationRun: Codable, Sendable {
         implementationagentid: String,
         implementationcli: String,
         implementationfallbackcli: String?,
+        implementationusedcli: String?,
         implementationmodel: String?,
         fallbackmodel: String?,
         startedatms: Int,
@@ -553,6 +555,7 @@ public struct AutomationRun: Codable, Sendable {
         self.implementationagentid = implementationagentid
         self.implementationcli = implementationcli
         self.implementationfallbackcli = implementationfallbackcli
+        self.implementationusedcli = implementationusedcli
         self.implementationmodel = implementationmodel
         self.fallbackmodel = fallbackmodel
         self.startedatms = startedatms
@@ -581,6 +584,7 @@ public struct AutomationRun: Codable, Sendable {
         case implementationagentid = "implementationAgentId"
         case implementationcli = "implementationCli"
         case implementationfallbackcli = "implementationFallbackCli"
+        case implementationusedcli = "implementationUsedCli"
         case implementationmodel = "implementationModel"
         case fallbackmodel = "fallbackModel"
         case startedatms = "startedAtMs"

@@ -112,6 +112,20 @@ const githubTokenCache = {
   expiresAtMs: 0,
 };
 
+function resolveGitHubAuthMode() {
+  const directToken = String(process.env.GH_TOKEN || process.env.GITHUB_TOKEN || "").trim();
+  if (directToken) {
+    return "env-token";
+  }
+  const appId = String(process.env.GITHUB_APP_ID || "").trim();
+  const installationId = String(process.env.GITHUB_APP_INSTALLATION_ID || "").trim();
+  const privateKey = resolveGitHubAppPrivateKey();
+  if (appId && installationId && privateKey) {
+    return "github-app";
+  }
+  return "missing";
+}
+
 function base64UrlEncode(value) {
   return Buffer.from(value)
     .toString("base64")
@@ -191,12 +205,14 @@ async function mintGitHubAppToken() {
 
 async function resolveGitHubEnv() {
   const token = await mintGitHubAppToken();
+  const authMode = resolveGitHubAuthMode();
   if (!token) {
-    return {};
+    return { OPENCLAW_GITHUB_AUTH_MODE: authMode };
   }
   return {
     GH_TOKEN: token,
     GITHUB_TOKEN: token,
+    OPENCLAW_GITHUB_AUTH_MODE: authMode,
   };
 }
 
@@ -720,11 +736,16 @@ async function probeToolchain(sessionKey, cwd) {
   const res = await execViaGateway({
     sessionKey,
     command:
-      "bash -lc 'for bin in codex gemini gh git coderabbit; do " +
+      "bash -lc 'for bin in codex gemini gemini-yolo agent cursor-agent agent-full cursor-agent-full gcloud x-cli gh git coderabbit; do " +
       'if command -v "$bin" >/dev/null 2>&1; then printf "%s=ok\\n" "$bin"; else printf "%s=missing\\n" "$bin"; fi; ' +
       "done; " +
+      'if [ -f "$HOME/.codex/config.toml" ]; then echo CODEX_CONFIG=ok; else echo CODEX_CONFIG=missing; fi; ' +
+      'if [ -f "$HOME/.gemini/policies/openclaw-yolo.toml" ]; then echo GEMINI_POLICY=ok; else echo GEMINI_POLICY=missing; fi; ' +
+      'if [ -f "$HOME/.config/x-cli/.env" ]; then echo X_CLI_AUTH=ok; else echo X_CLI_AUTH=missing; fi; ' +
+      'if [ -n "$OPENCLAW_GITHUB_AUTH_MODE" ]; then echo OPENCLAW_GITHUB_AUTH_MODE="$OPENCLAW_GITHUB_AUTH_MODE"; else echo OPENCLAW_GITHUB_AUTH_MODE=missing; fi; ' +
       'if [ -n "$OPENAI_API_KEY" ]; then echo OPENAI_API_KEY=ok; else echo OPENAI_API_KEY=missing; fi; ' +
-      'if [ -n "$GEMINI_API_KEY" ]; then echo GEMINI_API_KEY=ok; else echo GEMINI_API_KEY=missing; fi\'',
+      'if [ -n "$GEMINI_API_KEY" ]; then echo GEMINI_API_KEY=ok; else echo GEMINI_API_KEY=missing; fi; ' +
+      'if command -v gcloud >/dev/null 2>&1; then active="$(gcloud auth list --filter=status:ACTIVE --format='\''value(account)'\'' 2>/dev/null | head -n 1 || true)"; if [ -n "$active" ]; then echo GCLOUD_AUTH=ok; else echo GCLOUD_AUTH=missing; fi; else echo GCLOUD_AUTH=missing; fi\'',
     workdir: cwd,
     timeout: 120,
   });
@@ -751,6 +772,7 @@ function defaultAcceptanceCriteria(message) {
 }
 
 function buildSpecPacket(params) {
+  const availableClis = Array.isArray(params.availableClis) ? params.availableClis : [];
   return {
     repo: params.repo,
     repoUrl: params.repoUrl,
@@ -779,10 +801,47 @@ function buildSpecPacket(params) {
       agentId: params.implementationAgentId || "coder",
       primaryCli: "codex",
       fallbackCli: "gemini",
+      availableClis,
+      accessMode: "full-access",
+      authMode: "hybrid",
       model: params.implementationModel || undefined,
       fallbackModel: params.fallbackModel || undefined,
     },
   };
+}
+
+function buildImplementationPrompt(params) {
+  const lines = [
+    "You are the OpenClaw implementation worker inside the coder sandbox.",
+    "Use the structured packet below as the source of truth for repo, goal, non-goals, checks, and approvals.",
+    "Keep changes minimal and task-scoped. Do not broaden network, approval, or deployment policy.",
+  ];
+
+  if (params.failureContext) {
+    lines.push(
+      "This is a remediation pass. Fix only the reported failures and preserve all passing behavior.",
+    );
+  }
+
+  lines.push(
+    "",
+    "Structured implementation packet:",
+    "```json",
+    JSON.stringify(params.specPacket, null, 2),
+    "```",
+  );
+
+  if (params.failureContext) {
+    lines.push(
+      "",
+      "Failure context:",
+      "```json",
+      JSON.stringify(params.failureContext, null, 2),
+      "```",
+    );
+  }
+
+  return lines.join("\n");
 }
 
 async function gitHeadSha(sessionKey, cwd) {
@@ -857,7 +916,7 @@ async function codexImplement(sessionKey, cwd, prompt, model) {
 async function geminiImplement(sessionKey, cwd, prompt, model) {
   const modelArg =
     typeof model === "string" && model.trim() ? ` --model ${JSON.stringify(model.trim())}` : "";
-  const cmd = `gemini${modelArg} ${JSON.stringify(prompt)}`;
+  const cmd = `gemini --approval-mode yolo${modelArg} ${JSON.stringify(prompt)}`;
   const res = await execViaGateway({
     sessionKey,
     command: cmd,
@@ -950,7 +1009,115 @@ async function pushAndPr(sessionKey, cwd, base) {
   return { branch, pr: resPr.tail.trim() };
 }
 
-async function mergePr(sessionKey, cwd, repo, pr) {
+async function resolveMergePreflight(sessionKey, cwd, repo, pr) {
+  const view = await execViaGateway({
+    sessionKey,
+    command:
+      `gh pr view ${JSON.stringify(String(pr))}` +
+      ` --repo ${JSON.stringify(repo)}` +
+      " --json number,headRefOid,mergeStateStatus,reviewDecision,isDraft,title,url",
+    workdir: cwd,
+    timeout: 120,
+  });
+  if (view.status !== "completed" || (typeof view.exitCode === "number" && view.exitCode !== 0)) {
+    die("gh pr view failed", { tail: view.tail });
+  }
+  let prMeta = {};
+  try {
+    prMeta = JSON.parse(view.tail || "{}");
+  } catch {
+    die("invalid gh pr view json", { tail: view.tail });
+  }
+
+  const checks = await execViaGateway({
+    sessionKey,
+    command:
+      `gh pr checks ${JSON.stringify(String(pr))}` +
+      ` --repo ${JSON.stringify(repo)}` +
+      " --required --json name,bucket,state,workflow,link",
+    workdir: cwd,
+    timeout: 120,
+  });
+  if (
+    checks.status !== "completed" ||
+    (typeof checks.exitCode === "number" && checks.exitCode > 1 && checks.exitCode !== 8)
+  ) {
+    die("gh pr checks failed", { tail: checks.tail });
+  }
+
+  let requiredChecks = [];
+  try {
+    requiredChecks = JSON.parse(checks.tail || "[]");
+  } catch {
+    die("invalid gh pr checks json", { tail: checks.tail });
+  }
+
+  const blockedReasons = [];
+  const mergeStateStatus = String(prMeta.mergeStateStatus || "").trim();
+  const reviewDecision = String(prMeta.reviewDecision || "").trim();
+  const headSha = String(prMeta.headRefOid || "").trim();
+
+  if (!headSha) {
+    blockedReasons.push("missing PR head SHA");
+  }
+  if (prMeta.isDraft === true) {
+    blockedReasons.push("pull request is still a draft");
+  }
+  if (reviewDecision === "CHANGES_REQUESTED") {
+    blockedReasons.push("review decision is CHANGES_REQUESTED");
+  }
+  if (!["CLEAN", "HAS_HOOKS"].includes(mergeStateStatus)) {
+    blockedReasons.push(`merge state is ${mergeStateStatus || "unknown"}`);
+  }
+
+  const failingChecks = requiredChecks.filter((entry) => String(entry?.bucket || "") === "fail");
+  const pendingChecks = requiredChecks.filter((entry) =>
+    ["pending", "skipping", "cancel"].includes(String(entry?.bucket || "")),
+  );
+  if (failingChecks.length > 0) {
+    blockedReasons.push(
+      `required checks failing: ${failingChecks.map((entry) => entry.name || entry.workflow || "unknown").join(", ")}`,
+    );
+  }
+  if (pendingChecks.length > 0) {
+    blockedReasons.push(
+      `required checks pending: ${pendingChecks.map((entry) => entry.name || entry.workflow || "unknown").join(", ")}`,
+    );
+  }
+
+  return {
+    repo,
+    pr,
+    title: String(prMeta.title || "").trim() || undefined,
+    url: String(prMeta.url || "").trim() || undefined,
+    headSha,
+    mergeStateStatus: mergeStateStatus || undefined,
+    reviewDecision: reviewDecision || undefined,
+    requiredChecks,
+    requiredChecksSummary:
+      requiredChecks.length === 0
+        ? "no required checks reported"
+        : requiredChecks
+            .map((entry) => `${entry.name || entry.workflow || "check"}:${entry.bucket || entry.state || "unknown"}`)
+            .join(", "),
+    blockedReasons,
+    ok: blockedReasons.length === 0,
+  };
+}
+
+async function mergePr(sessionKey, cwd, repo, pr, expectedHeadSha) {
+  const preflight = await resolveMergePreflight(sessionKey, cwd, repo, pr);
+  if (!preflight.ok) {
+    die("merge preflight failed", preflight);
+  }
+  if (expectedHeadSha && preflight.headSha !== expectedHeadSha) {
+    die("merge blocked: PR head changed after approval", {
+      expectedHeadSha,
+      currentHeadSha: preflight.headSha,
+      pr,
+      repo,
+    });
+  }
   const res = await execViaGateway({
     sessionKey,
     command: `gh pr merge ${JSON.stringify(String(pr))} --repo ${JSON.stringify(repo)} --merge --auto`,
@@ -1355,6 +1522,7 @@ async function main() {
         "fix",
         "commit",
         "push-pr",
+        "merge-preflight",
         "merge",
         "upstream-sync",
         "upstream-publish",
@@ -1510,9 +1678,25 @@ async function main() {
     if (clawforge?.enabled === false) die("clawforge contract error", { error: clawforge.error });
     const repoMeta = await resolveRepoMetadata(sessionKey, repoDir);
     const toolchain = await probeToolchain(sessionKey, repoDir).catch(() => ({}));
+    const availableClis = ["codex", "gemini"].filter((key) => toolchain[key] === "ok");
+    const toolchainSummary = [
+      "codex",
+      "gemini",
+      "gemini-yolo",
+      "agent",
+      "cursor-agent",
+      "agent-full",
+      "cursor-agent-full",
+      "gcloud",
+      "x-cli",
+      "gh",
+      "git",
+      "coderabbit",
+    ].filter((key) => toolchain[key] === "ok");
 
+    let specPacket = currentRun(repoDir)?.specPacket || null;
     if (cmd === "task" || !currentRun(repoDir)) {
-      const specPacket = buildSpecPacket({
+      specPacket = buildSpecPacket({
         repo: repoMeta.repo,
         repoUrl: repoMeta.repoUrl,
         repoDir,
@@ -1525,6 +1709,7 @@ async function main() {
         plannerModel,
         implementationModel,
         fallbackModel,
+        availableClis,
       });
       upsertRun(repoDir, {
         id: crypto.randomUUID(),
@@ -1559,18 +1744,28 @@ async function main() {
         data: {
           specPacket,
           toolchain,
+          toolchainSummary,
+          githubAuthMode: toolchain.OPENCLAW_GITHUB_AUTH_MODE || "missing",
         },
       });
     }
+    const implementationPrompt = buildImplementationPrompt({
+      specPacket,
+    });
     appendRunStep(repoDir, {
       status: "running",
       label: "Implementation",
       detail: "Dispatching the structured packet to the coder sandbox.",
       actor: { id: "coder", type: "agent", label: "coder" },
-      data: { toolchain },
+      data: {
+        availableClis,
+        authMode: specPacket?.implementation?.authMode || "hybrid",
+        githubAuthMode: toolchain.OPENCLAW_GITHUB_AUTH_MODE || "missing",
+      },
     });
 
-    const impl = await codexImplement(sessionKey, repoDir, workPrompt, implementationModel);
+    const impl = await codexImplement(sessionKey, repoDir, implementationPrompt, implementationModel);
+    let selectedCli = "codex";
     if (impl.code !== 0 || impl.status !== "completed") {
       // Fallback to gemini if codex failed.
       appendRunAudit(repoDir, {
@@ -1580,7 +1775,7 @@ async function main() {
         actor: { id: "coder", type: "agent", label: "coder" },
         data: { codex: impl },
       });
-      const g = await geminiImplement(sessionKey, repoDir, workPrompt, fallbackModel);
+      const g = await geminiImplement(sessionKey, repoDir, implementationPrompt, fallbackModel);
       if (g.code !== 0 || g.status !== "completed") {
         withRun(repoDir, (run) => ({
           ...run,
@@ -1597,7 +1792,26 @@ async function main() {
         });
         die("coding agent failed", { codex: impl, gemini: g });
       }
+      selectedCli = "gemini";
     }
+    withRun(repoDir, (run) => ({
+      ...run,
+      implementationUsedCli: selectedCli,
+      summary: `Implementation completed with ${selectedCli}.`,
+    }));
+    appendRunAudit(repoDir, {
+      kind: "implementation.completed",
+      status: "completed",
+      message: `Structured packet executed with ${selectedCli}.`,
+      actor: { id: "coder", type: "agent", label: "coder" },
+      data: {
+        selectedCli,
+        availableClis,
+        authMode: specPacket?.implementation?.authMode || "hybrid",
+        githubAuthMode: toolchain.OPENCLAW_GITHUB_AUTH_MODE || "missing",
+        toolchain,
+      },
+    });
 
     let loops = 0;
     let checks = await runChecks(sessionKey, repoDir, { clawforge });
@@ -1610,7 +1824,14 @@ async function main() {
     });
     while (!checks.ok && loops < Math.max(1, maxFixLoops)) {
       loops++;
-      const fixPrompt = `Fix the failing checks. Context:\\nFAILED=${checks.failed}\\nTAIL=${checks.tail || ""}`;
+      const fixPrompt = buildImplementationPrompt({
+        specPacket,
+        failureContext: {
+          failedCommand: checks.failed || null,
+          tail: checks.tail || "",
+          loop: loops,
+        },
+      });
       appendRunAudit(repoDir, {
         kind: "validation.retry",
         status: "running",
@@ -1619,10 +1840,16 @@ async function main() {
         data: { failed: checks.failed, tail: checks.tail || "" },
       });
       const fix = await codexImplement(sessionKey, repoDir, fixPrompt, implementationModel);
+      let retryCli = "codex";
       if (fix.code !== 0 || fix.status !== "completed") {
         const g = await geminiImplement(sessionKey, repoDir, fixPrompt, fallbackModel);
         if (g.code !== 0 || g.status !== "completed") break;
+        retryCli = "gemini";
       }
+      withRun(repoDir, (run) => ({
+        ...run,
+        implementationUsedCli: retryCli,
+      }));
       clawforge = computeClawforgeContext(repoDir, base);
       if (clawforge?.enabled === false) die("clawforge contract error", { error: clawforge.error });
       checks = await runChecks(sessionKey, repoDir, { clawforge });
@@ -1720,7 +1947,7 @@ async function main() {
     return;
   }
 
-  if (cmd === "merge") {
+  if (cmd === "merge-preflight") {
     const repoDir = String(args["repo-dir"] || args.repoDir || "").trim();
     const repo = String(args.repo || "").trim();
     const pr = Number.parseInt(String(args.pr || ""), 10);
@@ -1728,7 +1955,32 @@ async function main() {
     if (!repoDir) die("--repo-dir required");
     if (!repo) die("--repo required");
     if (!Number.isFinite(pr) || pr <= 0) die("--pr required");
-    const res = await mergePr(sessionKey, repoDir, repo, pr);
+    const preflight = await resolveMergePreflight(sessionKey, repoDir, repo, pr);
+    if (!preflight.ok) {
+      die("merge preflight failed", preflight);
+    }
+    ok(preflight, { json: preflight });
+    return;
+  }
+
+  if (cmd === "merge") {
+    const repoDir = String(args["repo-dir"] || args.repoDir || "").trim();
+    const repo = String(args.repo || "").trim();
+    const pr = Number.parseInt(String(args.pr || ""), 10);
+    const expectedHeadSha = String(
+      args["expected-head-sha"] || args.expectedHeadSha || "",
+    ).trim();
+    const sessionKey = String(args["session-key"] || args.sessionKey || "agent:coder:main").trim();
+    if (!repoDir) die("--repo-dir required");
+    if (!repo) die("--repo required");
+    if (!Number.isFinite(pr) || pr <= 0) die("--pr required");
+    const res = await mergePr(
+      sessionKey,
+      repoDir,
+      repo,
+      pr,
+      expectedHeadSha || undefined,
+    );
     appendRunStep(repoDir, {
       status: "completed",
       label: "Merge",

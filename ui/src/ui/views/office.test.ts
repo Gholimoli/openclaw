@@ -116,14 +116,62 @@ function createProps(overrides: Partial<OfficeProps> = {}): OfficeProps {
     ],
     filters: {
       agent: "",
+      repo: "",
+      status: "",
+      dateFrom: "",
+      dateTo: "",
       source: "",
       proposal: "",
       runClass: "all",
     },
+    selectedRunId: "run-1",
+    selectedRunLoading: false,
+    selectedRunError: null,
+    selectedRun: {
+      id: "run-1",
+      repo: "openclaw/openclaw",
+      repoUrl: "https://github.com/openclaw/openclaw",
+      repoDir: "/tmp/openclaw",
+      base: "main",
+      branch: "work/test",
+      defaultBranch: "main",
+      status: "running",
+      title: "Add AI delivery timeline",
+      userRequest: "Add AI delivery timeline",
+      riskTier: "medium",
+      plannerAgentId: "main",
+      plannerDisplayName: "Ted",
+      plannerModel: "gpt-5.4",
+      implementationAgentId: "coder",
+      implementationCli: "codex",
+      implementationFallbackCli: "gemini",
+      startedAtMs: Date.now(),
+      updatedAtMs: Date.now(),
+      specPacket: {
+        repo: "openclaw/openclaw",
+        base: "main",
+        branch: "work/test",
+        defaultBranch: "main",
+        userRequest: "Add AI delivery timeline",
+        goal: "Add AI delivery timeline",
+        nonGoals: [],
+        acceptanceCriteria: [],
+        riskTier: "medium",
+        checks: ["pnpm check"],
+        approvalRequirements: ["commit", "push"],
+        planner: { agentId: "main", displayName: "Ted", model: "gpt-5.4" },
+        implementation: { agentId: "coder", primaryCli: "codex", fallbackCli: "gemini" },
+      },
+    },
+    selectedRunSteps: [],
+    selectedRunAudit: [],
     onRefresh: () => undefined,
     onTogglePause: () => undefined,
     onProposalAction: () => undefined,
     onFiltersChange: () => undefined,
+    onSelectRun: () => undefined,
+    onResumeRun: () => undefined,
+    onCancelRun: () => undefined,
     onMoveAgent: () => undefined,
     onSaveLayout: () => undefined,
     ...overrides,
@@ -168,7 +216,7 @@ describe("office view", () => {
     );
 
     const selects = container.querySelectorAll("select");
-    const classSelect = selects[3] as HTMLSelectElement | undefined;
+    const classSelect = selects[4] as HTMLSelectElement | undefined;
     expect(classSelect).toBeDefined();
     if (!classSelect) {
       return;
@@ -176,5 +224,23 @@ describe("office view", () => {
     classSelect.value = "needs_review";
     classSelect.dispatchEvent(new Event("change", { bubbles: true }));
     expect(onFiltersChange).toHaveBeenCalledWith({ runClass: "needs_review" });
+  });
+
+  it("loads run detail when a run is selected", () => {
+    const container = document.createElement("div");
+    const onSelectRun = vi.fn();
+    render(
+      renderOffice(
+        createProps({
+          onSelectRun,
+        }),
+      ),
+      container,
+    );
+
+    const runCard = container.querySelector(".office-run");
+    expect(runCard).not.toBeNull();
+    runCard?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(onSelectRun).toHaveBeenCalledWith("run-1");
   });
 });

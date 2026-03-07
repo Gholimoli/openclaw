@@ -37,9 +37,11 @@ This installs:
 - Docker (for OpenClaw sandboxing)
 - Node 22 (for OpenClaw + Lobster CLIs)
 - `openclaw` CLI + `lobster` CLI
-- Host `codex` and `gemini` CLIs for emergency/manual use on the VPS
+- Host `codex`, `gemini`, `agent` / `cursor-agent`, `gcloud`, and `x-cli`
+  for emergency/manual use on the VPS
 - Tailscale (installed, but not joined)
 - `openclaw-sandbox-coder:bookworm` Docker image used by the `coder` agent
+- `tmux`, which the manual CLI login helper uses for real TTY auth sessions
 
 Optional (recommended if you want voice-note UX and browsing):
 
@@ -78,6 +80,14 @@ GITHUB_APP_PRIVATE_KEY_FILE="$HOME/.openclaw/github-app.pem"
 OPENAI_API_KEY="..."
 GEMINI_API_KEY="..."
 CODERABBIT_API_KEY="..."
+GCLOUD_SERVICE_ACCOUNT_KEY_FILE="$HOME/.openclaw/gcloud-service-account.json"
+GCLOUD_PROJECT="..."
+
+X_API_KEY="..."
+X_API_SECRET="..."
+X_BEARER_TOKEN="..."
+X_ACCESS_TOKEN="..."
+X_ACCESS_TOKEN_SECRET="..."
 
 WHISPER_CPP_MODEL="/opt/openclaw/models/whisper-cpp/ggml-base.en.bin"
 
@@ -112,10 +122,81 @@ Key decisions in this config:
 - `main` agent presents as `Ted`, runs `openai/gpt-5.4`, and owns repo intake, research, specs, approvals, and orchestration
 - `coder` agent: all tool execution runs inside Docker sandbox (network enabled)
 - `coder` uses Codex CLI first and Gemini CLI as fallback, with GitHub tokens injected at runtime
+- Nested coding CLIs inside the `coder` sandbox run with their own full-access
+  modes enabled; Ted and host-level OpenClaw exec remain approval-gated
 - `power` agent: browser + shell access (approval-gated), file mutation tools disabled
 - `devops` agent: maintenance profile with constrained tools and isolated session context
 - `work` plugin enabled with `coderSessionKey: "agent:coder:main"` and `workRoot: "~/work/repos"`
 - Telegram client takeover stays disabled until you add explicit `channels.telegram.clients.<peerId>` entries; operators then use `/client assign` and `/client clear` to hand a client chat to an allowlisted agent
+
+### Configure coding CLI defaults
+
+After the `.env` file is in place, run:
+
+```bash
+sudo bash ops/vps/configure-coding-clis.sh
+```
+
+This does four things:
+
+- seeds `~/work/repos/AGENTS.md` from `ops/vps/TED_AGENTS.md` so Ted sees the
+  coding toolchain in workspace context
+- configures Codex for `approval_policy = "never"` and
+  `sandbox_mode = "danger-full-access"` in `~/.codex/config.toml`
+- configures Gemini with an allow-all policy in
+  `~/.gemini/policies/openclaw-yolo.toml`
+- installs helper wrappers:
+  - `gemini-yolo`
+  - `agent-full`
+  - `cursor-agent-full`
+
+The unattended `/work` path should use:
+
+- `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY_FILE`
+- `OPENAI_API_KEY`
+- `GEMINI_API_KEY`
+
+This keeps repo access and model auth non-interactive and short-lived for automation runs.
+
+Notes:
+
+- The Cursor Agent install is official, but Cursor auth still depends on your
+  Cursor account session. If you need an interactive login on the VPS, run
+  `agent` once as the service user and complete its auth flow.
+- `gcloud` auth is activated automatically only when
+  `GCLOUD_SERVICE_ACCOUNT_KEY_FILE` or `GOOGLE_APPLICATION_CREDENTIALS` points
+  at a readable service-account key.
+- `x-cli` auth is written automatically when all five `X_*` variables are
+  present in `~/.openclaw/.env`.
+
+### Manual VPS CLI login sessions
+
+If you want to use the CLIs directly on the VPS for emergency/manual work, keep that separate from `/work`.
+
+Start a real TTY login session with:
+
+```bash
+sudo bash ops/vps/login-coding-clis.sh codex
+sudo bash ops/vps/login-coding-clis.sh gh
+sudo bash ops/vps/login-coding-clis.sh gemini
+sudo bash ops/vps/login-coding-clis.sh agent
+```
+
+What this does:
+
+- launches or reuses a `tmux` session as the primary service user
+- loads `~/.openclaw/.env`
+- starts the requested interactive CLI flow
+- prints the `tmux attach` command so you can complete the login in a real terminal
+
+Use cases:
+
+- `codex`: one-time `codex login --device-auth` or API-key login verification
+- `gh`: one-time `gh auth login --web`
+- `gemini`: optional first-run interactive setup
+- `agent`: verify the host-side agent CLI is installed and usable
+
+Do not rely on these interactive host logins for unattended automation. `/work` should continue using GitHub App and service credentials.
 
 ### Configure dedicated Telegram worker groups
 
@@ -220,6 +301,12 @@ Repo intake also accepts:
 /work task https://github.com/openclaw/openclaw "add endpoint X"
 ```
 
+Current behavior:
+
+- Ted plans and emits a structured spec packet with goal, non-goals, acceptance criteria, risk tier, checks, approvals, repo identity, and implementation settings.
+- The `coder` sandbox receives that serialized packet directly in Codex CLI, with Gemini CLI fallback only if Codex is unavailable.
+- The run record stores the selected implementation CLI, detected toolchain, GitHub auth mode, and the full spec packet.
+
 Approvals:
 
 - Lobster will ask for approvals for commit/push/merge steps and provide a resume token.
@@ -243,14 +330,18 @@ Workflow:
 
 - `/work new demo-repo` scaffolds a repo and (after approval) creates/pushes it.
 - `/work task ...` accepts `owner/repo` or a GitHub URL, syncs into `~/work/repos/<owner>/<repo>`, creates a `work/*` branch, produces a structured spec packet, runs coding CLIs, runs checks, runs CodeRabbit CLI, and (after approvals) commits + opens a PR.
+- Toolchain probes now report `codex`, `gemini`, `agent`, `cursor-agent`,
+  `gcloud`, and `x-cli` availability to the automation run record.
 - `bash ops/vps/wake-agents.sh` sends one startup ping from each worker agent to its dedicated Telegram group.
 - Control UI / Office / macOS show the same live automation run state, approval queue, and outcome trail for a given run id.
+- `/work merge` blocks stale head SHA, failed or pending required checks, unresolved approvals, drafts, and `CHANGES_REQUESTED` review state before it calls `gh pr merge`.
 
 Deploy notifications:
 
 - Trigger a successful deploy (`.github/workflows/vps-deploy.yml` via push to `main` or manual dispatch).
 - Confirm Telegram receives one success notification including UTC time, commit hash, host, and service details.
 - Confirm failed deploys do not emit a false success message.
+- Confirm `ops/vps/promote-release.sh` appends the deploy outcome to the automation audit store so deploy evidence appears in the same run/audit surfaces.
 
 ## 11. “Idea -> source” traceability (external)
 

@@ -28,14 +28,26 @@ struct ControlAgentEvent: Codable, Sendable, Identifiable {
 }
 
 struct AutomationGatewayEvent: Codable {
-    struct Run: Codable {
-        let repo: String
-        let status: String
-        let title: String
+    let kind: String
+    let run: AutomationRun?
+}
+
+struct ExecApprovalGatewayRequest: Codable {
+    struct Request: Codable {
+        let command: String
+        let ask: String?
+        let agentId: String?
+        let sessionKey: String?
     }
 
-    let kind: String
-    let run: Run?
+    let id: String
+    let request: Request
+    let createdAtMs: Int
+    let expiresAtMs: Int
+}
+
+struct ExecApprovalGatewayResolved: Codable {
+    let id: String
 }
 
 enum ControlChannelError: Error, LocalizedError {
@@ -387,6 +399,27 @@ final class ControlChannel {
                     repo: run.repo,
                     status: run.status,
                     title: run.title)
+                AutomationRunStore.shared.upsert(run: run)
+            }
+        case let .event(evt) where evt.event == "exec.approval.requested":
+            guard let payload = evt.payload else { return }
+            if let data = try? JSONEncoder().encode(payload),
+               let request = try? JSONDecoder().decode(ExecApprovalGatewayRequest.self, from: data)
+            {
+                AutomationRunStore.shared.addApproval(
+                    id: request.id,
+                    agentId: request.request.agentId,
+                    sessionKey: request.request.sessionKey,
+                    command: request.request.command,
+                    ask: request.request.ask,
+                    expiresAtMs: request.expiresAtMs)
+            }
+        case let .event(evt) where evt.event == "exec.approval.resolved":
+            guard let payload = evt.payload else { return }
+            if let data = try? JSONEncoder().encode(payload),
+               let resolved = try? JSONDecoder().decode(ExecApprovalGatewayResolved.self, from: data)
+            {
+                AutomationRunStore.shared.resolveApproval(id: resolved.id)
             }
         case let .event(evt) where evt.event == "shutdown":
             self.state = .degraded("gateway shutdown")

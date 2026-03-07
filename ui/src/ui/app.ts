@@ -84,7 +84,12 @@ import {
 } from "./app-tool-stream.ts";
 import { resolveInjectedAssistantIdentity } from "./assistant-identity.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
-import { loadAutomationRuns as loadAutomationRunsInternal } from "./controllers/automation.ts";
+import {
+  cancelAutomationRun as cancelAutomationRunInternal,
+  loadAutomationRunDetail as loadAutomationRunDetailInternal,
+  loadAutomationRuns as loadAutomationRunsInternal,
+  resumeAutomationRun as resumeAutomationRunInternal,
+} from "./controllers/automation.ts";
 import {
   actEvolutionProposal as actEvolutionProposalInternal,
   loadEvolution as loadEvolutionInternal,
@@ -319,7 +324,17 @@ export class OpenClawApp extends LitElement {
   @state() automationLoading = false;
   @state() automationError: string | null = null;
   @state() automationRuns: AutomationRun[] = [];
+  @state() automationSelectedRunId: string | null = null;
+  @state() automationSelectedRunLoading = false;
+  @state() automationSelectedRunError: string | null = null;
+  @state() automationSelectedRun: AutomationRun | null = null;
+  @state() automationSelectedSteps: import("./types.js").AutomationStep[] = [];
+  @state() automationSelectedAudit: import("./types.js").AutomationAuditEntry[] = [];
   @state() officeFilterAgent = "";
+  @state() officeFilterRepo = "";
+  @state() officeFilterStatus = "";
+  @state() officeFilterDateFrom = "";
+  @state() officeFilterDateTo = "";
   @state() officeFilterSource = "";
   @state() officeFilterProposal = "";
   @state() officeFilterRunClass: "all" | "auto_merge_low_risk" | "needs_review" | "reject_archive" =
@@ -480,6 +495,29 @@ export class OpenClawApp extends LitElement {
     await loadAutomationRunsInternal(
       this as unknown as Parameters<typeof loadAutomationRunsInternal>[0],
       opts,
+    );
+  }
+
+  async loadAutomationRunDetail(runId: string, opts?: { quiet?: boolean }) {
+    await loadAutomationRunDetailInternal(
+      this as unknown as Parameters<typeof loadAutomationRunDetailInternal>[0],
+      runId,
+      opts,
+    );
+  }
+
+  async resumeAutomationRun(runId: string) {
+    await resumeAutomationRunInternal(
+      this as unknown as Parameters<typeof resumeAutomationRunInternal>[0],
+      runId,
+    );
+  }
+
+  async cancelAutomationRun(runId: string, reason?: string) {
+    await cancelAutomationRunInternal(
+      this as unknown as Parameters<typeof cancelAutomationRunInternal>[0],
+      runId,
+      reason,
     );
   }
 

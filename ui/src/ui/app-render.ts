@@ -350,10 +350,20 @@ export function renderApp(state: AppViewState) {
                 activity: state.officeActivity,
                 filters: {
                   agent: state.officeFilterAgent,
+                  repo: state.officeFilterRepo,
+                  status: state.officeFilterStatus,
+                  dateFrom: state.officeFilterDateFrom,
+                  dateTo: state.officeFilterDateTo,
                   source: state.officeFilterSource,
                   proposal: state.officeFilterProposal,
                   runClass: state.officeFilterRunClass,
                 },
+                selectedRunId: state.automationSelectedRunId,
+                selectedRunLoading: state.automationSelectedRunLoading,
+                selectedRunError: state.automationSelectedRunError,
+                selectedRun: state.automationSelectedRun,
+                selectedRunSteps: state.automationSelectedSteps,
+                selectedRunAudit: state.automationSelectedAudit,
                 onRefresh: () =>
                   Promise.all([
                     state.loadAutomationRuns(),
@@ -366,6 +376,18 @@ export function renderApp(state: AppViewState) {
                 onFiltersChange: (patch) => {
                   if (typeof patch.agent === "string") {
                     state.officeFilterAgent = patch.agent;
+                  }
+                  if (typeof patch.repo === "string") {
+                    state.officeFilterRepo = patch.repo;
+                  }
+                  if (typeof patch.status === "string") {
+                    state.officeFilterStatus = patch.status;
+                  }
+                  if (typeof patch.dateFrom === "string") {
+                    state.officeFilterDateFrom = patch.dateFrom;
+                  }
+                  if (typeof patch.dateTo === "string") {
+                    state.officeFilterDateTo = patch.dateTo;
                   }
                   if (typeof patch.source === "string") {
                     state.officeFilterSource = patch.source;
@@ -382,6 +404,9 @@ export function renderApp(state: AppViewState) {
                     state.officeFilterRunClass = patch.runClass;
                   }
                 },
+                onSelectRun: (runId) => state.loadAutomationRunDetail(runId),
+                onResumeRun: (runId) => state.resumeAutomationRun(runId),
+                onCancelRun: (runId, reason) => state.cancelAutomationRun(runId, reason),
                 onMoveAgent: (agentId, x, y) => state.moveOfficeAgent(agentId, x, y),
                 onSaveLayout: () => state.saveOfficeLayout(),
               })

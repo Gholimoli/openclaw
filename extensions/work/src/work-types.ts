@@ -22,6 +22,9 @@ export type WorkSpecPacket = {
     agentId: string;
     primaryCli: "codex";
     fallbackCli?: "gemini";
+    availableClis?: string[];
+    accessMode?: "full-access";
+    authMode?: "hybrid";
     model?: string;
     fallbackModel?: string;
   };

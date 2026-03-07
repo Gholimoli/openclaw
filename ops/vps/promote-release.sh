@@ -35,6 +35,62 @@ fail() {
   exit 1
 }
 
+append_automation_audit() {
+  local status="$1"
+  local message="$2"
+  if [[ "${automation_audit_recorded:-0}" == "1" ]]; then
+    return 0
+  fi
+
+  local automation_root="${OPENCLAW_AUTOMATION_ROOT:-${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/automation}"
+  local events_path="${OPENCLAW_AUTOMATION_EVENTS_PATH:-$automation_root/events.jsonl}"
+  local actor_id="${OPENCLAW_AUTOMATION_ACTOR_ID:-vps-deploy}"
+  local actor_label="${OPENCLAW_AUTOMATION_ACTOR_LABEL:-VPS Deploy}"
+  local run_id="${OPENCLAW_AUTOMATION_RUN_ID:-}"
+  local repo_ref="${OPENCLAW_AUTOMATION_REPO:-$(basename "$repo_dir")}"
+  local branch_ref="${OPENCLAW_AUTOMATION_BRANCH:-main}"
+
+  mkdir -p "$(dirname "$events_path")"
+  EVENTS_PATH="$events_path" \
+  AUDIT_STATUS="$status" \
+  AUDIT_MESSAGE="$message" \
+  AUDIT_RUN_ID="$run_id" \
+  AUDIT_REPO="$repo_ref" \
+  AUDIT_BRANCH="$branch_ref" \
+  AUDIT_TARGET_SHA="$target_sha" \
+  AUDIT_ACTOR_ID="$actor_id" \
+  AUDIT_ACTOR_LABEL="$actor_label" \
+  node <<'EOF'
+const fs = require("node:fs");
+
+const ts = Date.now();
+const runId = (process.env.AUDIT_RUN_ID || "").trim();
+const entry = {
+  id: `audit-deploy-${process.env.AUDIT_TARGET_SHA}-${ts}`,
+  ts,
+  kind: "deploy.result",
+  status: process.env.AUDIT_STATUS,
+  message: process.env.AUDIT_MESSAGE,
+  repo: process.env.AUDIT_REPO || undefined,
+  branch: process.env.AUDIT_BRANCH || undefined,
+  actor: {
+    id: process.env.AUDIT_ACTOR_ID || "vps-deploy",
+    type: "system",
+    label: process.env.AUDIT_ACTOR_LABEL || "VPS Deploy",
+  },
+  data: {
+    commit: process.env.AUDIT_TARGET_SHA,
+  },
+};
+if (runId) {
+  entry.runId = runId;
+}
+const event = { kind: "audit.append", ts, entry };
+fs.appendFileSync(process.env.EVENTS_PATH, `${JSON.stringify(event)}\n`);
+EOF
+  automation_audit_recorded=1
+}
+
 require_cmd() {
   local cmd="$1"
   command -v "$cmd" >/dev/null 2>&1 || fail "required command not found: $cmd"
@@ -193,6 +249,7 @@ rollback_and_fail() {
     fail "${reason}; rollback probe failed"
   fi
 
+  append_automation_audit "failed" "${reason}; rolled back to $(basename "$rollback_dir")"
   fail "${reason}; rolled back to $(basename "$rollback_dir")"
 }
 
@@ -293,4 +350,5 @@ fi
 
 printf '%s\n' "$target_sha" > "$last_known_good_file"
 log "promotion succeeded: $target_sha"
+append_automation_audit "completed" "Deployment succeeded for ${target_sha}"
 notify_deploy_success

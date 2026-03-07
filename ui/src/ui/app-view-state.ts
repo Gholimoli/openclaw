@@ -209,7 +209,17 @@ export type AppViewState = {
   automationLoading: boolean;
   automationError: string | null;
   automationRuns: AutomationRun[];
+  automationSelectedRunId: string | null;
+  automationSelectedRunLoading: boolean;
+  automationSelectedRunError: string | null;
+  automationSelectedRun: AutomationRun | null;
+  automationSelectedSteps: import("./types.ts").AutomationStep[];
+  automationSelectedAudit: import("./types.ts").AutomationAuditEntry[];
   officeFilterAgent: string;
+  officeFilterRepo: string;
+  officeFilterStatus: string;
+  officeFilterDateFrom: string;
+  officeFilterDateTo: string;
   officeFilterSource: string;
   officeFilterProposal: string;
   officeFilterRunClass: "all" | "auto_merge_low_risk" | "needs_review" | "reject_archive";
@@ -254,6 +264,9 @@ export type AppViewState = {
   loadEvolution: () => Promise<void>;
   loadOfficeSnapshot: (opts?: { quiet?: boolean }) => Promise<void>;
   loadAutomationRuns: (opts?: { quiet?: boolean; limit?: number }) => Promise<void>;
+  loadAutomationRunDetail: (runId: string, opts?: { quiet?: boolean }) => Promise<void>;
+  resumeAutomationRun: (runId: string) => Promise<void>;
+  cancelAutomationRun: (runId: string, reason?: string) => Promise<void>;
   toggleEvolutionPause: () => Promise<void>;
   actEvolutionProposal: (
     proposalId: string,

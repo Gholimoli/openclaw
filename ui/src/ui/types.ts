@@ -717,8 +717,11 @@ export type AutomationSpecPacket = {
   };
   implementation: {
     agentId: string;
-    primaryCli: "codex";
+    primaryCli: "codex" | "gemini";
     fallbackCli?: "gemini";
+    availableClis?: Array<"codex" | "gemini">;
+    accessMode?: "full-access";
+    authMode?: "hybrid";
     model?: string;
     fallbackModel?: string;
   };
@@ -747,8 +750,9 @@ export type AutomationRun = {
   plannerDisplayName?: string;
   plannerModel?: string;
   implementationAgentId: string;
-  implementationCli: "codex";
+  implementationCli: "codex" | "gemini";
   implementationFallbackCli?: "gemini";
+  implementationUsedCli?: "codex" | "gemini";
   implementationModel?: string;
   fallbackModel?: string;
   startedAtMs: number;
@@ -758,4 +762,38 @@ export type AutomationRun = {
   summary?: string;
   lastStepLabel?: string;
   lastApprovalId?: string;
+};
+
+export type AutomationStep = {
+  id: string;
+  runId: string;
+  ts: number;
+  status: "queued" | "running" | "completed" | "failed" | "awaiting_approval" | "skipped";
+  label: string;
+  detail?: string;
+  actor?: {
+    id: string;
+    type: "agent" | "tool" | "human" | "system" | "github-app";
+    label?: string;
+  };
+  command?: string;
+  exitCode?: number;
+  data?: Record<string, unknown>;
+};
+
+export type AutomationAuditEntry = {
+  id: string;
+  runId?: string;
+  ts: number;
+  kind: string;
+  status?: string;
+  message: string;
+  repo?: string;
+  branch?: string;
+  actor?: {
+    id: string;
+    type: "agent" | "tool" | "human" | "system" | "github-app";
+    label?: string;
+  };
+  data?: Record<string, unknown>;
 };

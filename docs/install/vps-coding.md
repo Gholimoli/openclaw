@@ -1,6 +1,6 @@
 ---
 title: "VPS Coding Automation"
-summary: "Security-first VPS setup: loopback Gateway, Telegram allowlist DMs, Tailscale Serve, and deterministic /work coding workflows."
+summary: "Security-first VPS setup: loopback Gateway, Ted-led /work automation, GitHub App repo access, and Codex-first sandboxed coding workflows."
 read_when:
   - You want an always-on Gateway on a VPS without public exposure
   - You want Telegram as the primary interface with strict approvals
@@ -13,9 +13,9 @@ This guide describes a hardened VPS setup that keeps the Gateway private and run
 
 This setup is designed for a common pattern:
 
-- You talk to OpenClaw over Telegram.
-- OpenClaw orchestrates approvals and routing.
-- Actual coding work is executed by CLI tools (for example Codex CLI, Gemini CLI, CodeRabbit CLI) inside a sandbox.
+- You talk to OpenClaw over Telegram or the Control UI.
+- The operator-facing `main` agent presents as Ted and handles repo intake, research, specs, approvals, and orchestration.
+- Actual coding work is executed by Codex CLI inside a sandboxed `coder` agent session, with Gemini CLI as fallback.
 - The Gateway stays private (loopback bind) and is accessed remotely via Tailscale, not a public reverse proxy.
 
 High-level goals:
@@ -23,7 +23,7 @@ High-level goals:
 - No public Gateway exposure (bind loopback).
 - Private remote access via Tailscale.
 - Telegram bot DMs locked down (owner allowlist by default) and no groups by default.
-- Deterministic workflows with explicit approvals (commit, push, merge).
+- Deterministic workflows with explicit approvals (sudo, commit, push, merge, deploy).
 
 Related:
 
@@ -41,10 +41,10 @@ Decisions:
 - One Ubuntu 24.04 VPS runs the OpenClaw Gateway.
 - The Gateway binds to `127.0.0.1` only (`gateway.bind: "loopback"`).
 - The Control UI is reachable only over a private network (Tailscale Serve recommended).
-- Telegram is the primary interface (DM owner allowlist, groups disabled).
-- Coding tool execution happens in a Docker sandbox (a dedicated `coder` agent).
+- Telegram is the primary interface (DM owner allowlist, groups disabled by default).
+- Ted plans and delegates coding tool execution to a Docker sandbox (a dedicated `coder` agent).
 - Multi-step automation uses Lobster workflows with resumable approval tokens.
-- Risky steps are approval-gated: commits, pushes, PR creation, merges (and any custom "side effect" step you add later).
+- Risky steps are approval-gated: host sudo, commits, pushes, PR creation, merges, and deploy-affecting actions.
 
 Rationale (why this shape works well):
 
@@ -110,7 +110,11 @@ TELEGRAM_BOT_TOKEN="..."
 TELEGRAM_OWNER_ID="123456789"
 OPENCLAW_GATEWAY_TOKEN="..."
 
-GH_TOKEN="..."
+GITHUB_APP_ID="..."
+GITHUB_APP_INSTALLATION_ID="..."
+GITHUB_APP_PRIVATE_KEY_FILE="$HOME/.openclaw/github-app.pem"
+OPENAI_API_KEY="..."
+GEMINI_API_KEY="..."
 CODERABBIT_API_KEY="..."
 
 GIT_AUTHOR_NAME="Your Name"
@@ -122,8 +126,8 @@ Notes:
 - `OPENCLAW_GATEWAY_TOKEN` is required if you use `/tools/invoke` from automation (for example via the Work plugin).
 - `TELEGRAM_OWNER_ID` is your numeric Telegram user id. If you don't know it yet, message the bot once and check:
   the bot's onboarding reply (it prints your user id). Then set `TELEGRAM_OWNER_ID` and restart the gateway.
-- For Codex CLI and Gemini CLI, you can often rely on their own auth flows (subscription/OAuth credentials on disk) instead of API keys. If you do use API keys, treat them as coding-environment secrets and keep them out of repos.
-- If you run coding CLIs inside a sandbox, those credentials must be available inside the sandbox (typically via env vars or read-only mounts).
+- `/work` prefers GitHub App auth and mints a short-lived installation token per run. Avoid a broad personal PAT for steady-state automation.
+- Keep interactive host logins separate from unattended `/work` runs. Use service credentials in the sandbox and only use host CLI logins for manual troubleshooting.
 
 ## Configure the Gateway
 
@@ -139,9 +143,10 @@ Key decisions in that config:
 
 - `gateway.bind: "loopback"` and token auth
 - Telegram DM owner allowlist, groups disabled, `configWrites: false`, and `streamMode: "off"`
-- `main` agent denies shell and write tools
-- `coder` agent runs tools in a Docker sandbox
-- `work` plugin enabled and wired to the `coder` session key
+- `main` keeps its internal id for compatibility but presents as Ted
+- `main` owns repo intake, specs, approvals, CI watching, and VPS troubleshooting dispatch
+- `coder` agent runs tools in a Docker sandbox and prefers Codex CLI with Gemini fallback
+- `work` plugin enabled and wired to the `coder` session key with GitHub App token minting
 
 ## Build a coder sandbox image
 
@@ -166,6 +171,28 @@ Security notes:
 
 - Keep the chat-facing `main` agent tool policy minimal and route all execution to the `coder` agent. This limits the blast radius of prompt injection in chat.
 - Keep `tools.elevated.enabled=false` unless you have a specific operational need. See [Elevated mode](/tools/elevated).
+
+## Manual host CLI login
+
+Use interactive CLI logins only for manual host sessions, not for unattended automation.
+
+The VPS pack includes a helper that starts a `tmux` session as the primary service user and launches a real TTY flow:
+
+```bash
+sudo bash ops/vps/login-coding-clis.sh codex
+sudo bash ops/vps/login-coding-clis.sh gh
+sudo bash ops/vps/login-coding-clis.sh gemini
+sudo bash ops/vps/login-coding-clis.sh agent
+```
+
+Use this when you need to:
+
+- verify Codex CLI device auth on the host
+- log `gh` into a manual operator session
+- do optional first-run Gemini setup
+- inspect the host-side agent CLI directly
+
+Keep the automated `/work` path on GitHub App plus `OPENAI_API_KEY` and `GEMINI_API_KEY`.
 
 ## Join Tailscale (recommended)
 
@@ -211,6 +238,19 @@ After your Telegram DM is allowed (see [Telegram](/channels/telegram)), use:
 /work task demo-repo add endpoint X
 /work upstream Gholimoli/openclaw --upstream openclaw/openclaw
 ```
+
+Repo intake accepts:
+
+- local repo names already synced under `~/work/repos`
+- `owner/repo`
+- full GitHub HTTPS URLs
+
+Each `/work task` or `/work fix` run now:
+
+- syncs the repo into `~/work/repos/<owner>/<repo>`
+- generates a structured spec packet
+- sends that packet directly to Codex CLI (with Gemini fallback)
+- records the selected CLI, available CLIs, auth mode, checks, approvals, and final outcome in the automation audit trail
 
 When a workflow needs approval, it returns a resume token.
 Resume from Telegram:
