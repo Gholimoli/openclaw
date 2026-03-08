@@ -34,6 +34,20 @@ describe("choice-buttons", () => {
     expect(parseTelegramChoiceCallbackData(callbackData ?? "")).toEqual({ choice: "off" });
   });
 
+  it("converts emphasized slash-separated choices into buttons when the text cues a menu", () => {
+    const text =
+      "Test approval request (harmless):\n- Command: `echo APPROVAL_TEST_3_OK`\n\nYou should see it show up as pending with **Approve / Deny**. Tap **Deny** first and tell me whether anything runs.";
+    expect(resolveTelegramAutoChoiceMenu(text)).toEqual({
+      text,
+      buttons: [
+        [
+          { text: "Approve", callback_data: "xcm1:Approve" },
+          { text: "Deny", callback_data: "xcm1:Deny" },
+        ],
+      ],
+    });
+  });
+
   it("requires remaining message text after stripping the options line", () => {
     expect(resolveTelegramAutoChoiceMenu("Options: yes, no.")).toBeNull();
   });

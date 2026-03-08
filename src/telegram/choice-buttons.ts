@@ -9,6 +9,10 @@ const MAX_CALLBACK_DATA_BYTES = 64;
 const OPTIONS_LINE_RE = /^Options:\s*(.+?)(?:\.)?$/i;
 const FORBIDDEN_OPTION_CHARS_RE = /[=|<>`]/;
 const SIMPLE_OPTION_RE = /^[A-Za-z0-9][A-Za-z0-9 ._+/-]{0,31}$/;
+const MENU_CUE_RE =
+  /\b(?:choose|select|pick|reply|respond|tap|press|with|using|pending|approval|approve|deny)\b/i;
+const EMPHASIZED_SLASH_OPTIONS_RE =
+  /(\*\*|__)([A-Za-z0-9][A-Za-z0-9 ._+-]{0,31}(?:\s*\/\s*[A-Za-z0-9][A-Za-z0-9 ._+-]{0,31}){1,5})\1/;
 
 function encodeChoice(choice: string): string | null {
   const trimmed = choice.trim();
@@ -55,6 +59,53 @@ function splitSimpleOptions(text: string): string[] | null {
     return null;
   }
   return Array.from(new Set(parts));
+}
+
+function splitSimpleSlashOptions(text: string): string[] | null {
+  if (FORBIDDEN_OPTION_CHARS_RE.test(text)) {
+    return null;
+  }
+  const parts = text
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length < 2 || parts.length > 6) {
+    return null;
+  }
+  if (!parts.every((part) => SIMPLE_OPTION_RE.test(part))) {
+    return null;
+  }
+  return Array.from(new Set(parts));
+}
+
+function resolveEmbeddedSlashChoiceMenu(text: string): {
+  text: string;
+  buttons: TelegramChoiceButtonRow[] | null;
+} | null {
+  const match = EMPHASIZED_SLASH_OPTIONS_RE.exec(text);
+  if (!match?.[2]) {
+    return null;
+  }
+
+  const matchIndex = match.index ?? -1;
+  const before = matchIndex >= 0 ? text.slice(Math.max(0, matchIndex - 120), matchIndex) : text;
+  if (!MENU_CUE_RE.test(before)) {
+    return null;
+  }
+
+  const choices = splitSimpleSlashOptions(match[2]);
+  if (!choices) {
+    return null;
+  }
+  const buttons = buildTelegramChoiceButtons(choices);
+  if (!buttons) {
+    return null;
+  }
+
+  return {
+    text,
+    buttons,
+  };
 }
 
 export function buildTelegramChoiceButtons(choices: string[]): TelegramChoiceButtonRow[] | null {
@@ -104,7 +155,7 @@ export function resolveTelegramAutoChoiceMenu(text: string | undefined): {
   const lastLine = lines[lastNonEmptyIndex]?.trim();
   const match = lastLine ? OPTIONS_LINE_RE.exec(lastLine) : null;
   if (!match?.[1]) {
-    return null;
+    return resolveEmbeddedSlashChoiceMenu(raw);
   }
 
   const choices = splitSimpleOptions(match[1]);
