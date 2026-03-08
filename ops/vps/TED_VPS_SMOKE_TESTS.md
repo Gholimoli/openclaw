@@ -2,7 +2,18 @@
 
 Run these checks on the VPS after a deploy or pipeline change.
 
-## 1. Confirm the live release
+## 1. Confirm the live config
+
+```bash
+sudo -u openclaw bash -lc 'cd ~/openclaw-current && bash ops/vps/verify-coding-pack-config.sh'
+```
+
+Expected:
+
+- the verifier prints `OK`
+- Ted still has an approval-capable coding-pack config (Telegram allowlist, `work` enabled, and `main` can request `exec` approvals)
+
+## 2. Confirm the live release
 
 ```bash
 sudo -u openclaw bash -lc 'readlink -f ~/openclaw-current && git -C ~/openclaw-current rev-parse --short HEAD'
@@ -16,7 +27,7 @@ Expected:
 - `/health` returns `{"ok":true}`
 - Telegram shows `running` and `works`
 
-## 2. Confirm only one live gateway process
+## 3. Confirm only one live gateway process
 
 ```bash
 ss -ltnp | grep 127.0.0.1:18789
@@ -28,7 +39,7 @@ Expected:
 - one listener on `127.0.0.1:18789`
 - one live `openclaw-gateway` process for the production lane
 
-## 3. Ted `/work` smoke test
+## 4. Ted `/work` smoke test
 
 In Telegram DM with Ted:
 
@@ -43,7 +54,7 @@ Expected:
 - a structured spec packet is generated before coder execution
 - coder uses Codex first and records the selected CLI in the run audit
 
-## 4. Approval flow smoke test
+## 5. Approval flow smoke test
 
 Trigger a host action that requires approval, for example:
 
@@ -58,7 +69,7 @@ Expected:
 - the message still includes the resume token and manual `/work resume ...` fallback
 - the same approval appears in the Office view
 
-## 4b. Choice menu smoke test
+## 5b. Choice menu smoke test
 
 Trigger a Ted question that offers simple discrete options, for example a status
 toggle or follow-up clarification that ends with `Options: ...`.
@@ -69,7 +80,7 @@ Expected:
 - tapping one clears the buttons
 - the selected option is routed back to Ted as user input
 
-## 5. Control UI smoke test
+## 6. Control UI smoke test
 
 Open the Control UI and verify:
 
@@ -78,7 +89,7 @@ Open the Control UI and verify:
 - filters by repo and status work
 - resume and cancel actions are visible for eligible runs
 
-## 6. Manual CLI login smoke test
+## 7. Manual CLI login smoke test
 
 These are interactive host-only flows. They are separate from unattended `/work` runs.
 
@@ -95,7 +106,7 @@ Expected:
 - you can attach and complete the login in a real TTY
 - Codex, GitHub CLI, Gemini CLI, and agent stay usable after login
 
-## 7. Merge gate smoke test
+## 8. Merge gate smoke test
 
 Use a test PR and confirm `/work merge` blocks:
 
@@ -108,7 +119,7 @@ Expected:
 - Ted reports the exact blocking condition
 - no merge occurs until the gate is satisfied
 
-## 8. Deploy evidence smoke test
+## 9. Deploy evidence smoke test
 
 After a real merge-to-main deploy:
 

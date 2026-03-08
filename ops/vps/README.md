@@ -33,6 +33,8 @@ This folder is the “implementation bundle” for the secure VPS setup + `/work
   - Build as `openclaw-sandbox-coder:bookworm` and set in config.
 - `ops/vps/bootstrap-ubuntu24.sh`
   - Idempotent-ish bootstrap to install Docker, Tailscale, OpenClaw, host Codex/Gemini/Cursor/gcloud/x-cli tooling, and build the sandbox image.
+- `ops/vps/verify-coding-pack-config.sh`
+  - Verifies the live `openclaw.json` still matches the Ted VPS coding-pack guardrails before you trust deploys or approval tests.
 - `ops/vps/configure-coding-clis.sh`
   - Seeds Ted workspace guidance, Codex/Gemini full-access defaults, helper wrappers, and optional X/gcloud auth.
 - `ops/vps/login-coding-clis.sh`
@@ -49,6 +51,7 @@ This folder is the “implementation bundle” for the secure VPS setup + `/work
 - This pack assumes you run the Gateway on the VPS (single-host mode) and decommission Railway after cutover.
 - The `/work` plugin is bundled under `extensions/work` but **disabled by default**; config enables it.
 - Treat `~/openclaw-current` as the authoritative production runtime for this VPS pack. The deploy flow promotes that symlink and rewrites the host `openclaw` shim to point there.
+- `ops/vps/promote-release.sh` now verifies the live `~/.openclaw/openclaw.json` before restart so Ted cannot silently run against an older non-coding config.
 - The bootstrap script installs Tailscale but does not join your tailnet; run `tailscale up` manually.
 - Repo intake defaults to `~/work/repos/<owner>/<repo>`.
 - Manual CLI login is for operator sessions only. Keep unattended `/work` runs on GitHub App + service credentials rather than interactive host logins.

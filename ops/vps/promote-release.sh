@@ -22,6 +22,7 @@ Environment overrides:
   OPENCLAW_STABILITY_SECONDS              Stability window seconds (default: 45)
   OPENCLAW_CHANNELS_PROBE_TIMEOUT_SECONDS channels status probe timeout (default: 90)
   OPENCLAW_RUN_CHANNELS_PROBE             1 to run probe, 0 to skip (default: 1)
+  OPENCLAW_VERIFY_VPS_CODING_PACK_CONFIG  1 to verify the live config matches the VPS coding pack guardrails, 0 to skip (default: 1)
 EOF
 }
 
@@ -187,6 +188,19 @@ run_channels_probe() {
   timeout "${channels_probe_timeout_seconds}s" openclaw channels status --probe >/tmp/openclaw-channels-probe.log 2>&1
 }
 
+run_pack_config_verify() {
+  if [[ "$verify_vps_coding_pack_config" != "1" ]]; then
+    log "VPS coding-pack config verification disabled (OPENCLAW_VERIFY_VPS_CODING_PACK_CONFIG=$verify_vps_coding_pack_config)"
+    return 0
+  fi
+
+  local verify_script="$1/ops/vps/verify-coding-pack-config.sh"
+  [[ -x "$verify_script" ]] || fail "config verify script is missing or not executable: $verify_script"
+
+  log "verifying live VPS coding-pack config"
+  "$verify_script" >/tmp/openclaw-vps-config-verify.log 2>&1
+}
+
 notify_deploy_success() {
   if ! command -v openclaw >/dev/null 2>&1; then
     warn "openclaw CLI not found; skipping deploy success notification"
@@ -219,7 +233,7 @@ run_candidate_preflight() {
   (
     cd "$candidate_dir"
     OPENCLAW_STATE_DIR="$preflight_state_dir" \
-      pnpm openclaw gateway \
+      node "$candidate_dir/openclaw.mjs" gateway \
         --allow-unconfigured \
         --bind loopback \
         --port "$preflight_port" \
@@ -324,6 +338,7 @@ health_timeout_seconds="${OPENCLAW_HEALTH_TIMEOUT_SECONDS:-90}"
 stability_seconds="${OPENCLAW_STABILITY_SECONDS:-45}"
 channels_probe_timeout_seconds="${OPENCLAW_CHANNELS_PROBE_TIMEOUT_SECONDS:-90}"
 run_channels_probe_enabled="${OPENCLAW_RUN_CHANNELS_PROBE:-1}"
+verify_vps_coding_pack_config="${OPENCLAW_VERIFY_VPS_CODING_PACK_CONFIG:-1}"
 
 require_cmd git
 require_cmd pnpm
@@ -365,6 +380,7 @@ before_restarts="$(read_restart_count)"
 log "promoting release to live symlink: $release_dir"
 set_current_link "$release_dir"
 sync_openclaw_cli_shim "$release_dir"
+run_pack_config_verify "$release_dir"
 
 if ! systemctl --user restart "$gateway_service"; then
   rollback_and_fail "gateway restart failed after promotion"

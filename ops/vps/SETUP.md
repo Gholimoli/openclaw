@@ -119,6 +119,7 @@ Copy the config template:
 ```bash
 mkdir -p ~/.openclaw
 cp ops/vps/openclaw.vps-coding.json5 ~/.openclaw/openclaw.json
+bash ops/vps/verify-coding-pack-config.sh
 ```
 
 Key decisions in this config:
@@ -376,9 +377,10 @@ Workflow:
 Deploy notifications:
 
 - Trigger a successful deploy (`.github/workflows/vps-deploy.yml` via push to `main` or manual dispatch).
+- Confirm `bash ops/vps/verify-coding-pack-config.sh` passes on the host after the deploy.
 - Confirm Telegram receives one success notification including UTC time, commit hash, host, and service details.
 - Confirm failed deploys do not emit a false success message.
-- Confirm `ops/vps/promote-release.sh` appends the deploy outcome to the automation audit store so deploy evidence appears in the same run/audit surfaces.
+- Confirm `ops/vps/promote-release.sh` appends the deploy outcome to the automation audit store and fails if the live config drifts away from the Ted VPS coding-pack guardrails.
 
 ## 11. “Idea -> source” traceability (external)
 
