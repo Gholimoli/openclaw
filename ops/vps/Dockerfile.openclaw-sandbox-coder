@@ -12,6 +12,15 @@ FROM ${BASE_IMAGE}
 USER root
 
 ENV DEBIAN_FRONTEND=noninteractive
+ARG INSTALL_SUMMARIZE=0
+
+# Be resilient to stale/mismatched base tags that do not already define the
+# expected sandbox user.
+RUN if ! id -u sandbox >/dev/null 2>&1; then \
+    useradd --create-home --shell /bin/bash sandbox; \
+  fi \
+  && mkdir -p /home/sandbox \
+  && chown -R sandbox:sandbox /home/sandbox
 
 # GitHub CLI + core tooling
 RUN apt-get update \
@@ -56,10 +65,15 @@ RUN su sandbox -c 'export HOME=/home/sandbox PATH="$HOME/.local/bin:$PATH"; curl
 RUN pipx install "git+https://github.com/INFATOSHI/x-cli.git" \
   && ln -sf /root/.local/bin/x-cli /usr/local/bin/x-cli
 
+# The sandbox mounts repos owned by the host service user, so treat mounted
+# worktrees as safe inside this disposable container.
+RUN git config --system safe.directory '*'
+
 # Seed permissive coding-agent defaults inside the sandbox. OpenClaw approvals still
 # apply outside this container; these defaults only affect the nested coding CLIs.
 RUN install -d -m 0755 /home/sandbox/.codex /home/sandbox/.gemini/policies \
-  && printf 'approval_policy = "never"\nsandbox_mode = "danger-full-access"\n' \
+  && install -d -m 0777 /tmp/openclaw-home /tmp/openclaw-home/.config /tmp/openclaw-home/.cache /tmp/openclaw-home/.local/state \
+  && printf 'approval_policy = "never"\nsandbox_mode = "danger-full-access"\nreasoning_effort = "high"\n' \
     > /home/sandbox/.codex/config.toml \
   && printf '[[rule]]\ntoolName = "*"\ndecision = "allow"\npriority = 1000\n' \
     > /home/sandbox/.gemini/policies/openclaw-yolo.toml \
@@ -75,16 +89,20 @@ RUN install -d -m 0755 /home/sandbox/.codex /home/sandbox/.gemini/policies \
 # Optional: summarize (compact diffs/logs into fix lists).
 # This is installed via Homebrew because the official distribution is shipped as a brew formula.
 # If you don't need it, remove this block to speed up builds.
-RUN brew install steipete/tap/summarize \
-  && (command -v summarize >/dev/null 2>&1 || (echo "summarize not on PATH after install" >&2 && exit 1))
+RUN if [ "${INSTALL_SUMMARIZE}" = "1" ]; then \
+    su - linuxbrew -c 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv bash)" && brew install steipete/tap/summarize' \
+    && ln -sf /home/linuxbrew/.linuxbrew/bin/summarize /usr/local/bin/summarize \
+    && (command -v summarize >/dev/null 2>&1 || (echo "summarize not on PATH after install" >&2 && exit 1)); \
+  fi
 
 # CodeRabbit CLI (install script)
 RUN curl -fsSL https://cli.coderabbit.ai/install.sh | sh \
-  && (command -v coderabbit >/dev/null 2>&1 || (echo "coderabbit not on PATH after install" >&2 && exit 1)) \
-  && CODERABBIT_BIN="$(command -v coderabbit)" \
+  && CODERABBIT_BIN="$(command -v coderabbit || true)" \
+  && if [ -z "$CODERABBIT_BIN" ] && [ -x /root/.local/bin/coderabbit ]; then CODERABBIT_BIN=/root/.local/bin/coderabbit; fi \
+  && if [ -z "$CODERABBIT_BIN" ]; then echo "coderabbit not on PATH after install" >&2; exit 1; fi \
   && cp "$CODERABBIT_BIN" /usr/local/bin/coderabbit \
   && chmod +x /usr/local/bin/coderabbit \
-  && /usr/local/bin/coderabbit --version >/dev/null 2>&1 || true
+  && /usr/local/bin/coderabbit --version >/dev/null 2>&1
 
 USER sandbox
 WORKDIR /home/sandbox

@@ -251,17 +251,16 @@ export async function refreshActiveTab(host: SettingsHost) {
     host.eventLog = host.eventLogBuffer;
   }
   if (host.tab === "office") {
+    const officeHost = host as unknown as OpenClawApp;
     await Promise.all([
-      loadAutomationRuns(host as unknown as OpenClawApp, { quiet: true }),
-      loadEvolution(host as unknown as OpenClawApp),
-      loadOfficeSnapshot(host as unknown as OpenClawApp),
+      loadAutomationRuns(officeHost, { quiet: true }),
+      loadEvolution(officeHost),
+      loadOfficeSnapshot(officeHost),
     ]);
-    if ((host as OpenClawApp).automationSelectedRunId) {
-      await loadAutomationRunDetail(
-        host as unknown as OpenClawApp,
-        (host as OpenClawApp).automationSelectedRunId!,
-        { quiet: true },
-      );
+    if (officeHost.automationSelectedRunId) {
+      await loadAutomationRunDetail(officeHost, officeHost.automationSelectedRunId, {
+        quiet: true,
+      });
     }
   }
   if (host.tab === "logs") {

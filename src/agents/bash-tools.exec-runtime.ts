@@ -103,6 +103,12 @@ export const execSchema = Type.Object({
   command: Type.String({ description: "Shell command to execute" }),
   workdir: Type.Optional(Type.String({ description: "Working directory (defaults to cwd)" })),
   env: Type.Optional(Type.Record(Type.String(), Type.String())),
+  allowFailure: Type.Optional(
+    Type.Boolean({
+      description:
+        "Return failed status/exitCode instead of raising when the command exits non-zero",
+    }),
+  ),
   yieldMs: Type.Optional(
     Type.Number({
       description: "Milliseconds to wait before backgrounding (default 10000)",

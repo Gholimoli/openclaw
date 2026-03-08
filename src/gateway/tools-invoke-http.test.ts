@@ -51,7 +51,7 @@ vi.mock("../plugins/tools.js", () => ({
 
 // Perf: the real tool factory instantiates many tools per request; for these HTTP
 // routing/policy tests we only need a small set of tool names.
-vi.mock("../agents/openclaw-tools.js", () => {
+vi.mock("../agents/pi-tools.js", () => {
   const toolInputError = (message: string) => {
     const err = new Error(message);
     err.name = "ToolInputError";
@@ -59,6 +59,16 @@ vi.mock("../agents/openclaw-tools.js", () => {
   };
 
   const tools = [
+    {
+      name: "exec",
+      parameters: {
+        type: "object",
+        properties: {
+          command: { type: "string" },
+        },
+      },
+      execute: async () => ({ ok: true, details: { exitCode: 0 } }),
+    },
     {
       name: "session_status",
       parameters: { type: "object", properties: {} },
@@ -110,9 +120,13 @@ vi.mock("../agents/openclaw-tools.js", () => {
   ];
 
   return {
-    createOpenClawTools: () => tools,
+    createOpenClawCodingTools: () => tools,
   };
 });
+
+vi.mock("../agents/sandbox.js", () => ({
+  resolveSandboxContext: async () => null,
+}));
 
 const { handleToolsInvokeHttpRequest } = await import("./tools-invoke-http.js");
 
@@ -368,6 +382,38 @@ describe("POST /tools/invoke", () => {
     expect(body.error.type).toBe("not_found");
   });
 
+  it("allows exec when the target agent policy explicitly allows it", async () => {
+    cfg = {
+      agents: {
+        list: [
+          {
+            id: "coder",
+            tools: {
+              profile: "coding",
+              allow: ["exec"],
+            },
+          },
+        ],
+      },
+    };
+
+    const token = resolveGatewayToken();
+
+    const res = await invokeTool({
+      port: sharedPort,
+      tool: "exec",
+      args: { command: "pwd" },
+      headers: { authorization: `Bearer ${token}` },
+      sessionKey: "agent:coder:main",
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      result: { ok: true, details: { exitCode: 0 } },
+    });
+  });
+
   it("denies sessions_send via HTTP gateway", async () => {
     cfg = {
       ...cfg,
@@ -528,5 +574,6 @@ describe("POST /tools/invoke", () => {
     expect(crashBody.ok).toBe(false);
     expect(crashBody.error?.type).toBe("tool_error");
     expect(crashBody.error?.message).toBe("tool execution failed");
+    expect(crashBody.error?.details).toBe("boom");
   });
 });

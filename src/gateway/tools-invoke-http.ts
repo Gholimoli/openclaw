@@ -1,16 +1,17 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AuthRateLimiter } from "./auth-rate-limit.js";
-import { createOpenClawTools } from "../agents/openclaw-tools.js";
+import { createOpenClawCodingTools } from "../agents/pi-tools.js";
 import {
   resolveEffectiveToolPolicy,
   resolveGroupToolPolicy,
   resolveSubagentToolPolicy,
 } from "../agents/pi-tools.policy.js";
+import { resolveSandboxContext } from "../agents/sandbox.js";
 import {
   applyToolPolicyPipeline,
   buildDefaultToolPolicyPipelineSteps,
 } from "../agents/tool-policy-pipeline.js";
-import { collectExplicitAllowlist, resolveToolProfilePolicy } from "../agents/tool-policy.js";
+import { resolveToolProfilePolicy } from "../agents/tool-policy.js";
 import { ToolInputError } from "../agents/tools/common.js";
 import { loadConfig } from "../config/config.js";
 import { resolveMainSessionKey } from "../config/sessions.js";
@@ -237,22 +238,21 @@ export async function handleToolsInvokeHttpRequest(
     ? resolveSubagentToolPolicy(cfg)
     : undefined;
 
-  // Build tool list (core + plugin tools).
-  const allTools = createOpenClawTools({
-    agentSessionKey: sessionKey,
-    agentChannel: messageChannel ?? undefined,
-    agentAccountId: accountId,
+  const sandbox = await resolveSandboxContext({
     config: cfg,
-    pluginToolAllowlist: collectExplicitAllowlist([
-      profilePolicy,
-      providerProfilePolicy,
-      globalPolicy,
-      globalProviderPolicy,
-      agentPolicy,
-      agentProviderPolicy,
-      groupPolicy,
-      subagentPolicy,
-    ]),
+    sessionKey,
+  });
+
+  // Build tool list using the same coding-tool factory as agent runs so
+  // session-targeted exec/fs tools inherit sandbox routing correctly.
+  const allTools = createOpenClawCodingTools({
+    sessionKey,
+    messageProvider: messageChannel ?? undefined,
+    agentAccountId: accountId ?? undefined,
+    sandbox,
+    config: cfg,
+    disableMessageTool: false,
+    requireExplicitMessageTarget: false,
   });
 
   const subagentFiltered = applyToolPolicyPipeline({
@@ -317,9 +317,10 @@ export async function handleToolsInvokeHttpRequest(
       return true;
     }
     logWarn(`tools-invoke: tool execution failed: ${String(err)}`);
+    const detail = getErrorMessage(err) || String(err);
     sendJson(res, 500, {
       ok: false,
-      error: { type: "tool_error", message: "tool execution failed" },
+      error: { type: "tool_error", message: "tool execution failed", details: detail },
     });
   }
 

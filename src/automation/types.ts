@@ -43,8 +43,9 @@ export type AutomationSpecPacket = {
     fallbackCli?: "gemini";
     availableClis?: string[];
     accessMode?: "full-access";
-    authMode?: "hybrid";
+    authMode?: "hybrid" | "oauth-first";
     model?: string;
+    secondaryModel?: string;
     fallbackModel?: string;
   };
 };

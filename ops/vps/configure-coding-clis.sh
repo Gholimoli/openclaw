@@ -58,6 +58,7 @@ install -d -m 0755 -o "$PRIMARY_USER" -g "$PRIMARY_USER" "$PRIMARY_HOME/.codex"
 cat > "$PRIMARY_HOME/.codex/config.toml" <<'EOF'
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
+reasoning_effort = "high"
 EOF
 chown "$PRIMARY_USER":"$PRIMARY_USER" "$PRIMARY_HOME/.codex/config.toml"
 

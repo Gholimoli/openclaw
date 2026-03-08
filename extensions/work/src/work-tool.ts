@@ -9,6 +9,7 @@ import {
   resolveWorkflowsDir,
   runWorkLobster,
 } from "./run-lobster.js";
+import { runWorkctlJson } from "./run-workctl.js";
 
 function defaultNumber(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
@@ -56,6 +57,191 @@ function resolveCoderSessionKey(api: OpenClawPluginApi): string {
   return resolveConfigString(api.pluginConfig?.coderSessionKey) ?? "agent:coder:main";
 }
 
+function resolveModelPrimary(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return resolveConfigString(value);
+  }
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  return resolveConfigString((value as { primary?: unknown }).primary);
+}
+
+function resolveModelFallbacks(value: unknown): string[] {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+  const fallbacks = (value as { fallbacks?: unknown }).fallbacks;
+  if (!Array.isArray(fallbacks)) {
+    return [];
+  }
+  return fallbacks
+    .map((entry) => resolveConfigString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+}
+
+type ResolvedModelConfig = {
+  primary?: string;
+  fallbacks: string[];
+};
+
+function resolveModelConfig(value: unknown): ResolvedModelConfig {
+  return {
+    primary: resolveModelPrimary(value),
+    fallbacks: resolveModelFallbacks(value),
+  };
+}
+
+function normalizeCliModelRef(
+  value: string | undefined,
+  providers: readonly string[],
+): string | undefined {
+  const raw = resolveConfigString(value);
+  if (!raw) {
+    return undefined;
+  }
+  const lower = raw.toLowerCase();
+  for (const provider of providers) {
+    const prefix = `${provider.toLowerCase()}/`;
+    if (lower.startsWith(prefix)) {
+      return raw.slice(prefix.length).trim() || undefined;
+    }
+  }
+  return raw;
+}
+
+function normalizeCodexCliModelRef(value: string | undefined): string | undefined {
+  return normalizeCliModelRef(value, ["openai-codex", "openai"]);
+}
+
+function normalizeGeminiCliModelRef(value: string | undefined): string | undefined {
+  return normalizeCliModelRef(value, ["google-gemini-cli"]);
+}
+
+function isGeminiRuntimeModelRef(value: string): boolean {
+  return value.toLowerCase().startsWith("google-gemini-cli/");
+}
+
+function normalizePlannerModelRef(value: string | undefined): string | undefined {
+  const raw = resolveConfigString(value);
+  if (!raw) {
+    return undefined;
+  }
+  return raw;
+}
+
+function resolveConfiguredAgentModel(
+  config: OpenClawPluginToolContext["config"] | OpenClawPluginApi["config"],
+  agentId: string | undefined,
+): ResolvedModelConfig {
+  if (!config || typeof config !== "object") {
+    return { primary: undefined, fallbacks: [] };
+  }
+  const agents = (config as { agents?: unknown }).agents;
+  if (!agents || typeof agents !== "object") {
+    return { primary: undefined, fallbacks: [] };
+  }
+
+  const list = Array.isArray((agents as { list?: unknown }).list)
+    ? ((agents as { list?: unknown[] }).list ?? [])
+    : [];
+  if (agentId) {
+    const match = list.find(
+      (entry) =>
+        entry &&
+        typeof entry === "object" &&
+        resolveConfigString((entry as { id?: unknown }).id) === agentId,
+    ) as { model?: unknown } | undefined;
+    const override = resolveModelConfig(match?.model);
+    if (override.primary || override.fallbacks.length > 0) {
+      return {
+        primary: normalizePlannerModelRef(override.primary),
+        fallbacks: override.fallbacks
+          .map((entry) => normalizePlannerModelRef(entry))
+          .filter((entry): entry is string => Boolean(entry)),
+      };
+    }
+  }
+
+  const defaults = (agents as { defaults?: unknown }).defaults;
+  if (!defaults || typeof defaults !== "object") {
+    return { primary: undefined, fallbacks: [] };
+  }
+  const resolved = resolveModelConfig((defaults as { model?: unknown }).model);
+  return {
+    primary: normalizePlannerModelRef(resolved.primary),
+    fallbacks: resolved.fallbacks
+      .map((entry) => normalizePlannerModelRef(entry))
+      .filter((entry): entry is string => Boolean(entry)),
+  };
+}
+
+function resolveConfiguredPlannerModel(
+  config: OpenClawPluginToolContext["config"] | OpenClawPluginApi["config"],
+  agentId: string | undefined,
+): string | undefined {
+  return resolveConfiguredAgentModel(config, agentId).primary;
+}
+
+function resolvePlannerModel(
+  api: OpenClawPluginApi,
+  ctx: OpenClawPluginToolContext,
+  params: Record<string, unknown>,
+): string | undefined {
+  const explicit = resolveConfigString(params.plannerModel);
+  if (explicit) {
+    return explicit;
+  }
+  const pluginDefault = resolveConfigString(api.pluginConfig?.plannerModel);
+  if (pluginDefault) {
+    return pluginDefault;
+  }
+  const cfg = ctx.config ?? api.config;
+  if (!cfg) {
+    return undefined;
+  }
+  return resolveConfiguredPlannerModel(cfg, ctx.agentId);
+}
+
+function pickFirstModelRef(values: string[], prefixes: string[]): string | undefined {
+  for (const value of values) {
+    const normalized = value.toLowerCase();
+    if (prefixes.some((prefix) => normalized.startsWith(prefix))) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function resolveImplementationModelDefaults(
+  api: OpenClawPluginApi,
+  ctx: OpenClawPluginToolContext,
+): {
+  implementationModel?: string;
+  implementationFallbackModel?: string;
+  fallbackModel?: string;
+} {
+  const cfg = ctx.config ?? api.config;
+  const coderModel = resolveConfiguredAgentModel(cfg, "coder");
+  const allRefs = [coderModel.primary, ...coderModel.fallbacks].filter((entry): entry is string =>
+    Boolean(entry),
+  );
+  const implementationModel =
+    pickFirstModelRef(allRefs, ["openai-codex/", "openai/"]) ?? coderModel.primary ?? allRefs[0];
+  const implementationFallbackModel = coderModel.fallbacks.find(
+    (entry) => entry !== implementationModel && !isGeminiRuntimeModelRef(entry),
+  );
+  const fallbackModel = pickFirstModelRef(
+    coderModel.fallbacks.filter((entry) => entry !== implementationFallbackModel),
+    ["google-gemini-cli/"],
+  );
+  return {
+    implementationModel: normalizeCodexCliModelRef(implementationModel),
+    implementationFallbackModel: normalizeCodexCliModelRef(implementationFallbackModel),
+    fallbackModel: normalizeGeminiCliModelRef(fallbackModel),
+  };
+}
+
 function resolveMaxFixLoops(api: OpenClawPluginApi): number {
   const n = defaultNumber(api.pluginConfig?.maxFixLoops, 3);
   return Math.min(Math.max(1, n), 10);
@@ -79,6 +265,65 @@ function jsonResult(envelope: WorkEnvelope): AgentToolResult<WorkEnvelope> {
   return {
     content: [{ type: "text", text: JSON.stringify(envelope, null, 2) }],
     details: envelope,
+  };
+}
+
+async function runDirectWorkAction(params: {
+  action: "review" | "fix";
+  workctlPath: string;
+  repo: string;
+  repoDir: string;
+  workRoot: string;
+  base: string;
+  coderSessionKey: string;
+  maxFixLoops: number;
+  implementationModel?: string;
+  implementationFallbackModel?: string;
+  fallbackModel?: string;
+  timeoutMs: number;
+  maxStdoutBytes: number;
+}): Promise<WorkEnvelope> {
+  const cwd = process.cwd();
+  await runWorkctlJson({
+    workctlPath: params.workctlPath,
+    subcommand: "ensure-repo",
+    args: {
+      repo: params.repo,
+      "work-root": params.workRoot,
+      base: params.base,
+      "session-key": params.coderSessionKey,
+    },
+    cwd,
+    timeoutMs: params.timeoutMs,
+    maxStdoutBytes: params.maxStdoutBytes,
+  });
+
+  const result = await runWorkctlJson({
+    workctlPath: params.workctlPath,
+    subcommand: params.action,
+    args: {
+      "repo-dir": params.repoDir,
+      base: params.base,
+      ...(params.action === "fix"
+        ? {
+            "max-fix-loops": params.maxFixLoops,
+            "implementation-model": params.implementationModel,
+            "implementation-fallback-model": params.implementationFallbackModel,
+            "fallback-model": params.fallbackModel,
+          }
+        : {}),
+      "session-key": params.coderSessionKey,
+    },
+    cwd,
+    timeoutMs: params.timeoutMs,
+    maxStdoutBytes: params.maxStdoutBytes,
+  });
+
+  return {
+    ok: true,
+    status: "ok",
+    output: [result],
+    requiresApproval: null,
   };
 }
 
@@ -111,6 +356,9 @@ export function createWorkTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolCo
       ),
       implementationModel: Type.Optional(
         Type.String({ description: "Primary implementation model override for Codex CLI." }),
+      ),
+      implementationFallbackModel: Type.Optional(
+        Type.String({ description: "Secondary Codex model override before Gemini fallback." }),
       ),
       fallbackModel: Type.Optional(
         Type.String({ description: "Fallback implementation model override for Gemini CLI." }),
@@ -151,21 +399,39 @@ export function createWorkTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolCo
 
       const workflowsDir = resolveWorkflowsDir();
       const workflowPath = path.join(workflowsDir, `work-${action}.lobster.yml`);
+      const workctlPath = resolveWorkctlPath();
 
       const workRoot = resolveWorkRoot(api);
       const base =
         typeof params.base === "string" && params.base.trim()
           ? params.base.trim()
           : resolveDefaultBase(api);
+      const maxFixLoops = resolveMaxFixLoops(api);
+      const coderSessionKey = resolveCoderSessionKey(api);
+      const plannerModel = resolvePlannerModel(api, ctx, params);
+      const implementationDefaults = resolveImplementationModelDefaults(api, ctx);
+      const implementationModel =
+        typeof params.implementationModel === "string" && params.implementationModel.trim()
+          ? normalizeCodexCliModelRef(params.implementationModel)
+          : implementationDefaults.implementationModel;
+      const implementationFallbackModel =
+        typeof params.implementationFallbackModel === "string" &&
+        params.implementationFallbackModel.trim()
+          ? normalizeCodexCliModelRef(params.implementationFallbackModel)
+          : implementationDefaults.implementationFallbackModel;
+      const fallbackModel =
+        typeof params.fallbackModel === "string" && params.fallbackModel.trim()
+          ? normalizeGeminiCliModelRef(params.fallbackModel)
+          : implementationDefaults.fallbackModel;
 
       const args: Record<string, unknown> = {
         workRoot,
         base,
-        maxFixLoops: resolveMaxFixLoops(api),
+        maxFixLoops,
         agentId: ctx.agentId,
         workspaceDir: ctx.workspaceDir,
-        workctlPath: resolveWorkctlPath(),
-        coderSessionKey: resolveCoderSessionKey(api),
+        workctlPath,
+        coderSessionKey,
       };
 
       if (action === "new") {
@@ -183,6 +449,30 @@ export function createWorkTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolCo
         args.repoDir = path.join(workRoot, repoRelativePath(repo));
       }
 
+      if (action === "review" || action === "fix") {
+        const repo = typeof args.repo === "string" ? args.repo : "";
+        const repoDir = typeof args.repoDir === "string" ? args.repoDir : "";
+        if (!repo || !repoDir) {
+          throw new Error("repo required");
+        }
+        const envelope = await runDirectWorkAction({
+          action,
+          workctlPath,
+          repo,
+          repoDir,
+          workRoot,
+          base,
+          coderSessionKey,
+          maxFixLoops,
+          implementationModel,
+          implementationFallbackModel,
+          fallbackModel,
+          timeoutMs,
+          maxStdoutBytes,
+        });
+        return jsonResult(envelope);
+      }
+
       if (action === "task") {
         const message = typeof params.message === "string" ? params.message.trim() : "";
         if (!message) {
@@ -191,14 +481,17 @@ export function createWorkTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolCo
         args.message = message;
       }
 
-      if (typeof params.plannerModel === "string" && params.plannerModel.trim()) {
-        args.plannerModel = params.plannerModel.trim();
+      if (plannerModel) {
+        args.plannerModel = plannerModel;
       }
-      if (typeof params.implementationModel === "string" && params.implementationModel.trim()) {
-        args.implementationModel = params.implementationModel.trim();
+      if (implementationModel) {
+        args.implementationModel = implementationModel;
       }
-      if (typeof params.fallbackModel === "string" && params.fallbackModel.trim()) {
-        args.fallbackModel = params.fallbackModel.trim();
+      if (implementationFallbackModel) {
+        args.implementationFallbackModel = implementationFallbackModel;
+      }
+      if (fallbackModel) {
+        args.fallbackModel = fallbackModel;
       }
 
       if (action === "merge") {

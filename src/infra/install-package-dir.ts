@@ -11,6 +11,7 @@ export async function installPackageDir(params: {
   copyErrorPrefix: string;
   hasDeps: boolean;
   depsLogMessage: string;
+  copyFilter?: (sourcePath: string) => boolean;
   afterCopy?: () => void | Promise<void>;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   params.logger?.info?.(`Installing to ${params.targetDir}…`);
@@ -29,7 +30,10 @@ export async function installPackageDir(params: {
   };
 
   try {
-    await fs.cp(params.sourceDir, params.targetDir, { recursive: true });
+    await fs.cp(params.sourceDir, params.targetDir, {
+      recursive: true,
+      filter: (sourcePath) => params.copyFilter?.(sourcePath) ?? true,
+    });
   } catch (err) {
     await rollback();
     return { ok: false, error: `${params.copyErrorPrefix}: ${String(err)}` };

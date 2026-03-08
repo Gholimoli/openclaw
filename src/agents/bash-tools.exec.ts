@@ -156,6 +156,7 @@ export function createExecTool(
         command: string;
         workdir?: string;
         env?: Record<string, string>;
+        allowFailure?: boolean;
         yieldMs?: number;
         background?: boolean;
         timeout?: number;
@@ -947,7 +948,7 @@ export function createExecTool(
             if (yielded || run.session.backgrounded) {
               return;
             }
-            if (outcome.status === "failed") {
+            if (outcome.status === "failed" && params.allowFailure !== true) {
               reject(new Error(outcome.reason ?? "Command failed."));
               return;
             }
@@ -959,7 +960,7 @@ export function createExecTool(
                 },
               ],
               details: {
-                status: "completed",
+                status: outcome.status,
                 exitCode: outcome.exitCode ?? 0,
                 durationMs: outcome.durationMs,
                 aggregated: outcome.aggregated,

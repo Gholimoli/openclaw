@@ -70,12 +70,19 @@
 
   // Enable bundled plugins explicitly.
   plugins: {
+    // Production path: use the bundled work plugin from the live OpenClaw
+    // runtime (for this VPS pack, ~/openclaw-current). Do not add
+    // plugins.load.paths for work here.
     entries: {
+      "google-gemini-cli-auth": {
+        enabled: true,
+      },
       work: {
         enabled: true,
         config: {
           // Prefer absolute lobsterPath in production (reduces PATH hijack risk).
-          // lobsterPath: "/usr/local/bin/lobster",
+          // Ubuntu bootstrap installs @clawdbot/lobster at /usr/bin/lobster.
+          // lobsterPath: "/usr/bin/lobster",
           workRoot: "~/work/repos",
           defaultBase: "main",
           coderSessionKey: "agent:coder:main",
@@ -92,7 +99,7 @@
     profile: "minimal",
     elevated: { enabled: false },
     // Speech-to-text: enable audio transcription for inbound voice notes.
-    // Recommendation (privacy/cost): prefer local Whisper.cpp, fall back to a provider if needed.
+    // The VPS preset keeps this local-only to avoid OpenAI API-key usage.
     media: {
       audio: {
         enabled: true,
@@ -114,24 +121,7 @@
               "{{MediaPath}}",
             ],
           },
-          // Fallback to an OpenAI-compatible provider if local STT is unavailable.
-          { provider: "openai", model: "gpt-4o-mini-transcribe" },
         ],
-      },
-    },
-  },
-
-  // Voice replies live at the top-level (not per-agent). Keep it gated to avoid voice spam.
-  messages: {
-    tts: {
-      // - tagged: only reply with voice when the model emits [[tts:...]]
-      // - inbound: reply with voice only after you send a voice note
-      // - always: reply with voice for every message (not recommended)
-      auto: "tagged",
-      provider: "openai",
-      openai: {
-        model: "gpt-4o-mini-tts",
-        voice: "alloy",
       },
     },
   },
@@ -140,7 +130,10 @@
     list: [
       {
         id: "main",
-        model: "openai/gpt-5.4",
+        model: {
+          primary: "openai-codex/gpt-5.3-codex",
+          fallbacks: ["openai-codex/gpt-5.2", "google-gemini-cli/gemini-3-pro-preview"],
+        },
         workspace: "~/work/repos",
         identity: {
           name: "Ted",
@@ -170,6 +163,11 @@
       },
       {
         id: "coder",
+        model: {
+          primary: "openai-codex/gpt-5.3-codex",
+          fallbacks: ["openai/gpt-5.4", "google-gemini-cli/gemini-3-pro-preview"],
+        },
+        thinkingDefault: "high",
         workspace: "~/work/repos",
         // Run all tool execution for this agent in Docker.
         sandbox: {
@@ -180,15 +178,15 @@
             image: "openclaw-sandbox-coder:bookworm",
             network: "bridge",
             readOnlyRoot: false,
-            user: "1000:1000",
+            // Run as the same uid/gid as the host service user so mounted repos
+            // and bound OAuth dirs stay writable.
+            user: "${OPENCLAW_SANDBOX_UID}:${OPENCLAW_SANDBOX_GID}",
             env: {
               LANG: "C.UTF-8",
               // Auth for CLI tools inside the sandbox:
               // - GitHub access is injected at runtime by the /work pipeline.
-              // - OpenAI and Gemini remain long-lived service credentials.
-              // - Optional Google/X credentials are available for supporting CLIs.
-              OPENAI_API_KEY: "${OPENAI_API_KEY}",
-              GEMINI_API_KEY: "${GEMINI_API_KEY}",
+              // - Codex and Gemini CLI OAuth state is bind-mounted from the host.
+              // - Optional Google/X credentials remain available for supporting CLIs.
               GCLOUD_PROJECT: "${GCLOUD_PROJECT}",
               GOOGLE_APPLICATION_CREDENTIALS: "${GCLOUD_SERVICE_ACCOUNT_KEY_FILE}",
               X_API_KEY: "${X_API_KEY}",
@@ -203,6 +201,7 @@
               GIT_COMMITTER_NAME: "${GIT_AUTHOR_NAME}",
               GIT_COMMITTER_EMAIL: "${GIT_AUTHOR_EMAIL}",
             },
+            binds: ["${HOME}/.codex:/home/sandbox/.codex", "${HOME}/.gemini:/home/sandbox/.gemini"],
             // Keep sandbox bounded.
             pidsLimit: 256,
             memory: "4g",

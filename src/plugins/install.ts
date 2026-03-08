@@ -222,6 +222,10 @@ async function installPluginFromPackageDir(params: {
     copyErrorPrefix: "failed to copy plugin",
     hasDeps,
     depsLogMessage: "Installing plugin dependencies…",
+    // Local plugin checkouts can carry dev-only shims in node_modules; never
+    // copy those into the installed plugin directory.
+    copyFilter: (sourcePath) =>
+      !path.relative(packageDir, sourcePath).split(path.sep).includes("node_modules"),
     afterCopy: async () => {
       for (const entry of extensions) {
         const resolvedEntry = path.resolve(targetDir, entry);

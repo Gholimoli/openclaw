@@ -37,6 +37,8 @@ const longDelayCmd = isWin ? "Start-Sleep -Seconds 2" : "sleep 2";
 const joinCommands = (commands: string[]) => commands.join("; ");
 const echoAfterDelay = (message: string) => joinCommands([shortDelayCmd, `echo ${message}`]);
 const echoLines = (lines: string[]) => joinCommands(lines.map((line) => `echo ${line}`));
+const shellEchoStderr = (message: string) =>
+  isWin ? `[Console]::Error.WriteLine("${message}")` : `echo ${message} >&2`;
 const normalizeText = (value?: string) =>
   sanitizeBinaryOutput(value ?? "")
     .replace(/\r\n/g, "\n")
@@ -199,6 +201,20 @@ describe("exec tool backgrounding", () => {
     });
     const text = result.content.find((c) => c.type === "text")?.text ?? "";
     expect(text).toContain("hi");
+  });
+
+  it("returns failed status instead of throwing when allowFailure is set", async () => {
+    const result = await execTool.execute("call-allow-failure", {
+      command: `${shellEchoStderr("boom")} ; exit 7`,
+      allowFailure: true,
+    });
+
+    expect(result.details).toMatchObject({
+      status: "failed",
+      exitCode: 7,
+    });
+    const text = result.content.find((c) => c.type === "text")?.text ?? "";
+    expect(text).toContain("boom");
   });
 
   it("logs line-based slices and defaults to last lines", async () => {

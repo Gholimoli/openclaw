@@ -22,7 +22,8 @@ Expected boundary:
 Default implementation policy:
 
 1. Use Codex first for repo implementation.
-2. Fall back to Gemini when Codex fails or is unavailable.
-3. Use Cursor Agent only when explicitly requested or when a task benefits from
+2. Run Codex with high reasoning and retry with GPT-5.4 when the primary Codex pass fails.
+3. Fall back to Gemini when Codex fails or is unavailable.
+4. Use Cursor Agent only when explicitly requested or when a task benefits from
    its agent loop.
-4. Use `gcloud` and `x-cli` as supporting CLIs, not as the primary code editor.
+5. Use `gcloud` and `x-cli` as supporting CLIs, not as the primary code editor.

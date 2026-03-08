@@ -10,6 +10,7 @@ Environment overrides:
   OPENCLAW_DEPLOY_ROOT                    Deploy state root (default: $HOME/deploy/openclaw)
   OPENCLAW_RELEASES_DIR                   Releases directory (default: $OPENCLAW_DEPLOY_ROOT/releases)
   OPENCLAW_CURRENT_LINK                   Live release symlink (default: $HOME/openclaw-current)
+  OPENCLAW_CLI_SHIM                       Host CLI shim rewritten to the live release (default: $HOME/.local/share/pnpm/openclaw)
   OPENCLAW_LAST_KNOWN_GOOD_FILE           Last-known-good SHA file (default: $OPENCLAW_DEPLOY_ROOT/last-known-good.sha)
   OPENCLAW_ENV_FILE                       Env file loaded before preflight/probes (default: $HOME/.openclaw/.env)
   OPENCLAW_GATEWAY_SERVICE                systemd user service (default: openclaw-gateway.service)
@@ -138,6 +139,31 @@ set_current_link() {
   mv -fT "$tmp_link" "$current_link"
 }
 
+sync_openclaw_cli_shim() {
+  local release_dir="$1"
+  local cli_shim="${OPENCLAW_CLI_SHIM:-$HOME/.local/share/pnpm/openclaw}"
+  local entrypoint="${release_dir}/openclaw.mjs"
+  local plugins_dir="${release_dir}/extensions"
+  local skills_dir="${release_dir}/skills"
+  local hooks_dir="${release_dir}/dist/hooks/bundled"
+
+  [[ -f "$entrypoint" ]] || fail "release entrypoint not found: $entrypoint"
+
+  mkdir -p "$(dirname "$cli_shim")"
+  local tmp_shim="${cli_shim}.next.$$"
+  cat >"$tmp_shim" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export OPENCLAW_BUNDLED_PLUGINS_DIR="$plugins_dir"
+export OPENCLAW_BUNDLED_SKILLS_DIR="$skills_dir"
+export OPENCLAW_BUNDLED_HOOKS_DIR="$hooks_dir"
+exec node "$entrypoint" "\$@"
+EOF
+  chmod 0755 "$tmp_shim"
+  mv -f "$tmp_shim" "$cli_shim"
+  log "synced openclaw CLI shim to $(basename "$release_dir")"
+}
+
 remove_release_dir() {
   local dir="$1"
   if [[ ! -e "$dir" && ! -L "$dir" ]]; then
@@ -254,6 +280,7 @@ rollback_and_fail() {
 
   log "rolling back to $rollback_dir"
   set_current_link "$rollback_dir"
+  sync_openclaw_cli_shim "$rollback_dir"
   systemctl --user restart "$gateway_service"
 
   if ! wait_for_health "$gateway_health_url" "$health_timeout_seconds"; then
@@ -337,6 +364,7 @@ fi
 before_restarts="$(read_restart_count)"
 log "promoting release to live symlink: $release_dir"
 set_current_link "$release_dir"
+sync_openclaw_cli_shim "$release_dir"
 
 if ! systemctl --user restart "$gateway_service"; then
   rollback_and_fail "gateway restart failed after promotion"

@@ -6,6 +6,7 @@ import { ensureBrowserControlAuth, resolveBrowserControlAuth } from "../../brows
 import { loadConfig } from "../../config/config.js";
 import { defaultRuntime } from "../../runtime.js";
 import { resolveUserPath } from "../../utils.js";
+import { resolveAgentWorkspaceDir } from "../agent-scope.js";
 import { syncSkillsToWorkspace } from "../skills.js";
 import { DEFAULT_AGENT_WORKSPACE_DIR } from "../workspace.js";
 import { ensureSandboxBrowser } from "./browser.js";
@@ -20,6 +21,7 @@ import { ensureSandboxWorkspace } from "./workspace.js";
 async function ensureSandboxWorkspaceLayout(params: {
   cfg: ReturnType<typeof resolveSandboxConfigForAgent>;
   rawSessionKey: string;
+  agentId?: string;
   config?: OpenClawConfig;
   workspaceDir?: string;
 }): Promise<{
@@ -30,8 +32,12 @@ async function ensureSandboxWorkspaceLayout(params: {
 }> {
   const { cfg, rawSessionKey } = params;
 
+  const configuredAgentWorkspace =
+    params.config && params.agentId
+      ? resolveAgentWorkspaceDir(params.config, params.agentId)
+      : undefined;
   const agentWorkspaceDir = resolveUserPath(
-    params.workspaceDir?.trim() || DEFAULT_AGENT_WORKSPACE_DIR,
+    params.workspaceDir?.trim() || configuredAgentWorkspace || DEFAULT_AGENT_WORKSPACE_DIR,
   );
   const workspaceRoot = resolveUserPath(cfg.workspaceRoot);
   const scopeKey = resolveSandboxScopeKey(cfg.scope, rawSessionKey);
@@ -89,6 +95,7 @@ export async function resolveSandboxContext(params: {
   const { agentWorkspaceDir, scopeKey, workspaceDir } = await ensureSandboxWorkspaceLayout({
     cfg,
     rawSessionKey,
+    agentId: runtime.agentId,
     config: params.config,
     workspaceDir: params.workspaceDir,
   });
@@ -170,6 +177,7 @@ export async function ensureSandboxWorkspaceForSession(params: {
   const { workspaceDir } = await ensureSandboxWorkspaceLayout({
     cfg,
     rawSessionKey,
+    agentId: runtime.agentId,
     config: params.config,
     workspaceDir: params.workspaceDir,
   });

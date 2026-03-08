@@ -42,6 +42,18 @@ function resolveGatewayAuthHeader() {
   return null;
 }
 
+function summarizeGatewayError(value) {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (value && typeof value === "object") {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {}
+  }
+  return "";
+}
+
 async function invokeTool({ tool, action, args, sessionKey, extraHeaders }) {
   const auth = resolveGatewayAuthHeader();
   if (!auth) {
@@ -75,9 +87,11 @@ async function invokeTool({ tool, action, args, sessionKey, extraHeaders }) {
     throw new Error(`tools/invoke invalid JSON (HTTP ${res.status}): ${text.slice(0, 500)}`);
   }
   if (!res.ok || !parsed || parsed.ok !== true) {
-    const msg = parsed?.error?.message
+    const message = parsed?.error?.message
       ? String(parsed.error.message)
       : `tools/invoke failed (HTTP ${res.status})`;
+    const detail = summarizeGatewayError(parsed?.error?.details);
+    const msg = detail ? `${message}: ${detail}` : message;
     throw new Error(msg);
   }
   return parsed.result;
@@ -105,6 +119,13 @@ async function execViaGateway(params) {
     cwd: details.cwd,
     tail,
   };
+}
+
+async function execViaGatewayAllowFailure(params) {
+  return await execViaGateway({
+    ...params,
+    allowFailure: true,
+  });
 }
 
 const githubTokenCache = {
@@ -654,7 +675,7 @@ async function runChecks(sessionKey, cwd, opts = {}) {
 
   const ran = [];
   for (const cmd of cmds) {
-    const res = await execViaGateway({
+    const res = await execViaGatewayAllowFailure({
       sessionKey,
       command: cmd,
       workdir: cwd,
@@ -740,11 +761,10 @@ async function probeToolchain(sessionKey, cwd) {
       'if command -v "$bin" >/dev/null 2>&1; then printf "%s=ok\\n" "$bin"; else printf "%s=missing\\n" "$bin"; fi; ' +
       "done; " +
       'if [ -f "$HOME/.codex/config.toml" ]; then echo CODEX_CONFIG=ok; else echo CODEX_CONFIG=missing; fi; ' +
+      'if [ -f "$HOME/.codex/auth.json" ]; then echo CODEX_AUTH=ok; else echo CODEX_AUTH=missing; fi; ' +
       'if [ -f "$HOME/.gemini/policies/openclaw-yolo.toml" ]; then echo GEMINI_POLICY=ok; else echo GEMINI_POLICY=missing; fi; ' +
       'if [ -f "$HOME/.config/x-cli/.env" ]; then echo X_CLI_AUTH=ok; else echo X_CLI_AUTH=missing; fi; ' +
       'if [ -n "$OPENCLAW_GITHUB_AUTH_MODE" ]; then echo OPENCLAW_GITHUB_AUTH_MODE="$OPENCLAW_GITHUB_AUTH_MODE"; else echo OPENCLAW_GITHUB_AUTH_MODE=missing; fi; ' +
-      'if [ -n "$OPENAI_API_KEY" ]; then echo OPENAI_API_KEY=ok; else echo OPENAI_API_KEY=missing; fi; ' +
-      'if [ -n "$GEMINI_API_KEY" ]; then echo GEMINI_API_KEY=ok; else echo GEMINI_API_KEY=missing; fi; ' +
       'if command -v gcloud >/dev/null 2>&1; then active="$(gcloud auth list --filter=status:ACTIVE --format=\\"value(account)\\" 2>/dev/null | head -n 1 || true)"; if [ -n "$active" ]; then echo GCLOUD_AUTH=ok; else echo GCLOUD_AUTH=missing; fi; else echo GCLOUD_AUTH=missing; fi\'',
     workdir: cwd,
     timeout: 120,
@@ -795,7 +815,7 @@ function buildSpecPacket(params) {
     planner: {
       agentId: params.plannerAgentId || "main",
       displayName: params.plannerDisplayName || "Ted",
-      model: params.plannerModel || "gpt-5.4",
+      model: params.plannerModel || undefined,
     },
     implementation: {
       agentId: params.implementationAgentId || "coder",
@@ -803,8 +823,9 @@ function buildSpecPacket(params) {
       fallbackCli: "gemini",
       availableClis,
       accessMode: "full-access",
-      authMode: "hybrid",
+      authMode: "oauth-first",
       model: params.implementationModel || undefined,
+      secondaryModel: params.implementationFallbackModel || undefined,
       fallbackModel: params.fallbackModel || undefined,
     },
   };
@@ -865,40 +886,60 @@ async function coderabbitReview(sessionKey, cwd, base) {
 
   const attempts = [];
   for (const cmd of candidates) {
-    const res = await execViaGateway({
+    const res = await execViaGatewayAllowFailure({
       sessionKey,
       command: cmd,
       workdir: cwd,
-      pty: true,
+      // Plain/prompt-only review output works over a normal exec channel, and
+      // the gateway PTY path currently fails for this CLI on the VPS runtime.
+      pty: false,
       timeout: 3600,
     });
     const code = res.exitCode ?? 0;
     const status = res.status;
-    const tail = res.tail;
+    const cleanTail = typeof res.tail === "string" ? res.tail : "";
     attempts.push({ cmd, code, status });
 
     const isUnknownFlag =
       code !== 0 &&
-      typeof tail === "string" &&
-      (tail.includes("unknown option") ||
-        tail.includes("Unknown option") ||
-        tail.includes("unrecognized option") ||
-        tail.includes("flag provided but not defined"));
+      (cleanTail.includes("unknown option") ||
+        cleanTail.includes("Unknown option") ||
+        cleanTail.includes("unrecognized option") ||
+        cleanTail.includes("flag provided but not defined"));
 
     if (code !== 0 && cmd !== baseCmd && isUnknownFlag) {
       continue;
     }
 
-    return { code, status, tail, headSha, cmd, attempts };
+    return { code, status, tail: cleanTail, headSha, cmd, attempts };
   }
 
   return { code: 1, status: "completed", tail: "coderabbit review failed", headSha, attempts };
 }
 
+function normalizeCliModelRef(model, providers) {
+  if (typeof model !== "string") {
+    return "";
+  }
+  const trimmed = model.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const lower = trimmed.toLowerCase();
+  for (const provider of providers) {
+    const prefix = `${String(provider).toLowerCase()}/`;
+    if (lower.startsWith(prefix)) {
+      return trimmed.slice(prefix.length).trim();
+    }
+  }
+  return trimmed;
+}
+
 async function codexImplement(sessionKey, cwd, prompt, model) {
-  const modelArg =
-    typeof model === "string" && model.trim() ? ` --model ${JSON.stringify(model.trim())}` : "";
-  const cmd = `codex exec --full-auto${modelArg} ${JSON.stringify(prompt)}`;
+  const resolvedModel = normalizeCliModelRef(model, ["openai-codex", "openai"]);
+  const modelArg = resolvedModel ? ` --model ${JSON.stringify(resolvedModel)}` : "";
+  const reasoningArg = " -c reasoning_effort='\"high\"'";
+  const cmd = `codex exec --full-auto${reasoningArg}${modelArg} ${JSON.stringify(prompt)}`;
   const res = await execViaGateway({
     sessionKey,
     command: cmd,
@@ -914,8 +955,8 @@ async function codexImplement(sessionKey, cwd, prompt, model) {
 }
 
 async function geminiImplement(sessionKey, cwd, prompt, model) {
-  const modelArg =
-    typeof model === "string" && model.trim() ? ` --model ${JSON.stringify(model.trim())}` : "";
+  const resolvedModel = normalizeCliModelRef(model, ["google-gemini-cli"]);
+  const modelArg = resolvedModel ? ` --model ${JSON.stringify(resolvedModel)}` : "";
   const cmd = `gemini --approval-mode yolo${modelArg} ${JSON.stringify(prompt)}`;
   const res = await execViaGateway({
     sessionKey,
@@ -929,6 +970,35 @@ async function geminiImplement(sessionKey, cwd, prompt, model) {
     status: res.status,
     tail: res.tail,
   };
+}
+
+async function runImplementationFlow({
+  sessionKey,
+  repoDir,
+  prompt,
+  implementationModel,
+  implementationFallbackModel,
+  fallbackModel,
+}) {
+  const primary = await codexImplement(sessionKey, repoDir, prompt, implementationModel);
+  if (primary.code === 0 && primary.status === "completed") {
+    return { selectedCli: "codex", primary, secondary: null, gemini: null };
+  }
+
+  let secondary = null;
+  if (implementationFallbackModel && implementationFallbackModel !== implementationModel) {
+    secondary = await codexImplement(sessionKey, repoDir, prompt, implementationFallbackModel);
+    if (secondary.code === 0 && secondary.status === "completed") {
+      return { selectedCli: "codex", primary, secondary, gemini: null };
+    }
+  }
+
+  const gemini = await geminiImplement(sessionKey, repoDir, prompt, fallbackModel);
+  if (gemini.code === 0 && gemini.status === "completed") {
+    return { selectedCli: "gemini", primary, secondary, gemini };
+  }
+
+  return { selectedCli: null, primary, secondary, gemini };
 }
 
 async function currentBranch(sessionKey, cwd) {
@@ -1666,6 +1736,9 @@ async function main() {
     const implementationModel = String(
       args["implementation-model"] || args.implementationModel || "",
     ).trim();
+    const implementationFallbackModel = String(
+      args["implementation-fallback-model"] || args.implementationFallbackModel || "",
+    ).trim();
     const fallbackModel = String(args["fallback-model"] || args.fallbackModel || "").trim();
     const maxFixLoops = Number.parseInt(
       String(args["max-fix-loops"] || args.maxFixLoops || "3"),
@@ -1711,6 +1784,7 @@ async function main() {
         activePrNumbers: repoMeta.activePrNumbers,
         plannerModel,
         implementationModel,
+        implementationFallbackModel,
         fallbackModel,
         availableClis,
       });
@@ -1728,11 +1802,12 @@ async function main() {
         riskTier: specPacket.riskTier,
         plannerAgentId: "main",
         plannerDisplayName: "Ted",
-        plannerModel: plannerModel || "gpt-5.4",
+        plannerModel: plannerModel || undefined,
         implementationAgentId: "coder",
         implementationCli: "codex",
         implementationFallbackCli: "gemini",
         implementationModel: implementationModel || undefined,
+        implementationFallbackModel: implementationFallbackModel || undefined,
         fallbackModel: fallbackModel || undefined,
         startedAtMs: Date.now(),
         updatedAtMs: Date.now(),
@@ -1762,45 +1837,55 @@ async function main() {
       actor: { id: "coder", type: "agent", label: "coder" },
       data: {
         availableClis,
-        authMode: specPacket?.implementation?.authMode || "hybrid",
+        authMode: specPacket?.implementation?.authMode || "oauth-first",
         githubAuthMode: toolchain.OPENCLAW_GITHUB_AUTH_MODE || "missing",
       },
     });
 
-    const impl = await codexImplement(
+    const implementationRun = await runImplementationFlow({
       sessionKey,
       repoDir,
-      implementationPrompt,
+      prompt: implementationPrompt,
       implementationModel,
-    );
-    let selectedCli = "codex";
-    if (impl.code !== 0 || impl.status !== "completed") {
-      // Fallback to gemini if codex failed.
+      implementationFallbackModel,
+      fallbackModel,
+    });
+    let selectedCli = implementationRun.selectedCli || "codex";
+    if (!implementationRun.selectedCli) {
       appendRunAudit(repoDir, {
         kind: "implementation.fallback",
         status: "degraded",
-        message: "Codex CLI failed; attempting Gemini fallback.",
+        message: "Codex CLI primary failed; attempted Codex fast fallback and Gemini fallback.",
         actor: { id: "coder", type: "agent", label: "coder" },
-        data: { codex: impl },
+        data: {
+          codex: implementationRun.primary,
+          codexFallback: implementationRun.secondary,
+          gemini: implementationRun.gemini,
+        },
       });
-      const g = await geminiImplement(sessionKey, repoDir, implementationPrompt, fallbackModel);
-      if (g.code !== 0 || g.status !== "completed") {
-        withRun(repoDir, (run) => ({
-          ...run,
-          status: "failed",
-          finishedAtMs: Date.now(),
-          summary: "Implementation failed in both Codex and Gemini fallback.",
-        }));
-        appendRunStep(repoDir, {
-          status: "failed",
-          label: "Implementation",
-          detail: "Both Codex and Gemini failed.",
-          actor: { id: "coder", type: "agent", label: "coder" },
-          data: { codex: impl, gemini: g },
-        });
-        die("coding agent failed", { codex: impl, gemini: g });
-      }
-      selectedCli = "gemini";
+      withRun(repoDir, (run) => ({
+        ...run,
+        status: "failed",
+        finishedAtMs: Date.now(),
+        summary:
+          "Implementation failed in Codex primary, Codex fast fallback, and Gemini fallback.",
+      }));
+      appendRunStep(repoDir, {
+        status: "failed",
+        label: "Implementation",
+        detail: "Codex primary, Codex fast fallback, and Gemini fallback all failed.",
+        actor: { id: "coder", type: "agent", label: "coder" },
+        data: {
+          codex: implementationRun.primary,
+          codexFallback: implementationRun.secondary,
+          gemini: implementationRun.gemini,
+        },
+      });
+      die("coding agent failed", {
+        codex: implementationRun.primary,
+        codexFallback: implementationRun.secondary,
+        gemini: implementationRun.gemini,
+      });
     }
     withRun(repoDir, (run) => ({
       ...run,
@@ -1815,7 +1900,7 @@ async function main() {
       data: {
         selectedCli,
         availableClis,
-        authMode: specPacket?.implementation?.authMode || "hybrid",
+        authMode: specPacket?.implementation?.authMode || "oauth-first",
         githubAuthMode: toolchain.OPENCLAW_GITHUB_AUTH_MODE || "missing",
         toolchain,
       },
@@ -1847,13 +1932,16 @@ async function main() {
         actor: { id: "coder", type: "agent", label: "coder" },
         data: { failed: checks.failed, tail: checks.tail || "" },
       });
-      const fix = await codexImplement(sessionKey, repoDir, fixPrompt, implementationModel);
-      let retryCli = "codex";
-      if (fix.code !== 0 || fix.status !== "completed") {
-        const g = await geminiImplement(sessionKey, repoDir, fixPrompt, fallbackModel);
-        if (g.code !== 0 || g.status !== "completed") break;
-        retryCli = "gemini";
-      }
+      const fix = await runImplementationFlow({
+        sessionKey,
+        repoDir,
+        prompt: fixPrompt,
+        implementationModel,
+        implementationFallbackModel,
+        fallbackModel,
+      });
+      if (!fix.selectedCli) break;
+      const retryCli = fix.selectedCli;
       withRun(repoDir, (run) => ({
         ...run,
         implementationUsedCli: retryCli,
@@ -1902,8 +1990,18 @@ async function main() {
     if (!repoDir) die("--repo-dir required");
     const clawforge = computeClawforgeContext(repoDir, base);
     if (clawforge?.enabled === false) die("clawforge contract error", { error: clawforge.error });
-    const checks = await runChecks(sessionKey, repoDir, { clawforge });
-    const review = await coderabbitReview(sessionKey, repoDir, base);
+    const checks = await runChecks(sessionKey, repoDir, { clawforge }).catch((error) =>
+      die("review checks failed", {
+        cause: String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      }),
+    );
+    const review = await coderabbitReview(sessionKey, repoDir, base).catch((error) =>
+      die("review AI step failed", {
+        cause: String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      }),
+    );
     ok({ repoDir, base, clawforge, checks, review });
     return;
   }

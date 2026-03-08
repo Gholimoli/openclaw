@@ -1,4 +1,5 @@
 import JSZip from "jszip";
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -489,6 +490,108 @@ describe("installPluginFromDir", () => {
     const [argv, opts] = first;
     expect(argv).toEqual(["npm", "install", "--omit=dev", "--silent", "--ignore-scripts"]);
     expect(opts?.cwd).toBe(res.targetDir);
+  });
+
+  it("does not copy source node_modules into the installed plugin", async () => {
+    const workDir = makeTempDir();
+    const stateDir = makeTempDir();
+    const pluginDir = path.join(workDir, "plugin");
+    fs.mkdirSync(path.join(pluginDir, "dist"), { recursive: true });
+    fs.mkdirSync(path.join(pluginDir, "node_modules", ".bin"), { recursive: true });
+    fs.writeFileSync(
+      path.join(pluginDir, "package.json"),
+      JSON.stringify({
+        name: "@openclaw/test-plugin",
+        version: "0.0.1",
+        openclaw: { extensions: ["./dist/index.js"] },
+      }),
+      "utf-8",
+    );
+    fs.writeFileSync(path.join(pluginDir, "dist", "index.js"), "export {};", "utf-8");
+    fs.writeFileSync(
+      path.join(pluginDir, "node_modules", ".bin", "test-plugin"),
+      "#!/bin/sh\n",
+      "utf-8",
+    );
+
+    const { installPluginFromDir } = await import("./install.js");
+    const res = await installPluginFromDir({
+      dirPath: pluginDir,
+      extensionsDir: path.join(stateDir, "extensions"),
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) {
+      return;
+    }
+
+    expect(fs.existsSync(path.join(res.targetDir, "node_modules"))).toBe(false);
+  });
+
+  it("loads the installed work plugin outside a source checkout", async () => {
+    const stateDir = makeTempDir();
+    const extensionsDir = path.join(stateDir, "extensions");
+    fs.mkdirSync(extensionsDir, { recursive: true });
+
+    const { runCommandWithTimeout } = await import("../process/exec.js");
+    const run = vi.mocked(runCommandWithTimeout);
+    run.mockImplementation(async (argv, opts) => {
+      if (!(Array.isArray(argv) && argv[0] === "npm" && argv[1] === "install")) {
+        throw new Error(
+          `unexpected command: ${Array.isArray(argv) ? argv.join(" ") : String(argv)}`,
+        );
+      }
+      const cwd = String(opts?.cwd ?? "");
+      const sourceDir = fs.realpathSync(path.resolve("node_modules", "@sinclair", "typebox"));
+      const targetDir = path.join(cwd, "node_modules", "@sinclair", "typebox");
+      fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+      fs.cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
+      return { code: 0, stdout: "", stderr: "", signal: null, killed: false };
+    });
+
+    const { installPluginFromDir } = await import("./install.js");
+    const result = await installPluginFromDir({
+      dirPath: path.resolve("extensions/work"),
+      extensionsDir,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    const stdout = execFileSync(
+      "node",
+      [
+        "--input-type=module",
+        "--import",
+        "tsx",
+        "-e",
+        `
+import { loadOpenClawPlugins } from "./src/plugins/loader.ts";
+const registry = loadOpenClawPlugins({
+  cache: false,
+  config: {
+    plugins: {
+      allow: ["work"],
+      entries: { work: { enabled: true } },
+    },
+  },
+});
+const work = registry.plugins.find((entry) => entry.id === "work");
+console.log(JSON.stringify(work ? { status: work.status, error: work.error } : null));
+`,
+      ],
+      {
+        cwd: path.resolve("."),
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          OPENCLAW_STATE_DIR: stateDir,
+          OPENCLAW_BUNDLED_PLUGINS_DIR: path.join(stateDir, "no-bundled"),
+        },
+      },
+    ).trim();
+
+    expect(JSON.parse(stdout)).toEqual({ status: "loaded" });
   });
 });
 

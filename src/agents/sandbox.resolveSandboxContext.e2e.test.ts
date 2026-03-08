@@ -84,4 +84,28 @@ describe("resolveSandboxContext", () => {
       }),
     ).toBeNull();
   }, 15_000);
+
+  it("uses the configured agent workspace when workspaceDir is omitted", async () => {
+    const cfg: OpenClawConfig = {
+      agents: {
+        defaults: {
+          sandbox: { mode: "all", scope: "agent", workspaceAccess: "rw" },
+        },
+        list: [
+          {
+            id: "coder",
+            workspace: "/tmp/openclaw-coder-workspace",
+          },
+        ],
+      },
+    };
+
+    const result = await ensureSandboxWorkspaceForSession({
+      config: cfg,
+      sessionKey: "agent:coder:main",
+    });
+
+    expect(result).toBeTruthy();
+    expect(result?.workspaceDir).toBe("/tmp/openclaw-coder-workspace");
+  }, 15_000);
 });

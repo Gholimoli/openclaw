@@ -29,13 +29,13 @@ case "$ACTION" in
     BODY='echo "Interactive VPS shell for coding CLIs."; echo "Use codex login, gh auth login, gemini, or agent as needed."; exec bash -l'
     ;;
   codex)
-    BODY='echo "Starting Codex login."; echo "Preferred unattended mode remains OPENAI_API_KEY."; codex login --device-auth || codex login; exec bash -l'
+    BODY='echo "Starting Codex login."; echo "This seeds ~/.codex for the coder sandbox bind mount."; codex login --device-auth || codex login; exec bash -l'
     ;;
   gh)
     BODY='echo "Starting GitHub CLI login."; echo "Preferred unattended mode remains GitHub App tokens inside /work."; gh auth login --web; exec bash -l'
     ;;
   gemini)
-    BODY='echo "Starting Gemini CLI interactive shell."; echo "Preferred unattended mode remains GEMINI_API_KEY."; gemini; exec bash -l'
+    BODY='echo "Starting Gemini CLI interactive shell."; echo "This seeds ~/.gemini for the coder sandbox bind mount."; gemini; exec bash -l'
     ;;
   agent|cursor|cursor-agent)
     BODY='echo "Starting Cursor Agent shell."; agent; exec bash -l'

@@ -1,5 +1,5 @@
 import type { OpenClawPluginApi, PluginCommandContext } from "../../../src/plugins/types.js";
-import { buildTelegramWorkApprovalButtons } from "../../../src/telegram/work-approval-buttons.js";
+import { buildTelegramWorkApprovalButtons } from "./telegram-work-approval-buttons.js";
 import { createWorkTool } from "./work-tool.js";
 
 function parseApprove(value: string): boolean | null {

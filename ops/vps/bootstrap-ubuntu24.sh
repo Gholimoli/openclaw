@@ -88,7 +88,11 @@ fi
 
 echo "[7/12] Install Lobster CLI"
 if ! command -v lobster >/dev/null 2>&1; then
-  npm install -g @openclaw/lobster@latest
+  npm install -g @clawdbot/lobster@latest
+fi
+if ! command -v lobster >/dev/null 2>&1; then
+  echo "lobster CLI not found after install; expected @clawdbot/lobster to provide it" >&2
+  exit 1
 fi
 
 echo "[8/12] Install OpenAI and Gemini CLIs"
@@ -161,8 +165,8 @@ Optional power tools:
    GITHUB_APP_ID=
    GITHUB_APP_INSTALLATION_ID=
    GITHUB_APP_PRIVATE_KEY_FILE=
-   OPENAI_API_KEY=
-   GEMINI_API_KEY=
+   OPENCLAW_SANDBOX_UID=
+   OPENCLAW_SANDBOX_GID=
    CODERABBIT_API_KEY=
    GCLOUD_SERVICE_ACCOUNT_KEY_FILE=
    GCLOUD_PROJECT=
@@ -186,6 +190,11 @@ Optional power tools:
    sudo bash ops/vps/login-coding-clis.sh gh
    sudo bash ops/vps/login-coding-clis.sh gemini
    sudo bash ops/vps/login-coding-clis.sh agent
+
+2d) Configure runtime model auth:
+   openclaw models auth login --provider openai-codex
+   openclaw plugins enable google-gemini-cli-auth
+   openclaw models auth login --provider google-gemini-cli
 
 3) Run onboarding or restart:
    openclaw doctor
