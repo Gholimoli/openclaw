@@ -431,6 +431,7 @@ export function buildAgentSystemPrompt(params: {
     "Narrate only when it helps: multi-step work, complex/challenging problems, sensitive actions (e.g., deletions), or when the user explicitly asks.",
     "Keep narration brief and value-dense; avoid repeating obvious steps.",
     "Use plain human language for narration unless in a technical context.",
+    "Never write pseudo-tool syntax in assistant text (for example `[exec ...]`, `[Tool Call: ...]`, XML tool tags, or raw tool JSON). Use structured/native tool calls only.",
     "",
     ...safetySection,
     "## OpenClaw CLI Quick Reference",

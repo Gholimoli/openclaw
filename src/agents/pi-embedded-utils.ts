@@ -1,6 +1,7 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { stripReasoningTagsFromText } from "../shared/text/reasoning-tags.js";
+import { extractLegacyExecTextCalls } from "./legacy-exec-fallback.js";
 import { sanitizeUserFacingText } from "./pi-embedded-helpers.js";
 import { formatToolDetail, resolveToolDisplay } from "./tool-display.js";
 
@@ -42,8 +43,10 @@ export function stripDowngradedToolCallText(text: string): string {
   if (!text) {
     return text;
   }
-  if (!/\[Tool (?:Call|Result)/i.test(text) && !/\[Historical context/i.test(text)) {
-    return text;
+  const legacyExec = extractLegacyExecTextCalls(text);
+  const workingText = legacyExec.calls.length > 0 ? legacyExec.cleanedText : text;
+  if (!/\[Tool (?:Call|Result)/i.test(workingText) && !/\[Historical context/i.test(workingText)) {
+    return workingText;
   }
 
   const consumeJsonish = (
@@ -186,7 +189,7 @@ export function stripDowngradedToolCallText(text: string): string {
   };
 
   // Remove [Tool Call: name (ID: ...)] blocks and their Arguments.
-  let cleaned = stripToolCalls(text);
+  let cleaned = stripToolCalls(workingText);
 
   // Remove [Tool Result for ID ...] blocks and their content.
   cleaned = cleaned.replace(/\[Tool Result for ID[^\]]*\]\n?[\s\S]*?(?=\n*\[Tool |\n*$)/gi, "");

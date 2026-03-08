@@ -613,6 +613,15 @@ describe("stripDowngradedToolCallText", () => {
     expect(stripDowngradedToolCallText(text)).toBe("Just a normal response with no markers.");
   });
 
+  it("strips leaked legacy exec pseudo-tool syntax", () => {
+    const text =
+      `Intro.\n` +
+      `[exec cmd="bash -lc 'hostname; date -u; echo APPROVAL_E2E_OK'"]` +
+      `{"cmd":"bash -lc 'hostname; date -u; echo APPROVAL_E2E_OK'"}` +
+      `\nBack to the user.`;
+    expect(stripDowngradedToolCallText(text)).toBe("Intro.\nBack to the user.");
+  });
+
   it("returns empty string for empty input", () => {
     expect(stripDowngradedToolCallText("")).toBe("");
   });
