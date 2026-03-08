@@ -138,6 +138,41 @@ describe("deliverReplies", () => {
     );
   });
 
+  it("auto-converts a trailing simple Options line into Telegram buttons", async () => {
+    const runtime = { error: vi.fn(), log: vi.fn() };
+    const sendMessage = vi.fn().mockResolvedValue({
+      message_id: 30,
+      chat: { id: "123" },
+    });
+    const bot = { api: { sendMessage } } as unknown as Bot;
+
+    await deliverReplies({
+      replies: [{ text: "Choose a mode.\nOptions: on, off." }],
+      chatId: "123",
+      token: "tok",
+      runtime,
+      bot,
+      replyToMode: "off",
+      textLimit: 4000,
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      "123",
+      expect.stringContaining("Choose a mode."),
+      expect.objectContaining({
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "on", callback_data: "xcm1:on" },
+              { text: "off", callback_data: "xcm1:off" },
+            ],
+          ],
+        },
+      }),
+    );
+    expect(sendMessage.mock.calls[0]?.[1]).not.toContain("Options:");
+  });
+
   it("keeps message_thread_id=1 when allowed", async () => {
     const runtime = { error: vi.fn(), log: vi.fn() };
     const sendMessage = vi.fn().mockResolvedValue({

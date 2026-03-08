@@ -15,7 +15,7 @@ This setup is designed for a common pattern:
 
 - You talk to OpenClaw over Telegram or the Control UI.
 - The operator-facing `main` agent presents as Ted and handles repo intake, research, specs, approvals, and orchestration.
-- Actual coding work is executed by Codex CLI inside a sandboxed `coder` agent session, with Gemini CLI as fallback.
+- Actual coding work is executed by Codex CLI inside a sandboxed `coder` agent session, with GPT-5.4 then Gemini CLI as fallback.
 - The Gateway stays private (loopback bind) and is accessed remotely via Tailscale, not a public reverse proxy.
 
 High-level goals:
@@ -113,8 +113,8 @@ OPENCLAW_GATEWAY_TOKEN="..."
 GITHUB_APP_ID="..."
 GITHUB_APP_INSTALLATION_ID="..."
 GITHUB_APP_PRIVATE_KEY_FILE="$HOME/.openclaw/github-app.pem"
-OPENAI_API_KEY="..."
-GEMINI_API_KEY="..."
+OPENCLAW_SANDBOX_UID="$(id -u)"
+OPENCLAW_SANDBOX_GID="$(id -g)"
 CODERABBIT_API_KEY="..."
 
 GIT_AUTHOR_NAME="Your Name"
@@ -127,7 +127,8 @@ Notes:
 - `TELEGRAM_OWNER_ID` is your numeric Telegram user id. If you don't know it yet, message the bot once and check:
   the bot's onboarding reply (it prints your user id). Then set `TELEGRAM_OWNER_ID` and restart the gateway.
 - `/work` prefers GitHub App auth and mints a short-lived installation token per run. Avoid a broad personal PAT for steady-state automation.
-- Keep interactive host logins separate from unattended `/work` runs. Use service credentials in the sandbox and only use host CLI logins for manual troubleshooting.
+- `OPENCLAW_SANDBOX_UID` and `OPENCLAW_SANDBOX_GID` must match the host service user so the coder container can reuse host CLI OAuth state and write mounted repos.
+- Keep interactive host logins separate from unattended `/work` runs. The runtime uses OpenClaw OAuth profiles, while the coder sandbox reuses host Codex/Gemini CLI OAuth state through bind mounts.
 
 ## Configure the Gateway
 
@@ -145,8 +146,19 @@ Key decisions in that config:
 - Telegram DM owner allowlist, groups disabled, `configWrites: false`, and `streamMode: "off"`
 - `main` keeps its internal id for compatibility but presents as Ted
 - `main` owns repo intake, specs, approvals, CI watching, and VPS troubleshooting dispatch
-- `coder` agent runs tools in a Docker sandbox and prefers Codex CLI with Gemini fallback
-- `work` plugin enabled and wired to the `coder` session key with GitHub App token minting
+- `coder` agent runs tools in a Docker sandbox and prefers Codex CLI with high reasoning, then GPT-5.4, then Gemini CLI
+- bundled `work` plugin enabled and wired to the `coder` session key with GitHub App token minting
+- bundled `google-gemini-cli-auth` plugin enabled for the runtime Gemini fallback path
+
+Production note:
+
+- Keep `work` on the bundled plugin path of the live OpenClaw runtime.
+- For the VPS pack, the live runtime is the promoted release under `~/openclaw-current`.
+- Prefer `cd ~/openclaw-current && pnpm openclaw ...` for operator checks unless you know the host `openclaw` shim already points there.
+- Install the Lobster runtime from `@clawdbot/lobster` on the gateway host, not `@openclaw/lobster` (that package is the OpenClaw plugin wrapper, not the CLI).
+- Prefer an absolute `plugins.entries.work.config.lobsterPath` such as `/usr/bin/lobster` on Ubuntu VPS hosts.
+- Do not add a repo checkout path under `plugins.load.paths` for `work` on the VPS.
+- Remove any older `~/.openclaw/extensions/work` install after you upgrade to a build that bundles the plugin.
 
 ## Build a coder sandbox image
 
@@ -165,7 +177,7 @@ If you maintain your own image:
 
 - install the coding CLIs in the image
 - ensure they are on `PATH` for the sandbox user
-- pass API keys into the sandbox via `agents.list[].sandbox.docker.env`
+- bind host `~/.codex` and `~/.gemini` into the sandbox user home if you want CLI OAuth to survive container recreation
 
 Security notes:
 
@@ -192,7 +204,27 @@ Use this when you need to:
 - do optional first-run Gemini setup
 - inspect the host-side agent CLI directly
 
-Keep the automated `/work` path on GitHub App plus `OPENAI_API_KEY` and `GEMINI_API_KEY`.
+Use these once for the runtime provider side:
+
+```bash
+openclaw models auth login --provider openai-codex
+openclaw plugins enable google-gemini-cli-auth
+openclaw models auth login --provider google-gemini-cli
+```
+
+Use the host CLI login helpers for the sandboxed implementation CLIs:
+
+```bash
+sudo bash ops/vps/login-coding-clis.sh codex
+sudo bash ops/vps/login-coding-clis.sh gemini
+```
+
+ChatGPT/Codex OAuth does not cover `openrouter/*` or generic `openai/*` billing, and Gemini CLI OAuth does not replace generic `google/*` API-key features.
+
+The default VPS preset avoids OpenAI API-key-dependent voice features:
+
+- inbound audio transcription uses local Whisper.cpp only
+- TTS is disabled until you add a separate configuration
 
 ## Join Tailscale (recommended)
 
@@ -253,6 +285,9 @@ Each `/work task` or `/work fix` run now:
 - records the selected CLI, available CLIs, auth mode, checks, approvals, and final outcome in the automation audit trail
 
 When a workflow needs approval, it returns a resume token.
+In Telegram DMs, `/work` also shows inline **Approve** / **Deny** buttons and
+keeps the resume token plus manual `/work resume ...` commands in the message
+as fallback.
 Resume from Telegram:
 
 ```text
@@ -289,7 +324,7 @@ OpenClaw can send Telegram-compatible Opus voice notes (the “round bubble” U
 
 Operational pattern:
 
-- Set TTS to `tagged` so audio is only generated when you explicitly request it, or when the model emits a `[[tts:...]]` directive.
+- The stock VPS preset leaves TTS disabled. If you enable it later, prefer `tagged` so audio is only generated when you explicitly request it, or when the model emits a `[[tts:...]]` directive.
 - For Telegram, use the `[[audio_as_voice]]` tag (or the channel action’s `asVoice: true`) to send a voice note rather than an audio file. See [Telegram audio notes](/channels/telegram#audio-video-and-stickers).
 
 ### Browser automation (Playwright-style)
@@ -337,7 +372,7 @@ If you want offline STT on Linux, the most reliable path is to install Whisper.c
 
 - install `whisper-cli`
 - set `WHISPER_CPP_MODEL=/path/to/ggml-*.bin` in the gateway environment
-- configure `tools.media.audio.models` to use `whisper-cli` (and optionally add a provider fallback)
+- configure `tools.media.audio.models` to use `whisper-cli`
 
 ## Active/standby failover (optional)
 

@@ -77,4 +77,58 @@ describe("telegramOutbound.sendPayload", () => {
     expect(secondOpts?.buttons).toBeUndefined();
     expect(result).toEqual({ channel: "telegram", messageId: "m2", chatId: "c1" });
   });
+
+  it("auto-converts a trailing simple Options line into Telegram buttons", async () => {
+    const sendTelegram = vi.fn(async () => ({ messageId: "m1", chatId: "c1" }));
+
+    await telegramOutbound.sendPayload?.({
+      cfg: {} as OpenClawConfig,
+      to: "telegram:123",
+      text: "ignored",
+      payload: {
+        text: "Choose a mode.\nOptions: on, off.",
+      },
+      deps: { sendTelegram },
+    });
+
+    expect(sendTelegram).toHaveBeenCalledWith(
+      "telegram:123",
+      "Choose a mode.",
+      expect.objectContaining({
+        buttons: [
+          [
+            { text: "on", callback_data: "xcm1:on" },
+            { text: "off", callback_data: "xcm1:off" },
+          ],
+        ],
+      }),
+    );
+  });
+
+  it("does not overwrite explicit Telegram buttons with auto-generated ones", async () => {
+    const sendTelegram = vi.fn(async () => ({ messageId: "m1", chatId: "c1" }));
+
+    await telegramOutbound.sendPayload?.({
+      cfg: {} as OpenClawConfig,
+      to: "telegram:123",
+      text: "ignored",
+      payload: {
+        text: "Choose a mode.\nOptions: on, off.",
+        channelData: {
+          telegram: {
+            buttons: [[{ text: "Keep", callback_data: "keep" }]],
+          },
+        },
+      },
+      deps: { sendTelegram },
+    });
+
+    expect(sendTelegram).toHaveBeenCalledWith(
+      "telegram:123",
+      "Choose a mode.\nOptions: on, off.",
+      expect.objectContaining({
+        buttons: [[{ text: "Keep", callback_data: "keep" }]],
+      }),
+    );
+  });
 });

@@ -14,6 +14,7 @@ import { saveMediaBuffer } from "../../media/store.js";
 import { loadWebMedia } from "../../web/media.js";
 import { withTelegramApiErrorLogging } from "../api-logging.js";
 import { splitTelegramCaption } from "../caption.js";
+import { resolveTelegramAutoChoiceMenu } from "../choice-buttons.js";
 import {
   markdownToTelegramChunks,
   markdownToTelegramHtml,
@@ -89,27 +90,50 @@ export async function deliverReplies(params: {
     return chunks;
   };
   for (const reply of replies) {
-    const hasMedia = Boolean(reply?.mediaUrl) || (reply?.mediaUrls?.length ?? 0) > 0;
-    if (!reply?.text && !hasMedia) {
-      if (reply?.audioAsVoice) {
+    const telegramData = reply.channelData?.telegram as
+      | { buttons?: Array<Array<{ text: string; callback_data: string }>> }
+      | undefined;
+    const autoMenu =
+      telegramData?.buttons || typeof reply.text !== "string"
+        ? null
+        : resolveTelegramAutoChoiceMenu(reply.text);
+    const effectiveReply =
+      autoMenu && typeof reply.text === "string"
+        ? {
+            ...reply,
+            text: autoMenu.text,
+            channelData: {
+              ...reply.channelData,
+              telegram: {
+                ...telegramData,
+                buttons: autoMenu.buttons,
+              },
+            },
+          }
+        : reply;
+    const hasEffectiveMedia =
+      Boolean(effectiveReply?.mediaUrl) || (effectiveReply?.mediaUrls?.length ?? 0) > 0;
+    if (!effectiveReply?.text && !hasEffectiveMedia) {
+      if (effectiveReply?.audioAsVoice) {
         logVerbose("telegram reply has audioAsVoice without media/text; skipping");
         continue;
       }
       runtime.error?.(danger("reply missing text/media"));
       continue;
     }
-    const replyToId = replyToMode === "off" ? undefined : resolveTelegramReplyId(reply.replyToId);
-    const mediaList = reply.mediaUrls?.length
-      ? reply.mediaUrls
-      : reply.mediaUrl
-        ? [reply.mediaUrl]
+    const replyToId =
+      replyToMode === "off" ? undefined : resolveTelegramReplyId(effectiveReply.replyToId);
+    const mediaList = effectiveReply.mediaUrls?.length
+      ? effectiveReply.mediaUrls
+      : effectiveReply.mediaUrl
+        ? [effectiveReply.mediaUrl]
         : [];
-    const telegramData = reply.channelData?.telegram as
+    const effectiveTelegramData = effectiveReply.channelData?.telegram as
       | { buttons?: Array<Array<{ text: string; callback_data: string }>> }
       | undefined;
-    const replyMarkup = buildInlineKeyboard(telegramData?.buttons);
+    const replyMarkup = buildInlineKeyboard(effectiveTelegramData?.buttons);
     if (mediaList.length === 0) {
-      const chunks = chunkText(reply.text || "");
+      const chunks = chunkText(effectiveReply.text || "");
       for (let i = 0; i < chunks.length; i += 1) {
         const chunk = chunks[i];
         if (!chunk) {
@@ -151,7 +175,7 @@ export async function deliverReplies(params: {
       const file = new InputFile(media.buffer, fileName);
       // Caption only on first item; if text exceeds limit, defer to follow-up message.
       const { caption, followUpText } = splitTelegramCaption(
-        isFirstMedia ? (reply.text ?? undefined) : undefined,
+        isFirstMedia ? (effectiveReply.text ?? undefined) : undefined,
       );
       const htmlCaption = caption
         ? renderTelegramHtmlText(caption, { tableMode: params.tableMode })
@@ -195,7 +219,7 @@ export async function deliverReplies(params: {
         markDelivered();
       } else if (kind === "audio") {
         const { useVoice } = resolveTelegramVoiceSend({
-          wantsVoice: reply.audioAsVoice === true, // default false (backward compatible)
+          wantsVoice: effectiveReply.audioAsVoice === true, // default false (backward compatible)
           contentType: media.contentType,
           fileName,
           logFallback: logVerbose,
@@ -217,7 +241,7 @@ export async function deliverReplies(params: {
             // This happens when the recipient has Telegram Premium privacy settings
             // that block voice messages (Settings > Privacy > Voice Messages).
             if (isVoiceMessagesForbidden(voiceErr)) {
-              const fallbackText = reply.text;
+              const fallbackText = effectiveReply.text;
               if (!fallbackText || !fallbackText.trim()) {
                 throw voiceErr;
               }

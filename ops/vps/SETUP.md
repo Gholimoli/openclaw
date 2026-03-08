@@ -43,6 +43,11 @@ This installs:
 - `openclaw-sandbox-coder:bookworm` Docker image used by the `coder` agent
 - `tmux`, which the manual CLI login helper uses for real TTY auth sessions
 
+Current package mapping:
+
+- `openclaw` CLI comes from the `openclaw` npm package
+- `lobster` CLI comes from `@clawdbot/lobster`
+
 Optional (recommended if you want voice-note UX and browsing):
 
 ```bash
@@ -77,8 +82,8 @@ OPENCLAW_GATEWAY_TOKEN="..."
 GITHUB_APP_ID="..."
 GITHUB_APP_INSTALLATION_ID="..."
 GITHUB_APP_PRIVATE_KEY_FILE="$HOME/.openclaw/github-app.pem"
-OPENAI_API_KEY="..."
-GEMINI_API_KEY="..."
+OPENCLAW_SANDBOX_UID="$(id -u)"
+OPENCLAW_SANDBOX_GID="$(id -g)"
 CODERABBIT_API_KEY="..."
 GCLOUD_SERVICE_ACCOUNT_KEY_FILE="$HOME/.openclaw/gcloud-service-account.json"
 GCLOUD_PROJECT="..."
@@ -100,6 +105,7 @@ Notes:
 - Keep file permissions tight: `chmod 600 ~/.openclaw/.env`
 - Store the GitHub App private key file with tight permissions too: `chmod 600 ~/.openclaw/github-app.pem`
 - `OPENCLAW_GATEWAY_TOKEN` is required because `workctl` uses the Gateway HTTP API (`POST /tools/invoke`).
+- `OPENCLAW_SANDBOX_UID` and `OPENCLAW_SANDBOX_GID` must match the host service user so the coder container can write mounted repos and reuse host CLI OAuth state.
 - `/work` prefers GitHub App auth and mints a short-lived installation token for each coding run. A fallback `GH_TOKEN` or `GITHUB_TOKEN` still works, but it should not be your steady-state setup.
 - `TELEGRAM_OWNER_ID` is your numeric Telegram user id. If you don't know it yet, message the bot once and check:
   the bot's onboarding reply (it prints your user id). Then set `TELEGRAM_OWNER_ID` and restart the gateway.
@@ -119,14 +125,16 @@ Key decisions in this config:
 
 - `gateway.bind: "loopback"` (private by default)
 - Telegram DMs use an owner allowlist; three dedicated worker groups are allowlisted and routed by bindings; channel-initiated config writes disabled; no partial streaming
-- `main` agent presents as `Ted`, runs `openai/gpt-5.4`, and owns repo intake, research, specs, approvals, and orchestration
+- `main` agent presents as `Ted`; it uses `openai-codex/gpt-5.3-codex` with `openai-codex/gpt-5.2` then Gemini CLI fallbacks
 - `coder` agent: all tool execution runs inside Docker sandbox (network enabled)
-- `coder` uses Codex CLI first and Gemini CLI as fallback, with GitHub tokens injected at runtime
+- `coder` uses Codex CLI first with high reasoning, then GPT-5.4, then Gemini CLI, with GitHub tokens injected at runtime
 - Nested coding CLIs inside the `coder` sandbox run with their own full-access
   modes enabled; Ted and host-level OpenClaw exec remain approval-gated
 - `power` agent: browser + shell access (approval-gated), file mutation tools disabled
 - `devops` agent: maintenance profile with constrained tools and isolated session context
 - `work` plugin enabled with `coderSessionKey: "agent:coder:main"` and `workRoot: "~/work/repos"`
+- `google-gemini-cli-auth` bundled plugin enabled so the runtime can use Gemini CLI OAuth models
+- set `plugins.entries.work.config.lobsterPath` to the absolute Lobster binary in production when possible (for this Ubuntu bootstrap path, `/usr/bin/lobster`)
 - Telegram client takeover stays disabled until you add explicit `channels.telegram.clients.<peerId>` entries; operators then use `/client assign` and `/client clear` to hand a client chat to an allowlisted agent
 
 ### Configure coding CLI defaults
@@ -142,7 +150,7 @@ This does four things:
 - seeds `~/work/repos/AGENTS.md` from `ops/vps/TED_AGENTS.md` so Ted sees the
   coding toolchain in workspace context
 - configures Codex for `approval_policy = "never"` and
-  `sandbox_mode = "danger-full-access"` in `~/.codex/config.toml`
+  `sandbox_mode = "danger-full-access"` plus `reasoning_effort = "high"` in `~/.codex/config.toml`
 - configures Gemini with an allow-all policy in
   `~/.gemini/policies/openclaw-yolo.toml`
 - installs helper wrappers:
@@ -153,10 +161,11 @@ This does four things:
 The unattended `/work` path should use:
 
 - `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY_FILE`
-- `OPENAI_API_KEY`
-- `GEMINI_API_KEY`
+- OpenClaw `openai-codex` OAuth for runtime `openai-codex/*`
+- OpenClaw `google-gemini-cli` OAuth for runtime `google-gemini-cli/*`
+- Codex CLI and Gemini CLI OAuth state from the host home bind-mounted into the sandbox
 
-This keeps repo access and model auth non-interactive and short-lived for automation runs.
+This keeps repo access short-lived for automation runs and removes the normal Ted/coder dependency on OpenAI and Gemini API keys.
 
 Notes:
 
@@ -197,6 +206,34 @@ Use cases:
 - `agent`: verify the host-side agent CLI is installed and usable
 
 Do not rely on these interactive host logins for unattended automation. `/work` should continue using GitHub App and service credentials.
+
+### Configure runtime OAuth for Ted
+
+Run these once as the service user:
+
+```bash
+openclaw models auth login --provider openai-codex
+openclaw plugins enable google-gemini-cli-auth
+openclaw models auth login --provider google-gemini-cli
+```
+
+This covers Ted and the runtime model provider path.
+
+### Configure CLI OAuth for the coder sandbox
+
+The coder sandbox bind-mounts `~/.codex` and `~/.gemini` from the host into `/home/sandbox`, so do one-time host logins for the CLIs too:
+
+```bash
+sudo bash ops/vps/login-coding-clis.sh codex
+sudo bash ops/vps/login-coding-clis.sh gemini
+```
+
+ChatGPT/Codex OAuth in OpenClaw does not cover `openrouter/*` or generic `openai/*` billing, and Gemini CLI OAuth does not replace generic `google/*` API-key features.
+
+The default VPS preset avoids OpenAI API-key-dependent voice features:
+
+- inbound audio transcription uses local Whisper.cpp only
+- TTS is disabled until you opt into a separate configuration
 
 ### Configure dedicated Telegram worker groups
 
@@ -310,7 +347,7 @@ Current behavior:
 Approvals:
 
 - Lobster will ask for approvals for commit/push/merge steps and provide a resume token.
-- Telegram DM approvals render inline `Approve` / `Deny` buttons for exec approval requests and clear those buttons once the request resolves or times out.
+- Telegram DM approvals render inline `Approve` / `Deny` buttons for both exec approval requests and `/work` Lobster checkpoints, and clear those buttons once the request resolves or times out.
 - Resume from Telegram:
 
 ```text

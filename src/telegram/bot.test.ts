@@ -7,7 +7,9 @@ import {
 } from "../auto-reply/commands-registry.js";
 import { resetInboundDedupe } from "../auto-reply/reply/inbound-dedupe.js";
 import { createTelegramBot } from "./bot.js";
+import { buildTelegramChoiceButtons } from "./choice-buttons.js";
 import { buildExecApprovalCallbackData } from "./exec-approval-buttons.js";
+import { buildTelegramWorkApprovalCallbackData } from "./work-approval-buttons.js";
 
 let replyModule: typeof import("../auto-reply/reply.js");
 const { listSkillCommandsForAgents } = vi.hoisted(() => ({
@@ -566,6 +568,117 @@ describe("createTelegramBot", () => {
     expect(params?.reply_markup?.inline_keyboard?.[0]?.[0]?.text).toBe("Approve");
     expect(params?.reply_markup?.inline_keyboard?.[0]?.[1]?.text).toBe("Deny");
     expect(params?.reply_markup?.inline_keyboard?.[1]?.[0]?.text).toBe("Always allow");
+  });
+
+  it("routes work approval callbacks to /work resume and clears buttons", async () => {
+    onSpy.mockReset();
+    editMessageTextSpy.mockReset();
+    const replySpy = replyModule.__replySpy as unknown as ReturnType<typeof vi.fn>;
+    replySpy.mockReset();
+
+    createTelegramBot({ token: "tok" });
+    const callbackHandler = onSpy.mock.calls.find((call) => call[0] === "callback_query")?.[1] as (
+      ctx: Record<string, unknown>,
+    ) => Promise<void>;
+    expect(callbackHandler).toBeDefined();
+
+    await callbackHandler({
+      callbackQuery: {
+        id: "cbq-work-approve",
+        data: buildTelegramWorkApprovalCallbackData("approve"),
+        from: { id: 9, first_name: "Ada", username: "ada_bot" },
+        message: {
+          chat: { id: 1234, type: "private" },
+          date: 1736380800,
+          message_id: 35,
+          text:
+            "Commit?\n\nresumeToken:\nresume-123\n\nResume:\n" +
+            "/work resume resume-123 --approve yes\n/work resume resume-123 --approve no",
+        },
+      },
+      me: { username: "openclaw_bot" },
+      getFile: async () => ({ download: async () => new Uint8Array() }),
+    });
+
+    expect(editMessageTextSpy).toHaveBeenCalledTimes(1);
+    expect(editMessageTextSpy.mock.calls[0]?.[3]).toEqual({
+      reply_markup: { inline_keyboard: [] },
+    });
+    expect(replySpy).toHaveBeenCalledTimes(1);
+    const payload = replySpy.mock.calls[0]?.[0];
+    expect(payload.Body).toContain("/work resume resume-123 --approve yes");
+  });
+
+  it("does not submit work approval when the resume token is missing", async () => {
+    onSpy.mockReset();
+    editMessageTextSpy.mockReset();
+    const replySpy = replyModule.__replySpy as unknown as ReturnType<typeof vi.fn>;
+    replySpy.mockReset();
+
+    createTelegramBot({ token: "tok" });
+    const callbackHandler = onSpy.mock.calls.find((call) => call[0] === "callback_query")?.[1] as (
+      ctx: Record<string, unknown>,
+    ) => Promise<void>;
+    expect(callbackHandler).toBeDefined();
+
+    await callbackHandler({
+      callbackQuery: {
+        id: "cbq-work-missing",
+        data: buildTelegramWorkApprovalCallbackData("deny"),
+        from: { id: 9, first_name: "Ada", username: "ada_bot" },
+        message: {
+          chat: { id: 1234, type: "private" },
+          date: 1736380800,
+          message_id: 36,
+          text: "Commit?",
+        },
+      },
+      me: { username: "openclaw_bot" },
+      getFile: async () => ({ download: async () => new Uint8Array() }),
+    });
+
+    expect(editMessageTextSpy).not.toHaveBeenCalled();
+    expect(replySpy).not.toHaveBeenCalled();
+  });
+
+  it("routes generated choice-menu callbacks back as user text and clears buttons", async () => {
+    onSpy.mockReset();
+    editMessageTextSpy.mockReset();
+    const replySpy = replyModule.__replySpy as unknown as ReturnType<typeof vi.fn>;
+    replySpy.mockReset();
+
+    createTelegramBot({ token: "tok" });
+    const callbackHandler = onSpy.mock.calls.find((call) => call[0] === "callback_query")?.[1] as (
+      ctx: Record<string, unknown>,
+    ) => Promise<void>;
+    expect(callbackHandler).toBeDefined();
+
+    const callbackData = buildTelegramChoiceButtons(["on", "off"])?.[0]?.[1]?.callback_data;
+    expect(callbackData).toBe("xcm1:off");
+
+    await callbackHandler({
+      callbackQuery: {
+        id: "cbq-choice",
+        data: callbackData ?? "",
+        from: { id: 9, first_name: "Ada", username: "ada_bot" },
+        message: {
+          chat: { id: 1234, type: "private" },
+          date: 1736380800,
+          message_id: 37,
+          text: "Choose a mode.",
+        },
+      },
+      me: { username: "openclaw_bot" },
+      getFile: async () => ({ download: async () => new Uint8Array() }),
+    });
+
+    expect(editMessageTextSpy).toHaveBeenCalledTimes(1);
+    expect(editMessageTextSpy.mock.calls[0]?.[3]).toEqual({
+      reply_markup: { inline_keyboard: [] },
+    });
+    expect(replySpy).toHaveBeenCalledTimes(1);
+    const payload = replySpy.mock.calls[0]?.[0];
+    expect(payload.Body).toContain("] off");
   });
 
   it("edits commands list for pagination callbacks", async () => {

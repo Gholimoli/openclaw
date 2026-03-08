@@ -443,6 +443,12 @@ If the primary bot is unresponsive, you can immediately message the standby bot.
     Callback clicks are passed to the agent as text:
     `callback_data: <value>`
 
+    Telegram can also auto-render simple operator choice menus from a trailing
+    line such as `Options: yes, no.` when no explicit buttons are already set.
+    On Telegram, the `Options:` line is removed from the visible message,
+    rendered as inline buttons, and the selected value is routed back as user
+    text.
+
     Exec approval forwarding uses inline buttons in Telegram DMs:
 
     - approval prompts include **Approve** (allow once) and **Deny**
@@ -451,6 +457,10 @@ If the primary bot is unresponsive, you can immediately message the standby bot.
     - final decisions clear buttons immediately to prevent duplicate taps
     - group chats still receive text-only approval prompts
     - default: when Telegram is configured and `approvals.exec` is unset, exec approvals are forwarded to the Telegram session; set `approvals.exec.enabled: false` to disable this behavior
+
+    The `/work` plugin uses the same Telegram DM pattern for Lobster approval
+    checkpoints: you get inline **Approve** / **Deny** buttons plus the manual
+    `/work resume <token> --approve yes|no` fallback in the message body.
 
     Related docs: [Exec approvals](/tools/exec-approvals)
 

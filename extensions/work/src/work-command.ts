@@ -1,4 +1,5 @@
 import type { OpenClawPluginApi, PluginCommandContext } from "../../../src/plugins/types.js";
+import { buildTelegramWorkApprovalButtons } from "../../../src/telegram/work-approval-buttons.js";
 import { createWorkTool } from "./work-tool.js";
 
 function parseApprove(value: string): boolean | null {
@@ -47,6 +48,62 @@ function usage() {
   ].join("\n");
 }
 
+function parseErrorPayload(err: unknown): Record<string, unknown> | null {
+  if (err && typeof err === "object") {
+    const payload = (err as { payload?: unknown }).payload;
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      return payload as Record<string, unknown>;
+    }
+  }
+  const text = String(err ?? "");
+  const match = text.match(/({[\s\S]*})\s*$/);
+  if (!match?.[1]) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(match[1]) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {}
+  return null;
+}
+
+function formatFailurePayload(payload: Record<string, unknown>): string {
+  const title =
+    typeof payload.error === "string" && payload.error.trim()
+      ? payload.error.trim()
+      : "work failed";
+  const extras = [
+    typeof payload.cause === "string" ? payload.cause.trim() : "",
+    typeof payload.tail === "string" ? payload.tail.trim() : "",
+  ].filter(Boolean);
+  const nested = ["review", "codex", "gemini", "checks"]
+    .map((key) => payload[key])
+    .filter(
+      (value): value is Record<string, unknown> =>
+        Boolean(value) && typeof value === "object" && !Array.isArray(value),
+    )
+    .flatMap((value) => {
+      const error = typeof value.error === "string" ? value.error.trim() : "";
+      const tail = typeof value.tail === "string" ? value.tail.trim() : "";
+      return [error, tail].filter(Boolean);
+    });
+  const body = [...extras, ...nested].filter(Boolean).join("\n\n");
+  return body ? `work failed:\n${title}\n\n${body}` : `work failed:\n${title}`;
+}
+
+function formatSuccessOutput(output: unknown[]): string | null {
+  if (!Array.isArray(output) || output.length === 0) {
+    return null;
+  }
+  if (output.length === 1) {
+    const only = output[0];
+    return typeof only === "string" ? only : JSON.stringify(only, null, 2);
+  }
+  return JSON.stringify(output, null, 2);
+}
+
 export function registerWorkCommand(api: OpenClawPluginApi) {
   api.registerCommand({
     name: "work",
@@ -79,15 +136,17 @@ export function registerWorkCommand(api: OpenClawPluginApi) {
       });
 
       try {
+        const isTelegram = (ctx.channelId ?? ctx.channel).trim().toLowerCase() === "telegram";
+
         const formatEnvelope = (env: any) => {
           if (!env || typeof env !== "object") {
-            return String(env);
+            return { text: String(env) };
           }
           if (env.ok !== true) {
             const msg = env?.error?.message
               ? String(env.error.message)
               : JSON.stringify(env, null, 2);
-            return `work failed:\n${msg}`;
+            return { text: `work failed:\n${msg}` };
           }
           if (env.status === "needs_approval") {
             const prompt = env?.requiresApproval?.prompt
@@ -99,9 +158,24 @@ export function registerWorkCommand(api: OpenClawPluginApi) {
             const tokenLine = token
               ? `\n\nresumeToken:\n${token}\n\nResume:\n/work resume ${token} --approve yes\n/work resume ${token} --approve no`
               : "";
-            return `${prompt}${tokenLine}`;
+            const text = `${prompt}${tokenLine}`;
+            if (isTelegram && token) {
+              return {
+                text,
+                channelData: {
+                  telegram: {
+                    buttons: buildTelegramWorkApprovalButtons(),
+                  },
+                },
+              };
+            }
+            return { text };
           }
-          return JSON.stringify(env, null, 2);
+          const formattedOutput = formatSuccessOutput(Array.isArray(env.output) ? env.output : []);
+          if (formattedOutput) {
+            return { text: formattedOutput };
+          }
+          return { text: JSON.stringify(env, null, 2) };
         };
 
         if (sub === "resume") {
@@ -112,7 +186,7 @@ export function registerWorkCommand(api: OpenClawPluginApi) {
             return { text: usage() };
           }
           const result = await tool.execute("work", { action: "resume", token, approve });
-          return { text: formatEnvelope(result.details) };
+          return formatEnvelope(result.details);
         }
 
         if (sub === "new") {
@@ -121,7 +195,7 @@ export function registerWorkCommand(api: OpenClawPluginApi) {
             return { text: usage() };
           }
           const result = await tool.execute("work", { action: "new", name });
-          return { text: formatEnvelope(result.details) };
+          return formatEnvelope(result.details);
         }
 
         if (sub === "merge") {
@@ -133,7 +207,7 @@ export function registerWorkCommand(api: OpenClawPluginApi) {
             return { text: usage() };
           }
           const result = await tool.execute("work", { action: "merge", repo, pr, base: baseFlag });
-          return { text: formatEnvelope(result.details) };
+          return formatEnvelope(result.details);
         }
 
         if (sub === "task") {
@@ -148,7 +222,7 @@ export function registerWorkCommand(api: OpenClawPluginApi) {
             message,
             base: baseFlag,
           });
-          return { text: formatEnvelope(result.details) };
+          return formatEnvelope(result.details);
         }
 
         if (sub === "upstream") {
@@ -166,7 +240,7 @@ export function registerWorkCommand(api: OpenClawPluginApi) {
             upstream,
             syncBranch,
           });
-          return { text: formatEnvelope(result.details) };
+          return formatEnvelope(result.details);
         }
 
         if (sub === "review" || sub === "fix" || sub === "ship") {
@@ -175,12 +249,13 @@ export function registerWorkCommand(api: OpenClawPluginApi) {
             return { text: usage() };
           }
           const result = await tool.execute("work", { action: sub, repo, base: baseFlag });
-          return { text: formatEnvelope(result.details) };
+          return formatEnvelope(result.details);
         }
 
         return { text: usage() };
       } catch (err) {
-        return { text: `work failed: ${String(err)}` };
+        const payload = parseErrorPayload(err);
+        return { text: payload ? formatFailurePayload(payload) : `work failed: ${String(err)}` };
       }
     },
   });

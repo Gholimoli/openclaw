@@ -1,4 +1,5 @@
 import type { ChannelOutboundAdapter } from "../types.js";
+import { resolveTelegramAutoChoiceMenu } from "../../../telegram/choice-buttons.js";
 import { markdownToTelegramHtmlChunks } from "../../../telegram/format.js";
 import {
   parseTelegramReplyToMessageId,
@@ -45,9 +46,13 @@ export const telegramOutbound: ChannelOutboundAdapter = {
     const telegramData = payload.channelData?.telegram as
       | { buttons?: Array<Array<{ text: string; callback_data: string }>>; quoteText?: string }
       | undefined;
+    const autoMenu =
+      telegramData?.buttons || typeof payload.text !== "string"
+        ? null
+        : resolveTelegramAutoChoiceMenu(payload.text);
     const quoteText =
       typeof telegramData?.quoteText === "string" ? telegramData.quoteText : undefined;
-    const text = payload.text ?? "";
+    const text = autoMenu?.text ?? payload.text ?? "";
     const mediaUrls = payload.mediaUrls?.length
       ? payload.mediaUrls
       : payload.mediaUrl
@@ -65,7 +70,7 @@ export const telegramOutbound: ChannelOutboundAdapter = {
     if (mediaUrls.length === 0) {
       const result = await send(to, text, {
         ...baseOpts,
-        buttons: telegramData?.buttons,
+        buttons: telegramData?.buttons ?? autoMenu?.buttons ?? undefined,
       });
       return { channel: "telegram", ...result };
     }
@@ -78,7 +83,7 @@ export const telegramOutbound: ChannelOutboundAdapter = {
       finalResult = await send(to, isFirst ? text : "", {
         ...baseOpts,
         mediaUrl,
-        ...(isFirst ? { buttons: telegramData?.buttons } : {}),
+        ...(isFirst ? { buttons: telegramData?.buttons ?? autoMenu?.buttons ?? undefined } : {}),
       });
     }
     return { channel: "telegram", ...(finalResult ?? { messageId: "unknown", chatId: to }) };

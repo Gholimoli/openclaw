@@ -126,6 +126,9 @@ function buildMessagingSection(params: {
             : params.runtimeChannel
               ? `- Inline buttons not enabled for ${params.runtimeChannel}. If you need them, ask to set ${params.runtimeChannel}.capabilities.inlineButtons ("dm"|"group"|"all"|"allowlist").`
               : "",
+          params.runtimeChannel === "telegram"
+            ? "- When asking the operator to choose between simple discrete options, end with a trailing line like `Options: yes, no.` so Telegram can render a menu automatically."
+            : "",
           ...(params.messageToolHints ?? []),
         ]
           .filter(Boolean)

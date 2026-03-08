@@ -55,7 +55,19 @@ Expected:
 
 - Telegram DM shows inline Approve and Deny buttons
 - tapping one resolves the approval and clears the buttons
+- the message still includes the resume token and manual `/work resume ...` fallback
 - the same approval appears in the Office view
+
+## 4b. Choice menu smoke test
+
+Trigger a Ted question that offers simple discrete options, for example a status
+toggle or follow-up clarification that ends with `Options: ...`.
+
+Expected:
+
+- Telegram DM renders the options as inline menu buttons
+- tapping one clears the buttons
+- the selected option is routed back to Ted as user input
 
 ## 5. Control UI smoke test
 

@@ -69,12 +69,24 @@ For the full mental model of why something is blocked, see [Sandbox vs tool poli
   - `coderabbit`
 - Service auth available to that environment:
   - `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY` or `GITHUB_APP_PRIVATE_KEY_FILE`
-  - `OPENAI_API_KEY`
-  - `GEMINI_API_KEY`
+  - OpenClaw `openai-codex` OAuth for runtime `openai-codex/*`
+  - OpenClaw `google-gemini-cli` OAuth for runtime `google-gemini-cli/*`
+  - Codex CLI and Gemini CLI OAuth state if you run implementation CLIs directly inside the sandbox
 
 ## Install
 
-This plugin lives at `extensions/work` in this repo.
+This plugin ships in the main `openclaw` package under `extensions/work`.
+
+Production recommendation:
+
+- Use the bundled plugin from your live OpenClaw runtime.
+- On the VPS pack, that means the promoted release under `~/openclaw-current`.
+- Install the Lobster runtime separately from `@clawdbot/lobster`. `@openclaw/lobster` is the OpenClaw plugin package and does not provide the `lobster` executable.
+- Prefer an absolute `lobsterPath` such as `/usr/bin/lobster` on Linux hosts.
+- Do not add `plugins.load.paths` for `work` on a VPS unless you are explicitly testing a source checkout.
+- Do not keep a separate `~/.openclaw/extensions/work` copy once you move to the bundled production path.
+
+This repo also includes the source at `extensions/work` for development and local testing.
 
 Install it as a local plugin:
 
@@ -83,6 +95,8 @@ openclaw plugins install ./extensions/work
 ```
 
 Restart the Gateway afterwards so it loads the plugin.
+
+If you are developing the plugin from a source checkout, `openclaw plugins install ./extensions/work` remains supported. That path now installs runtime dependencies inside the plugin and ignores repo-local `node_modules` shims.
 
 ## Enable and configure
 
@@ -112,6 +126,39 @@ Enable and configure under `plugins.entries.work`:
         },
       },
     },
+  },
+}
+```
+
+For a subscription-auth VPS pack, pair that with agent models like:
+
+```json5
+{
+  plugins: {
+    entries: {
+      "google-gemini-cli-auth": {
+        enabled: true,
+      },
+    },
+  },
+  agents: {
+    list: [
+      {
+        id: "main",
+        model: {
+          primary: "openai-codex/gpt-5.3-codex",
+          fallbacks: ["openai-codex/gpt-5.2", "google-gemini-cli/gemini-3-pro-preview"],
+        },
+      },
+      {
+        id: "coder",
+        model: {
+          primary: "openai-codex/gpt-5.3-codex",
+          fallbacks: ["openai/gpt-5.4", "google-gemini-cli/gemini-3-pro-preview"],
+        },
+        thinkingDefault: "high",
+      },
+    ],
   },
 }
 ```
@@ -251,6 +298,10 @@ If a workflow pauses, you get:
 
 - a prompt
 - a `resumeToken`
+
+On Telegram, `/work` also renders inline **Approve** / **Deny** buttons for
+these Lobster checkpoints. The message still includes the resume token and
+manual resume commands as fallback.
 
 Resume from chat:
 

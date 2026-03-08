@@ -29,6 +29,7 @@ import {
   buildTelegramParentPeer,
   resolveTelegramForumThreadId,
 } from "./bot/helpers.js";
+import { parseTelegramChoiceCallbackData } from "./choice-buttons.js";
 import { resolveTelegramClientRoute } from "./client-routing.js";
 import {
   buildExecApprovalConfirmButtons,
@@ -46,6 +47,10 @@ import {
   type ProviderInfo,
 } from "./model-buttons.js";
 import { buildInlineKeyboard } from "./send.js";
+import {
+  extractTelegramWorkResumeToken,
+  parseTelegramWorkApprovalCallbackData,
+} from "./work-approval-buttons.js";
 
 export const registerTelegramHandlers = ({
   cfg,
@@ -310,6 +315,28 @@ export const registerTelegramHandlers = ({
       if (!data || !callbackMessage) {
         return;
       }
+      const currentText = callbackMessage.text ?? callbackMessage.caption ?? "";
+
+      const editCallbackButtons = async (
+        buttons: Array<Array<{ text: string; callback_data: string }>>,
+      ) => {
+        const keyboard = buildInlineKeyboard(buttons);
+        try {
+          await bot.api.editMessageText(
+            callbackMessage.chat.id,
+            callbackMessage.message_id,
+            currentText,
+            {
+              reply_markup: keyboard ?? { inline_keyboard: [] },
+            },
+          );
+        } catch (editErr) {
+          const errStr = String(editErr);
+          if (!errStr.includes("message is not modified")) {
+            throw editErr;
+          }
+        }
+      };
 
       const inlineButtonsScope = resolveTelegramInlineButtonsScope({
         cfg,
@@ -455,37 +482,15 @@ export const registerTelegramHandlers = ({
 
       const approvalCallback = parseExecApprovalCallbackData(data);
       if (approvalCallback) {
-        const currentText = callbackMessage.text ?? callbackMessage.caption ?? "Exec approval";
-        const editApprovalButtons = async (
-          buttons: Array<Array<{ text: string; callback_data: string }>>,
-        ) => {
-          const keyboard = buildInlineKeyboard(buttons);
-          try {
-            await bot.api.editMessageText(
-              callbackMessage.chat.id,
-              callbackMessage.message_id,
-              currentText,
-              {
-                reply_markup: keyboard ?? { inline_keyboard: [] },
-              },
-            );
-          } catch (editErr) {
-            const errStr = String(editErr);
-            if (!errStr.includes("message is not modified")) {
-              throw editErr;
-            }
-          }
-        };
-
         if (approvalCallback.action === "always") {
           const buttons = buildExecApprovalConfirmButtons(approvalCallback.approvalId);
-          await editApprovalButtons(buttons ?? []);
+          await editCallbackButtons(buttons ?? []);
           return;
         }
 
         if (approvalCallback.action === "back") {
           const buttons = buildExecApprovalDefaultButtons(approvalCallback.approvalId);
-          await editApprovalButtons(buttons ?? []);
+          await editCallbackButtons(buttons ?? []);
           return;
         }
 
@@ -496,12 +501,42 @@ export const registerTelegramHandlers = ({
               ? "deny"
               : "allow-always";
 
-        await editApprovalButtons([]).catch(() => undefined);
+        await editCallbackButtons([]).catch(() => undefined);
 
         const syntheticMessage: Message = {
           ...callbackMessage,
           from: callback.from,
           text: `/approve ${approvalCallback.approvalId} ${decision}`,
+          caption: undefined,
+          caption_entities: undefined,
+          entities: undefined,
+        };
+        const getFile =
+          typeof ctx.getFile === "function" ? ctx.getFile.bind(ctx) : async () => ({});
+        await processMessage(
+          { message: syntheticMessage, me: ctx.me, getFile },
+          [],
+          storeAllowFrom,
+          {
+            forceWasMentioned: true,
+            messageIdOverride: callback.id,
+          },
+        );
+        return;
+      }
+
+      const workApprovalCallback = parseTelegramWorkApprovalCallbackData(data);
+      if (workApprovalCallback) {
+        const token = extractTelegramWorkResumeToken(currentText);
+        if (!token) {
+          return;
+        }
+        await editCallbackButtons([]).catch(() => undefined);
+        const decision = workApprovalCallback.action === "approve" ? "yes" : "no";
+        const syntheticMessage: Message = {
+          ...callbackMessage,
+          from: callback.from,
+          text: `/work resume ${token} --approve ${decision}`,
           caption: undefined,
           caption_entities: undefined,
           entities: undefined,
@@ -682,6 +717,31 @@ export const registerTelegramHandlers = ({
           return;
         }
 
+        return;
+      }
+
+      const choiceCallback = parseTelegramChoiceCallbackData(data);
+      if (choiceCallback) {
+        await editCallbackButtons([]).catch(() => undefined);
+        const syntheticMessage: Message = {
+          ...callbackMessage,
+          from: callback.from,
+          text: choiceCallback.choice,
+          caption: undefined,
+          caption_entities: undefined,
+          entities: undefined,
+        };
+        const getFile =
+          typeof ctx.getFile === "function" ? ctx.getFile.bind(ctx) : async () => ({});
+        await processMessage(
+          { message: syntheticMessage, me: ctx.me, getFile },
+          [],
+          storeAllowFrom,
+          {
+            forceWasMentioned: true,
+            messageIdOverride: callback.id,
+          },
+        );
         return;
       }
 
