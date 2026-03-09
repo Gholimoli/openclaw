@@ -190,6 +190,17 @@ esac
     );
 
     await writeExecutable(
+      path.join(binDir, "sudo"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${1:-}" == "-n" ]]; then
+  shift
+fi
+exec "$@"
+`,
+    );
+
+    await writeExecutable(
       path.join(binDir, "timeout"),
       `#!/usr/bin/env bash
 set -euo pipefail

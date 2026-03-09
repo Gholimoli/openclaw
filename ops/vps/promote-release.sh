@@ -135,6 +135,14 @@ run_systemctl() {
     systemctl --user "$@"
     return
   fi
+  if [[ "$(id -u)" -eq 0 ]]; then
+    systemctl "$@"
+    return
+  fi
+  if command -v sudo >/dev/null 2>&1; then
+    sudo -n systemctl "$@"
+    return
+  fi
   systemctl "$@"
 }
 
