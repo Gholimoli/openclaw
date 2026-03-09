@@ -207,4 +207,94 @@ describe("ops/vps/sync-coding-pack-config.sh", () => {
     expect(synced.approvals?.exec?.mode).toBe("both");
     expect(synced.approvals?.exec?.targets).toEqual([{ channel: "telegram", to: "7652107499" }]);
   });
+
+  it("preserves the current sandbox user and drops unresolved sandbox env refs", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "openclaw-vps-sync-sandbox-"));
+    tempRoots.push(root);
+
+    const configPath = path.join(root, "openclaw.json");
+    const templatePath = path.join(root, "openclaw.vps-coding.json5");
+
+    await writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          agents: {
+            list: [
+              {
+                id: "coder",
+                sandbox: {
+                  docker: {
+                    user: "999:988",
+                    env: {
+                      EXISTING_ONLY: "keep-me",
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    await writeFile(
+      templatePath,
+      `{
+        agents: {
+          list: [
+            {
+              id: "coder",
+              sandbox: {
+                docker: {
+                  image: "openclaw-sandbox-coder:bookworm",
+                  user: "\${OPENCLAW_SANDBOX_UID}:\${OPENCLAW_SANDBOX_GID}",
+                  env: {
+                    LANG: "C.UTF-8",
+                    KEEP_IF_DEFINED: "\${KEEP_IF_DEFINED}",
+                    DROP_IF_MISSING: "\${DROP_IF_MISSING}",
+                  },
+                },
+              },
+            },
+          ],
+        },
+      }\n`,
+    );
+
+    await execFileAsync("bash", [scriptPath, configPath, templatePath], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        HOME: root,
+        KEEP_IF_DEFINED: "present",
+      },
+    });
+
+    const synced = JSON.parse(await readFile(configPath, "utf8")) as {
+      agents?: {
+        list?: Array<{
+          id?: string;
+          sandbox?: {
+            docker?: {
+              env?: Record<string, string>;
+              image?: string;
+              user?: string;
+            };
+          };
+        }>;
+      };
+    };
+
+    const coderAgent = synced.agents?.list?.find((agent) => agent.id === "coder");
+    expect(coderAgent?.sandbox?.docker?.image).toBe("openclaw-sandbox-coder:bookworm");
+    expect(coderAgent?.sandbox?.docker?.user).toBe("999:988");
+    expect(coderAgent?.sandbox?.docker?.env).toEqual({
+      EXISTING_ONLY: "keep-me",
+      LANG: "C.UTF-8",
+      KEEP_IF_DEFINED: "${KEEP_IF_DEFINED}",
+    });
+  });
 });

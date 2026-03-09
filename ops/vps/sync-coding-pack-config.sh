@@ -66,6 +66,65 @@ const setPath = (obj, pathParts, value) => {
 };
 
 const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const ENV_REF_PATTERN = /\$\{([A-Z0-9_]+)\}/g;
+
+const hasMissingEnvRef = (value) => {
+  if (typeof value !== "string") {
+    return false;
+  }
+  let match;
+  while ((match = ENV_REF_PATTERN.exec(value)) !== null) {
+    if (!Object.prototype.hasOwnProperty.call(process.env, match[1])) {
+      ENV_REF_PATTERN.lastIndex = 0;
+      return true;
+    }
+  }
+  ENV_REF_PATTERN.lastIndex = 0;
+  return false;
+};
+
+const deepMerge = (currentValue, templateValue) => {
+  if (!isObject(currentValue) || !isObject(templateValue)) {
+    return clone(templateValue);
+  }
+  const merged = clone(currentValue) ?? {};
+  for (const [key, value] of Object.entries(templateValue)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (isObject(value) && isObject(merged[key])) {
+      merged[key] = deepMerge(merged[key], value);
+      continue;
+    }
+    merged[key] = clone(value);
+  }
+  return merged;
+};
+
+const sanitizeTemplateAgent = (agent) => {
+  const nextAgent = clone(agent) ?? {};
+  const dockerConfig = nextAgent?.sandbox?.docker;
+  if (!isObject(dockerConfig)) {
+    return nextAgent;
+  }
+
+  if (hasMissingEnvRef(dockerConfig.user)) {
+    delete dockerConfig.user;
+  }
+
+  if (isObject(dockerConfig.env)) {
+    const filteredEnv = {};
+    for (const [key, value] of Object.entries(dockerConfig.env)) {
+      if (hasMissingEnvRef(value)) {
+        continue;
+      }
+      filteredEnv[key] = clone(value);
+    }
+    dockerConfig.env = filteredEnv;
+  }
+
+  return nextAgent;
+};
 
 const current = readJson5(configPath);
 const template = readJson5(templatePath);
@@ -159,10 +218,7 @@ for (const agent of currentAgents) {
     mergedAgents.push(clone(agent));
     continue;
   }
-  const merged = {
-    ...clone(agent),
-    ...clone(templateAgent),
-  };
+  const merged = deepMerge(agent, sanitizeTemplateAgent(templateAgent));
   if (isNonEmptyString(agent?.workspace)) {
     merged.workspace = agent.workspace;
   }
@@ -174,7 +230,7 @@ for (const templateAgent of templateAgents) {
   if (!agentId || seenAgentIds.has(agentId)) {
     continue;
   }
-  mergedAgents.push(clone(templateAgent));
+  mergedAgents.push(sanitizeTemplateAgent(templateAgent));
 }
 assign(["agents", "list"], mergedAgents);
 
