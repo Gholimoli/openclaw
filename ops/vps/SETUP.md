@@ -380,7 +380,7 @@ Deploy notifications:
 - Confirm `bash ops/vps/verify-coding-pack-config.sh` passes on the host after the deploy.
 - Confirm Telegram receives one success notification including UTC time, commit hash, host, and service details.
 - Confirm failed deploys do not emit a false success message.
-- Confirm `ops/vps/promote-release.sh` appends the deploy outcome to the automation audit store and fails if the live config drifts away from the Ted VPS coding-pack guardrails.
+- Confirm `ops/vps/promote-release.sh` appends the deploy outcome to the automation audit store, auto-detects the live systemd unit (`openclaw.service` vs `openclaw-gateway.service`), syncs the live config from the release's VPS coding-pack template, and fails before cutover if the reconciled config still drifts away from the Ted VPS coding-pack guardrails.
 
 ## 11. “Idea -> source” traceability (external)
 

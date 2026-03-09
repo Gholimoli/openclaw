@@ -13,7 +13,8 @@ Environment overrides:
   OPENCLAW_CLI_SHIM                       Host CLI shim rewritten to the live release (default: $HOME/.local/share/pnpm/openclaw)
   OPENCLAW_LAST_KNOWN_GOOD_FILE           Last-known-good SHA file (default: $OPENCLAW_DEPLOY_ROOT/last-known-good.sha)
   OPENCLAW_ENV_FILE                       Env file loaded before preflight/probes (default: $HOME/.openclaw/.env)
-  OPENCLAW_GATEWAY_SERVICE                systemd user service (default: openclaw-gateway.service)
+  OPENCLAW_GATEWAY_SERVICE                systemd unit name to restart (default: auto-detect)
+  OPENCLAW_GATEWAY_SERVICE_SCOPE          systemd scope: auto, user, or system (default: auto)
   OPENCLAW_GATEWAY_HEALTH_URL             Health URL (default: http://127.0.0.1:18789/health)
   OPENCLAW_PREFLIGHT_PORT                 Candidate preflight port (default: 29879)
   OPENCLAW_PREFLIGHT_TIMEOUT_SECONDS      Candidate boot timeout (default: 90)
@@ -22,6 +23,7 @@ Environment overrides:
   OPENCLAW_STABILITY_SECONDS              Stability window seconds (default: 45)
   OPENCLAW_CHANNELS_PROBE_TIMEOUT_SECONDS channels status probe timeout (default: 90)
   OPENCLAW_RUN_CHANNELS_PROBE             1 to run probe, 0 to skip (default: 1)
+  OPENCLAW_SYNC_VPS_CODING_PACK_CONFIG    1 to sync live config from the VPS coding-pack template before verification/cutover, 0 to skip (default: 1)
   OPENCLAW_VERIFY_VPS_CODING_PACK_CONFIG  1 to verify the live config matches the VPS coding pack guardrails, 0 to skip (default: 1)
 EOF
 }
@@ -100,6 +102,118 @@ require_cmd() {
   command -v "$cmd" >/dev/null 2>&1 || fail "required command not found: $cmd"
 }
 
+normalize_service_name() {
+  local unit="$1"
+  unit="${unit#"${unit%%[![:space:]]*}"}"
+  unit="${unit%"${unit##*[![:space:]]}"}"
+  if [[ -z "$unit" ]]; then
+    return 1
+  fi
+  if [[ "$unit" != *.service ]]; then
+    unit="${unit}.service"
+  fi
+  printf '%s\n' "$unit"
+}
+
+ensure_user_systemd_env() {
+  if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
+    local runtime_dir="/run/user/$(id -u)"
+    if [[ -d "$runtime_dir" ]]; then
+      export XDG_RUNTIME_DIR="$runtime_dir"
+    fi
+  fi
+  if [[ -n "${XDG_RUNTIME_DIR:-}" && -S "${XDG_RUNTIME_DIR}/bus" && -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+  fi
+}
+
+run_systemctl() {
+  local scope="$1"
+  shift
+  if [[ "$scope" == "user" ]]; then
+    ensure_user_systemd_env
+    systemctl --user "$@"
+    return
+  fi
+  systemctl "$@"
+}
+
+service_exists() {
+  local scope="$1"
+  local unit="$2"
+  local load_state
+  load_state="$(run_systemctl "$scope" show "$unit" -p LoadState --value 2>/dev/null || true)"
+  [[ "$load_state" != "not-found" && -n "$load_state" ]]
+}
+
+resolve_gateway_service() {
+  local requested_scope="${OPENCLAW_GATEWAY_SERVICE_SCOPE:-auto}"
+  local requested_service="${OPENCLAW_GATEWAY_SERVICE:-}"
+  local default_gateway_service="openclaw-gateway.service"
+  local profile="${OPENCLAW_PROFILE:-}"
+  local profile_lower=""
+  if [[ -n "$profile" ]]; then
+    profile_lower="$(printf '%s' "$profile" | tr '[:upper:]' '[:lower:]')"
+  fi
+  if [[ -n "$profile" && "$profile_lower" != "default" ]]; then
+    default_gateway_service="$(normalize_service_name "openclaw-gateway-${profile}")"
+  fi
+
+  if [[ -n "$requested_service" ]]; then
+    requested_service="$(normalize_service_name "$requested_service")" || fail "OPENCLAW_GATEWAY_SERVICE must not be empty"
+  fi
+
+  local -a candidates=()
+  case "$requested_scope" in
+    auto)
+      if [[ -n "$requested_service" ]]; then
+        if [[ "$requested_service" == "openclaw.service" ]]; then
+          candidates=("system:${requested_service}" "user:${requested_service}")
+        else
+          candidates=("user:${requested_service}" "system:${requested_service}")
+        fi
+      else
+        candidates=(
+          "user:${default_gateway_service}"
+          "system:${default_gateway_service}"
+          "system:openclaw.service"
+          "user:openclaw.service"
+        )
+      fi
+      ;;
+    user|system)
+      if [[ -z "$requested_service" ]]; then
+        if [[ "$requested_scope" == "user" ]]; then
+          requested_service="$default_gateway_service"
+        else
+          requested_service="openclaw.service"
+        fi
+      fi
+      candidates=("${requested_scope}:${requested_service}")
+      ;;
+    *)
+      fail "OPENCLAW_GATEWAY_SERVICE_SCOPE must be one of: auto, user, system (got: $requested_scope)"
+      ;;
+  esac
+
+  local candidate scope unit
+  for candidate in "${candidates[@]}"; do
+    scope="${candidate%%:*}"
+    unit="${candidate#*:}"
+    if service_exists "$scope" "$unit"; then
+      gateway_service_scope="$scope"
+      gateway_service="$unit"
+      log "resolved gateway service: scope=${gateway_service_scope} unit=${gateway_service}"
+      return 0
+    fi
+  done
+
+  if [[ -n "$requested_service" ]]; then
+    fail "unable to find requested gateway service (${requested_scope}:${requested_service})"
+  fi
+  fail "unable to resolve a gateway service; set OPENCLAW_GATEWAY_SERVICE and OPENCLAW_GATEWAY_SERVICE_SCOPE explicitly"
+}
+
 load_env_file() {
   if [[ ! -f "$env_file" ]]; then
     warn "env file not found; continuing without it: $env_file"
@@ -130,14 +244,15 @@ wait_for_health() {
 }
 
 read_restart_count() {
-  systemctl --user show "$gateway_service" -p NRestarts --value 2>/dev/null || true
+  run_systemctl "$gateway_service_scope" show "$gateway_service" -p NRestarts --value 2>/dev/null || true
 }
 
 set_current_link() {
   local target="$1"
   local tmp_link="${current_link}.next.$$"
   ln -sfn "$target" "$tmp_link"
-  mv -fT "$tmp_link" "$current_link"
+  rm -f "$current_link"
+  mv -f "$tmp_link" "$current_link"
 }
 
 sync_openclaw_cli_shim() {
@@ -198,7 +313,26 @@ run_pack_config_verify() {
   [[ -x "$verify_script" ]] || fail "config verify script is missing or not executable: $verify_script"
 
   log "verifying live VPS coding-pack config"
-  "$verify_script" >/tmp/openclaw-vps-config-verify.log 2>&1
+  if ! "$verify_script" >/tmp/openclaw-vps-config-verify.log 2>&1; then
+    cat /tmp/openclaw-vps-config-verify.log >&2 || true
+    fail "live VPS coding-pack config verification failed"
+  fi
+}
+
+run_pack_config_sync() {
+  if [[ "$sync_vps_coding_pack_config" != "1" ]]; then
+    log "VPS coding-pack config sync disabled (OPENCLAW_SYNC_VPS_CODING_PACK_CONFIG=$sync_vps_coding_pack_config)"
+    return 0
+  fi
+
+  local sync_script="$1/ops/vps/sync-coding-pack-config.sh"
+  [[ -x "$sync_script" ]] || fail "config sync script is missing or not executable: $sync_script"
+
+  log "syncing live VPS coding-pack config"
+  if ! "$sync_script" >/tmp/openclaw-vps-config-sync.log 2>&1; then
+    cat /tmp/openclaw-vps-config-sync.log >&2 || true
+    fail "live VPS coding-pack config sync failed"
+  fi
 }
 
 notify_deploy_success() {
@@ -211,7 +345,7 @@ notify_deploy_success() {
   ts_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   host="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo unknown-host)"
   short_sha="${target_sha:0:12}"
-  event_text="Deployment succeeded: commit=${target_sha} short=${short_sha} utc=${ts_utc} host=${host} service=${gateway_service}"
+  event_text="Deployment succeeded: commit=${target_sha} short=${short_sha} utc=${ts_utc} host=${host} service=${gateway_service} scope=${gateway_service_scope}"
 
   if ! openclaw system event --mode now --text "$event_text" >/tmp/openclaw-deploy-notify.log 2>&1; then
     warn "failed to enqueue deploy success system event; see /tmp/openclaw-deploy-notify.log"
@@ -295,7 +429,7 @@ rollback_and_fail() {
   log "rolling back to $rollback_dir"
   set_current_link "$rollback_dir"
   sync_openclaw_cli_shim "$rollback_dir"
-  systemctl --user restart "$gateway_service"
+  run_systemctl "$gateway_service_scope" restart "$gateway_service"
 
   if ! wait_for_health "$gateway_health_url" "$health_timeout_seconds"; then
     fail "${reason}; rollback restart did not recover health"
@@ -329,7 +463,8 @@ releases_dir="${OPENCLAW_RELEASES_DIR:-$deploy_root/releases}"
 current_link="${OPENCLAW_CURRENT_LINK:-$HOME/openclaw-current}"
 last_known_good_file="${OPENCLAW_LAST_KNOWN_GOOD_FILE:-$deploy_root/last-known-good.sha}"
 env_file="${OPENCLAW_ENV_FILE:-${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/.env}"
-gateway_service="${OPENCLAW_GATEWAY_SERVICE:-openclaw-gateway.service}"
+gateway_service="${OPENCLAW_GATEWAY_SERVICE:-}"
+gateway_service_scope=""
 gateway_health_url="${OPENCLAW_GATEWAY_HEALTH_URL:-http://127.0.0.1:18789/health}"
 preflight_port="${OPENCLAW_PREFLIGHT_PORT:-29879}"
 preflight_timeout_seconds="${OPENCLAW_PREFLIGHT_TIMEOUT_SECONDS:-90}"
@@ -339,6 +474,7 @@ stability_seconds="${OPENCLAW_STABILITY_SECONDS:-45}"
 channels_probe_timeout_seconds="${OPENCLAW_CHANNELS_PROBE_TIMEOUT_SECONDS:-90}"
 run_channels_probe_enabled="${OPENCLAW_RUN_CHANNELS_PROBE:-1}"
 verify_vps_coding_pack_config="${OPENCLAW_VERIFY_VPS_CODING_PACK_CONFIG:-1}"
+sync_vps_coding_pack_config="${OPENCLAW_SYNC_VPS_CODING_PACK_CONFIG:-1}"
 
 require_cmd git
 require_cmd pnpm
@@ -352,6 +488,7 @@ fi
 
 mkdir -p "$deploy_root" "$releases_dir" "$(dirname "$last_known_good_file")"
 load_env_file
+resolve_gateway_service
 
 git -C "$repo_dir" fetch origin main --prune
 git -C "$repo_dir" cat-file -e "${target_sha}^{commit}" 2>/dev/null || fail "unknown commit: $target_sha"
@@ -376,13 +513,14 @@ else
   log "reusing existing prepared release: $release_dir"
 fi
 
+run_pack_config_sync "$release_dir"
+run_pack_config_verify "$release_dir"
 before_restarts="$(read_restart_count)"
 log "promoting release to live symlink: $release_dir"
 set_current_link "$release_dir"
 sync_openclaw_cli_shim "$release_dir"
-run_pack_config_verify "$release_dir"
 
-if ! systemctl --user restart "$gateway_service"; then
+if ! run_systemctl "$gateway_service_scope" restart "$gateway_service"; then
   rollback_and_fail "gateway restart failed after promotion"
 fi
 

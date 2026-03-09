@@ -1,0 +1,210 @@
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+import { afterEach, describe, expect, it } from "vitest";
+
+const execFileAsync = promisify(execFile);
+const scriptPath = path.resolve(process.cwd(), "ops/vps/sync-coding-pack-config.sh");
+
+describe("ops/vps/sync-coding-pack-config.sh", () => {
+  const tempRoots: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(
+      tempRoots.splice(0).map((root) => rm(root, { force: true, recursive: true })),
+    );
+  });
+
+  it("reconciles pack guardrails while preserving operator-specific telegram targets", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "openclaw-vps-sync-"));
+    tempRoots.push(root);
+
+    const configPath = path.join(root, "openclaw.json");
+    const templatePath = path.join(root, "openclaw.vps-coding.json5");
+
+    await writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          gateway: { bind: "0.0.0.0", auth: { token: "literal-token" } },
+          channels: {
+            telegram: {
+              enabled: true,
+              botToken: "literal-bot-token",
+              dmPolicy: "allowlist",
+              groupPolicy: "disabled",
+              allowFrom: ["7652107499"],
+              groupAllowFrom: ["7652107499"],
+              groups: {
+                "-100999": { requireMention: true },
+              },
+              capabilities: { inlineButtons: "off" },
+              streamMode: "typing",
+            },
+          },
+          plugins: {
+            entries: {
+              work: {
+                enabled: false,
+                config: {
+                  lobsterPath: "/usr/bin/lobster",
+                },
+              },
+            },
+          },
+          agents: {
+            list: [
+              {
+                id: "main",
+                workspace: "/srv/custom-main",
+                model: { primary: "old-model" },
+                tools: { allow: ["read"], deny: ["exec"] },
+              },
+            ],
+          },
+          bindings: [
+            {
+              agentId: "coder",
+              match: { channel: "telegram", peer: { kind: "group", id: "-100999" } },
+            },
+          ],
+          approvals: {
+            exec: {
+              enabled: true,
+              mode: "targets",
+              targets: [{ channel: "telegram", to: "7652107499" }],
+            },
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    await writeFile(
+      templatePath,
+      `{
+        gateway: {
+          mode: "local",
+          bind: "loopback",
+          port: 18789,
+          auth: { mode: "token", token: "\${OPENCLAW_GATEWAY_TOKEN}" },
+          tools: { deny: ["gateway"] },
+        },
+        env: { shellEnv: { enabled: false } },
+        channels: {
+          telegram: {
+            enabled: true,
+            botToken: "\${TELEGRAM_BOT_TOKEN}",
+            capabilities: { inlineButtons: "allowlist" },
+            dmPolicy: "allowlist",
+            allowFrom: ["\${TELEGRAM_OWNER_ID}"],
+            groupPolicy: "allowlist",
+            groupAllowFrom: ["\${TELEGRAM_OWNER_ID}"],
+            groups: {
+              "-100111": { requireMention: false },
+            },
+            configWrites: false,
+            streamMode: "off",
+          },
+        },
+        session: { dmScope: "per-channel-peer" },
+        plugins: {
+          entries: {
+            "google-gemini-cli-auth": { enabled: true },
+            work: {
+              enabled: true,
+              config: {
+                workRoot: "~/work/repos",
+                defaultBase: "main",
+                coderSessionKey: "agent:coder:main",
+                maxFixLoops: 3,
+                timeoutMs: 1800000,
+              },
+            },
+          },
+        },
+        tools: {
+          profile: "minimal",
+          elevated: { enabled: false },
+        },
+        agents: {
+          list: [
+            {
+              id: "main",
+              model: { primary: "openai-codex/gpt-5.3-codex" },
+              workspace: "~/work/repos",
+              tools: { allow: ["read", "exec", "process"], deny: ["browser"] },
+            },
+            {
+              id: "coder",
+              workspace: "~/work/repos",
+              tools: { allow: ["exec"], deny: ["browser"] },
+            },
+          ],
+        },
+        bindings: [
+          {
+            agentId: "coder",
+            match: { channel: "telegram", peer: { kind: "group", id: "-100111" } },
+          },
+        ],
+        approvals: {
+          exec: {
+            enabled: true,
+            mode: "both",
+            agentFilter: ["main", "power"],
+            targets: [{ channel: "telegram", to: "\${TELEGRAM_OWNER_ID}" }],
+          },
+        },
+      }\n`,
+    );
+
+    await execFileAsync("bash", [scriptPath, configPath, templatePath], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        HOME: root,
+      },
+    });
+
+    const synced = JSON.parse(await readFile(configPath, "utf8")) as {
+      agents?: { list?: Array<{ id?: string; workspace?: string; model?: { primary?: string } }> };
+      approvals?: { exec?: { mode?: string; targets?: unknown[] } };
+      bindings?: Array<{ agentId?: string; match?: { peer?: { id?: string } } }>;
+      channels?: {
+        telegram?: {
+          allowFrom?: string[];
+          botToken?: string;
+          capabilities?: { inlineButtons?: string };
+          groupAllowFrom?: string[];
+          groupPolicy?: string;
+          groups?: Record<string, unknown>;
+          streamMode?: string;
+        };
+      };
+      gateway?: { auth?: { token?: string }; bind?: string };
+      plugins?: { entries?: { work?: { enabled?: boolean; config?: { lobsterPath?: string } } } };
+    };
+
+    const mainAgent = synced.agents?.list?.find((agent) => agent.id === "main");
+    expect(synced.gateway?.bind).toBe("loopback");
+    expect(synced.gateway?.auth?.token).toBe("literal-token");
+    expect(synced.channels?.telegram?.botToken).toBe("literal-bot-token");
+    expect(synced.channels?.telegram?.capabilities?.inlineButtons).toBe("allowlist");
+    expect(synced.channels?.telegram?.groupPolicy).toBe("allowlist");
+    expect(synced.channels?.telegram?.allowFrom).toEqual(["7652107499"]);
+    expect(synced.channels?.telegram?.groupAllowFrom).toEqual(["7652107499"]);
+    expect(Object.keys(synced.channels?.telegram?.groups ?? {})).toEqual(["-100999"]);
+    expect(synced.channels?.telegram?.streamMode).toBe("off");
+    expect(synced.plugins?.entries?.work?.enabled).toBe(true);
+    expect(synced.plugins?.entries?.work?.config?.lobsterPath).toBe("/usr/bin/lobster");
+    expect(mainAgent?.workspace).toBe("/srv/custom-main");
+    expect(mainAgent?.model?.primary).toBe("openai-codex/gpt-5.3-codex");
+    expect(synced.bindings?.[0]?.match?.peer?.id).toBe("-100999");
+    expect(synced.approvals?.exec?.mode).toBe("both");
+    expect(synced.approvals?.exec?.targets).toEqual([{ channel: "telegram", to: "7652107499" }]);
+  });
+});

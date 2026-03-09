@@ -105,6 +105,7 @@ jobs:
           OPENCLAW_CURRENT_LINK: ${{ secrets.OPENCLAW_CURRENT_LINK }}
           OPENCLAW_LAST_KNOWN_GOOD_FILE: ${{ secrets.OPENCLAW_LAST_KNOWN_GOOD_FILE }}
           OPENCLAW_GATEWAY_SERVICE: ${{ secrets.OPENCLAW_GATEWAY_SERVICE }}
+          OPENCLAW_GATEWAY_SERVICE_SCOPE: ${{ secrets.OPENCLAW_GATEWAY_SERVICE_SCOPE }}
           OPENCLAW_GATEWAY_HEALTH_URL: ${{ secrets.OPENCLAW_GATEWAY_HEALTH_URL }}
           OPENCLAW_STABILITY_SECONDS: ${{ secrets.OPENCLAW_STABILITY_SECONDS }}
           OPENCLAW_HEALTH_TIMEOUT_SECONDS: ${{ secrets.OPENCLAW_HEALTH_TIMEOUT_SECONDS }}
@@ -112,6 +113,7 @@ jobs:
           OPENCLAW_PREFLIGHT_PORT: ${{ secrets.OPENCLAW_PREFLIGHT_PORT }}
           OPENCLAW_PREFLIGHT_TIMEOUT_SECONDS: ${{ secrets.OPENCLAW_PREFLIGHT_TIMEOUT_SECONDS }}
           OPENCLAW_RUN_CHANNELS_PROBE: ${{ secrets.OPENCLAW_RUN_CHANNELS_PROBE }}
+          OPENCLAW_SYNC_VPS_CODING_PACK_CONFIG: ${{ secrets.OPENCLAW_SYNC_VPS_CODING_PACK_CONFIG }}
         run: |
           set -euo pipefail
           deploy_sha="${{ steps.target.outputs.sha }}"
@@ -128,13 +130,15 @@ jobs:
             "${OPENCLAW_CURRENT_LINK:-}" \
             "${OPENCLAW_LAST_KNOWN_GOOD_FILE:-}" \
             "${OPENCLAW_GATEWAY_SERVICE:-}" \
+            "${OPENCLAW_GATEWAY_SERVICE_SCOPE:-}" \
             "${OPENCLAW_GATEWAY_HEALTH_URL:-}" \
             "${OPENCLAW_STABILITY_SECONDS:-}" \
             "${OPENCLAW_HEALTH_TIMEOUT_SECONDS:-}" \
             "${OPENCLAW_CHANNELS_PROBE_TIMEOUT_SECONDS:-}" \
             "${OPENCLAW_PREFLIGHT_PORT:-}" \
             "${OPENCLAW_PREFLIGHT_TIMEOUT_SECONDS:-}" \
-            "${OPENCLAW_RUN_CHANNELS_PROBE:-}" <<'EOF'
+            "${OPENCLAW_RUN_CHANNELS_PROBE:-}" \
+            "${OPENCLAW_SYNC_VPS_CODING_PACK_CONFIG:-}" <<'EOF'
           set -euo pipefail
 
           deploy_sha="$1"
@@ -143,19 +147,22 @@ jobs:
           current_link_override="$4"
           lkg_file_override="$5"
           service_override="$6"
-          health_url_override="$7"
-          stability_override="$8"
-          health_timeout_override="$9"
-          channels_probe_timeout_override="${10}"
-          preflight_port_override="${11}"
-          preflight_timeout_override="${12}"
-          channels_probe_enabled_override="${13}"
+          service_scope_override="$7"
+          health_url_override="$8"
+          stability_override="$9"
+          health_timeout_override="${10}"
+          channels_probe_timeout_override="${11}"
+          preflight_port_override="${12}"
+          preflight_timeout_override="${13}"
+          channels_probe_enabled_override="${14}"
+          sync_vps_coding_pack_config_override="${15}"
 
           if [ -n "$repo_dir_override" ]; then export OPENCLAW_REPO_DIR="$repo_dir_override"; fi
           if [ -n "$deploy_root_override" ]; then export OPENCLAW_DEPLOY_ROOT="$deploy_root_override"; fi
           if [ -n "$current_link_override" ]; then export OPENCLAW_CURRENT_LINK="$current_link_override"; fi
           if [ -n "$lkg_file_override" ]; then export OPENCLAW_LAST_KNOWN_GOOD_FILE="$lkg_file_override"; fi
           if [ -n "$service_override" ]; then export OPENCLAW_GATEWAY_SERVICE="$service_override"; fi
+          if [ -n "$service_scope_override" ]; then export OPENCLAW_GATEWAY_SERVICE_SCOPE="$service_scope_override"; fi
           if [ -n "$health_url_override" ]; then export OPENCLAW_GATEWAY_HEALTH_URL="$health_url_override"; fi
           if [ -n "$stability_override" ]; then export OPENCLAW_STABILITY_SECONDS="$stability_override"; fi
           if [ -n "$health_timeout_override" ]; then export OPENCLAW_HEALTH_TIMEOUT_SECONDS="$health_timeout_override"; fi
@@ -163,6 +170,7 @@ jobs:
           if [ -n "$preflight_port_override" ]; then export OPENCLAW_PREFLIGHT_PORT="$preflight_port_override"; fi
           if [ -n "$preflight_timeout_override" ]; then export OPENCLAW_PREFLIGHT_TIMEOUT_SECONDS="$preflight_timeout_override"; fi
           if [ -n "$channels_probe_enabled_override" ]; then export OPENCLAW_RUN_CHANNELS_PROBE="$channels_probe_enabled_override"; fi
+          if [ -n "$sync_vps_coding_pack_config_override" ]; then export OPENCLAW_SYNC_VPS_CODING_PACK_CONFIG="$sync_vps_coding_pack_config_override"; fi
 
           repo_dir="${OPENCLAW_REPO_DIR:-$HOME/openclaw}"
           if [ ! -d "$repo_dir" ]; then

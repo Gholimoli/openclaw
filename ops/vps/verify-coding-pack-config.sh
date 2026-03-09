@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+cd "$REPO_ROOT"
+
 config_path="${1:-${OPENCLAW_CONFIG_PATH:-${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/openclaw.json}}"
 
 if [[ ! -f "$config_path" ]]; then
@@ -30,11 +34,20 @@ if (telegram.enabled !== true) {
 if (telegram.dmPolicy !== "allowlist") {
   failures.push(`channels.telegram.dmPolicy must be "allowlist" (got ${JSON.stringify(telegram.dmPolicy)})`);
 }
+if (telegram.groupPolicy !== "allowlist") {
+  failures.push(`channels.telegram.groupPolicy must be "allowlist" (got ${JSON.stringify(telegram.groupPolicy)})`);
+}
 const telegramAllowFrom = Array.isArray(telegram.allowFrom)
   ? telegram.allowFrom.map((value) => String(value).trim()).filter(Boolean)
   : [];
 if (telegramAllowFrom.length === 0) {
   failures.push("channels.telegram.allowFrom must include at least one entry");
+}
+const telegramGroupAllowFrom = Array.isArray(telegram.groupAllowFrom)
+  ? telegram.groupAllowFrom.map((value) => String(value).trim()).filter(Boolean)
+  : [];
+if (telegramGroupAllowFrom.length === 0) {
+  failures.push("channels.telegram.groupAllowFrom must include at least one entry");
 }
 const inlineButtons = telegram?.capabilities?.inlineButtons;
 if (inlineButtons !== "allowlist") {
