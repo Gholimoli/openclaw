@@ -101,7 +101,7 @@ const deepMerge = (currentValue, templateValue) => {
   return merged;
 };
 
-const sanitizeTemplateAgent = (agent) => {
+const sanitizeAgent = (agent) => {
   const nextAgent = clone(agent) ?? {};
   const dockerConfig = nextAgent?.sandbox?.docker;
   if (!isObject(dockerConfig)) {
@@ -218,7 +218,7 @@ for (const agent of currentAgents) {
     mergedAgents.push(clone(agent));
     continue;
   }
-  const merged = deepMerge(agent, sanitizeTemplateAgent(templateAgent));
+  const merged = sanitizeAgent(deepMerge(agent, sanitizeAgent(templateAgent)));
   if (isNonEmptyString(agent?.workspace)) {
     merged.workspace = agent.workspace;
   }
@@ -230,7 +230,7 @@ for (const templateAgent of templateAgents) {
   if (!agentId || seenAgentIds.has(agentId)) {
     continue;
   }
-  mergedAgents.push(sanitizeTemplateAgent(templateAgent));
+  mergedAgents.push(sanitizeAgent(templateAgent));
 }
 assign(["agents", "list"], mergedAgents);
 

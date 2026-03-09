@@ -228,6 +228,7 @@ describe("ops/vps/sync-coding-pack-config.sh", () => {
                     user: "999:988",
                     env: {
                       EXISTING_ONLY: "keep-me",
+                      STALE_MISSING: "${STALE_MISSING}",
                     },
                   },
                 },
