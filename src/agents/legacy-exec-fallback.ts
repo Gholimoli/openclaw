@@ -53,6 +53,62 @@ type LegacyExecTextCall = {
   command: string;
 };
 
+const BARE_JSON_EXEC_CUE_RE = /\b(?:approve|approval|deny|pending|shell|exec|tool|command|run)\b/i;
+
+function extractCommandFromJsonBlob(raw: string): string | null {
+  try {
+    const parsed = JSON.parse(raw) as { cmd?: unknown; command?: unknown };
+    const command =
+      typeof parsed.cmd === "string" && parsed.cmd.trim()
+        ? parsed.cmd.trim()
+        : typeof parsed.command === "string" && parsed.command.trim()
+          ? parsed.command.trim()
+          : null;
+    if (!command) {
+      return null;
+    }
+    const allowedKeys = new Set(["cmd", "command"]);
+    const parsedRecord = parsed as Record<string, unknown>;
+    for (const key of Object.keys(parsedRecord)) {
+      if (!allowedKeys.has(key)) {
+        return null;
+      }
+    }
+    return command;
+  } catch {
+    return null;
+  }
+}
+
+function shouldRecoverBareJsonExec(params: {
+  text: string;
+  start: number;
+  nextIndex: number;
+}): boolean {
+  const before = params.text.slice(Math.max(0, params.start - 160), params.start);
+  const after = params.text.slice(
+    params.nextIndex,
+    Math.min(params.text.length, params.nextIndex + 160),
+  );
+  const context = `${before}\n${after}`;
+  if (!BARE_JSON_EXEC_CUE_RE.test(context)) {
+    return false;
+  }
+  // Ignore literal examples inside fenced code blocks.
+  const fencesBefore = (before.match(/```/g) ?? []).length;
+  const fencesAfter = (after.match(/```/g) ?? []).length;
+  return fencesBefore % 2 === 0 && fencesAfter % 2 === 0;
+}
+
+function needsGapBetween(left: string, right: string): boolean {
+  if (!left || !right) {
+    return false;
+  }
+  const leftChar = left[left.length - 1] ?? "";
+  const rightChar = right[0] ?? "";
+  return /\S/.test(leftChar) && /\S/.test(rightChar);
+}
+
 function readQuotedValue(text: string, start: number): { value: string; nextIndex: number } | null {
   const quote = text[start];
   if (quote !== '"' && quote !== "'") {
@@ -155,7 +211,7 @@ export function extractLegacyExecTextCalls(text: string): {
   cleanedText: string;
   calls: LegacyExecTextCall[];
 } {
-  if (!text.includes("[exec")) {
+  if (!text.includes("[exec") && !/"(?:cmd|command)"\s*:/i.test(text)) {
     return { cleanedText: text, calls: [] };
   }
 
@@ -165,9 +221,37 @@ export function extractLegacyExecTextCalls(text: string): {
 
   while (cursor < text.length) {
     const start = text.indexOf("[exec", cursor);
-    if (start < 0) {
+    const jsonStart = text.indexOf("{", cursor);
+    const useJsonCandidate = start < 0 || (jsonStart >= 0 && jsonStart < start);
+    if (start < 0 && jsonStart < 0) {
       cleaned += text.slice(cursor);
       break;
+    }
+
+    if (useJsonCandidate) {
+      const parsedJson = jsonStart >= 0 ? parseBalancedJsonObject(text, jsonStart) : null;
+      if (!parsedJson) {
+        cleaned += text.slice(cursor, jsonStart + 1);
+        cursor = jsonStart + 1;
+        continue;
+      }
+      const command = extractCommandFromJsonBlob(parsedJson.raw);
+      if (
+        !command ||
+        !shouldRecoverBareJsonExec({ text, start: jsonStart, nextIndex: parsedJson.nextIndex })
+      ) {
+        cleaned += text.slice(cursor, parsedJson.nextIndex);
+        cursor = parsedJson.nextIndex;
+        continue;
+      }
+      cleaned += text.slice(cursor, jsonStart);
+      calls.push({ command });
+      const trailing = text.slice(parsedJson.nextIndex);
+      if (needsGapBetween(cleaned, trailing)) {
+        cleaned += " ";
+      }
+      cursor = parsedJson.nextIndex;
+      continue;
     }
 
     cleaned += text.slice(cursor, start);
@@ -186,18 +270,12 @@ export function extractLegacyExecTextCalls(text: string): {
 
     const parsedJson = nextIndex < text.length ? parseBalancedJsonObject(text, nextIndex) : null;
     if (parsedJson) {
-      try {
-        const parsed = JSON.parse(parsedJson.raw) as { cmd?: unknown; command?: unknown };
-        if (!command) {
-          if (typeof parsed.cmd === "string" && parsed.cmd.trim()) {
-            command = parsed.cmd.trim();
-          } else if (typeof parsed.command === "string" && parsed.command.trim()) {
-            command = parsed.command.trim();
-          }
-        }
+      const jsonCommand = extractCommandFromJsonBlob(parsedJson.raw);
+      if (!command) {
+        command = jsonCommand;
+      }
+      if (jsonCommand) {
         nextIndex = parsedJson.nextIndex;
-      } catch {
-        // Leave the JSON blob in the visible text if it was not valid JSON.
       }
     }
 
@@ -240,7 +318,7 @@ export async function recoverLegacyExecTextCallsInPayloads(
   const nextPayloads: PayloadLike[] = [];
 
   for (const payload of params.payloads) {
-    if (typeof payload.text !== "string" || !payload.text.includes("[exec")) {
+    if (typeof payload.text !== "string") {
       nextPayloads.push(payload);
       continue;
     }

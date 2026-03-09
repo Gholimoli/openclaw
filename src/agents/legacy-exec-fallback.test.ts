@@ -27,6 +27,24 @@ describe("legacy exec fallback", () => {
     });
   });
 
+  it("recovers bare command JSON when the surrounding text cues an approval request", () => {
+    const text =
+      'Run a harmless, read-only command (`pwd`) as a shell approval test. Please approve.{"cmd":"pwd"}Run a harmless, read-only shell command (`pwd`) as an approval test. Please approve.';
+    expect(extractLegacyExecTextCalls(text)).toEqual({
+      cleanedText:
+        "Run a harmless, read-only command (`pwd`) as a shell approval test. Please approve. Run a harmless, read-only shell command (`pwd`) as an approval test. Please approve.",
+      calls: [{ command: "pwd" }],
+    });
+  });
+
+  it("does not recover bare command JSON examples without approval/tool cues", () => {
+    const text = 'JSON example: {"cmd":"pwd"}';
+    expect(extractLegacyExecTextCalls(text)).toEqual({
+      cleanedText: text,
+      calls: [],
+    });
+  });
+
   it("invokes exec for recovered legacy calls and strips the raw marker from payloads", async () => {
     const execute = vi.fn(async () => ({
       content: [{ type: "text", text: "Approval required." }],
@@ -54,6 +72,31 @@ describe("legacy exec fallback", () => {
     expect(payloads).toEqual([
       {
         text: "Intro.\nNow choose **Approve / Deny**.",
+      },
+    ]);
+  });
+
+  it("invokes exec for recovered bare command JSON and strips it from payloads", async () => {
+    const execute = vi.fn(async () => ({
+      content: [{ type: "text", text: "Approval required." }],
+    }));
+    const payloads = await recoverLegacyExecTextCallsInPayloads({
+      payloads: [
+        {
+          text: 'Run a harmless, read-only command (`pwd`) as a shell approval test. Please approve.{"cmd":"pwd"}Run a harmless, read-only shell command (`pwd`) as an approval test. Please approve.',
+        },
+      ],
+      createTools: (() => [{ name: "exec", execute }]) as never,
+    });
+
+    expect(execute).toHaveBeenCalledWith(
+      expect.stringMatching(/^legacy_exec_/),
+      { command: "pwd" },
+      undefined,
+    );
+    expect(payloads).toEqual([
+      {
+        text: "Run a harmless, read-only command (`pwd`) as a shell approval test. Please approve. Run a harmless, read-only shell command (`pwd`) as an approval test. Please approve.",
       },
     ]);
   });
