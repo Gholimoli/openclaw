@@ -19,7 +19,7 @@ import {
 } from "../context-window-guard.js";
 import { DEFAULT_CONTEXT_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER } from "../defaults.js";
 import { FailoverError, resolveFailoverStatus } from "../failover-error.js";
-import { recoverLegacyExecTextCallsInPayloads } from "../legacy-exec-fallback.js";
+import { stripLegacyExecTextCallsInPayloads } from "../legacy-exec-fallback.js";
 import {
   ensureAuthProfileStore,
   getApiKeyForModel,
@@ -926,38 +926,8 @@ export async function runEmbeddedPiAgent(
           });
 
           payloads =
-            (await recoverLegacyExecTextCallsInPayloads({
+            (await stripLegacyExecTextCallsInPayloads({
               payloads,
-              disableTools: params.disableTools,
-              abortSignal: params.abortSignal,
-              exec: {
-                ...params.execOverrides,
-                elevated: params.bashElevated,
-              },
-              messageProvider: params.messageChannel ?? params.messageProvider,
-              agentAccountId: params.agentAccountId,
-              messageTo: params.messageTo,
-              messageThreadId: params.messageThreadId,
-              groupId: params.groupId,
-              groupChannel: params.groupChannel,
-              groupSpace: params.groupSpace,
-              senderId: params.senderId,
-              senderName: params.senderName,
-              senderUsername: params.senderUsername,
-              senderE164: params.senderE164,
-              senderIsOwner: params.senderIsOwner,
-              sessionKey: params.sessionKey ?? params.sessionId,
-              agentDir,
-              workspaceDir: resolvedWorkspace,
-              config: params.config,
-              modelProvider: model.provider,
-              modelId,
-              currentChannelId: params.currentChannelId,
-              currentThreadTs: params.currentThreadTs,
-              replyToMode: params.replyToMode,
-              hasRepliedRef: params.hasRepliedRef,
-              modelHasVision: model.input?.includes("image") ?? false,
-              requireExplicitMessageTarget: params.requireExplicitMessageTarget,
             })) ?? [];
 
           // Timeout aborts can leave the run without any assistant payloads.

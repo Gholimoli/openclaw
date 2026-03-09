@@ -348,7 +348,7 @@ Current behavior:
 Approvals:
 
 - Lobster will ask for approvals for commit/push/merge steps and provide a resume token.
-- Telegram DM approvals render inline `Approve` / `Deny` buttons for both exec approval requests and `/work` Lobster checkpoints, and clear those buttons once the request resolves or times out.
+- Telegram inline approvals render `Approve` / `Deny` buttons for both exec approval requests and `/work` Lobster checkpoints, mirror exec prompts to the operator DM, and clear those buttons once the request resolves or times out.
 - Resume from Telegram:
 
 ```text

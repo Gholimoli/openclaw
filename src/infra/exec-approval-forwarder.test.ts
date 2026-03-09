@@ -229,7 +229,7 @@ describe("exec approval forwarder", () => {
     expect(payload?.channelData?.telegram?.buttons).toBeDefined();
   });
 
-  it("does not attach approval buttons for telegram groups", async () => {
+  it("attaches approval buttons for telegram groups", async () => {
     vi.useFakeTimers();
     const deliver = vi.fn().mockResolvedValue([]);
     const cfg = {
@@ -253,7 +253,7 @@ describe("exec approval forwarder", () => {
     const payload = getFirstDeliveryPayload(deliver) as
       | { channelData?: { telegram?: { buttons?: unknown[] } } }
       | undefined;
-    expect(payload?.channelData?.telegram?.buttons).toBeUndefined();
+    expect(payload?.channelData?.telegram?.buttons).toBeDefined();
   });
 
   it("falls back to text-only when approval id cannot fit telegram callback_data", async () => {
@@ -284,6 +284,38 @@ describe("exec approval forwarder", () => {
       | { channelData?: { telegram?: { buttons?: unknown[] } } }
       | undefined;
     expect(payload?.channelData?.telegram?.buttons).toBeUndefined();
+  });
+
+  it("mirrors telegram approvals to the session chat and explicit dm target when mode is both", async () => {
+    vi.useFakeTimers();
+    const deliver = vi.fn().mockResolvedValue([]);
+    const cfg = {
+      approvals: {
+        exec: {
+          enabled: true,
+          mode: "both",
+          targets: [{ channel: "telegram", to: "123" }],
+        },
+      },
+    } as OpenClawConfig;
+
+    const forwarder = createExecApprovalForwarder({
+      getConfig: () => cfg,
+      deliver,
+      nowMs: () => 1000,
+      resolveSessionTarget: () => ({ channel: "telegram", to: "-1001234567890", threadId: "77" }),
+    });
+
+    await forwarder.handleRequested(baseRequest);
+
+    expect(deliver).toHaveBeenCalledTimes(2);
+    expect(deliver.mock.calls.map((call) => call[0]?.to)).toEqual(["-1001234567890", "123"]);
+    const payloads = deliver.mock.calls.map(
+      (call) =>
+        (call[0] as { payloads?: Array<{ channelData?: { telegram?: { buttons?: unknown[] } } }> })
+          .payloads?.[0],
+    );
+    expect(payloads.every((payload) => payload?.channelData?.telegram?.buttons)).toBe(true);
   });
 
   it("formats complex commands as fenced code blocks", async () => {

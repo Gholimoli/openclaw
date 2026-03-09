@@ -204,9 +204,6 @@ function buildTelegramRequestButtons(params: {
   target: ForwardTarget;
   approvalId: string;
 }): ExecApprovalButtonRow[] | null {
-  if (resolveTelegramTargetChatType(params.target.to) !== "direct") {
-    return null;
-  }
   if (
     !isTelegramInlineButtonsEnabled({
       cfg: params.cfg,

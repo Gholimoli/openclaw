@@ -36,6 +36,12 @@ const telegramAllowFrom = Array.isArray(telegram.allowFrom)
 if (telegramAllowFrom.length === 0) {
   failures.push("channels.telegram.allowFrom must include at least one entry");
 }
+const inlineButtons = telegram?.capabilities?.inlineButtons;
+if (inlineButtons !== "allowlist") {
+  failures.push(
+    `channels.telegram.capabilities.inlineButtons must be "allowlist" (got ${JSON.stringify(inlineButtons)})`,
+  );
+}
 if (telegram.streamMode !== "off") {
   failures.push(`channels.telegram.streamMode must be "off" (got ${JSON.stringify(telegram.streamMode)})`);
 }
@@ -79,6 +85,18 @@ if (!mainToolsAllow.includes("process")) {
 }
 if (mainToolsDeny.includes("exec")) {
   failures.push('main agent tools.deny must not include "exec"');
+}
+
+const execApprovals = cfg?.approvals?.exec ?? {};
+if (execApprovals.enabled !== true) {
+  failures.push("approvals.exec.enabled must be true");
+}
+if (execApprovals.mode !== "both") {
+  failures.push(`approvals.exec.mode must be "both" (got ${JSON.stringify(execApprovals.mode)})`);
+}
+const execTargets = Array.isArray(execApprovals.targets) ? execApprovals.targets : [];
+if (execTargets.length === 0) {
+  failures.push("approvals.exec.targets must include at least one Telegram DM target");
 }
 
 if (failures.length > 0) {

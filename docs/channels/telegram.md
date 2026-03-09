@@ -449,16 +449,16 @@ If the primary bot is unresponsive, you can immediately message the standby bot.
     rendered as inline buttons, and the selected value is routed back as user
     text.
 
-    Exec approval forwarding uses inline buttons in Telegram DMs:
+    Exec approval forwarding uses inline buttons in Telegram chats:
 
     - approval prompts include **Approve** (allow once) and **Deny**
     - additional choices (for example **Always allow**) are also delivered as menu buttons
     - **Always allow** requires a second confirmation tap
     - final decisions clear buttons immediately to prevent duplicate taps
-    - group chats still receive text-only approval prompts
+    - group chats can use the same inline buttons; only allowlisted/approved Telegram users can resolve them
     - default: when Telegram is configured and `approvals.exec` is unset, exec approvals are forwarded to the Telegram session; set `approvals.exec.enabled: false` to disable this behavior
 
-    The `/work` plugin uses the same Telegram DM pattern for Lobster approval
+    The `/work` plugin uses the same Telegram inline-button pattern for Lobster approval
     checkpoints: you get inline **Approve** / **Deny** buttons plus the manual
     `/work resume <token> --approve yes|no` fallback in the message body.
 

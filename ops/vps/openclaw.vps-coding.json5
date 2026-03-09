@@ -33,6 +33,11 @@
     telegram: {
       enabled: true,
       botToken: "${TELEGRAM_BOT_TOKEN}",
+      capabilities: {
+        // Keep Telegram menus on inline keyboards so approvals and agent choices
+        // work the same way in DMs and dedicated groups.
+        inlineButtons: "allowlist",
+      },
       // For single-operator setups, prefer allowlisting your numeric Telegram user ID.
       // This avoids pairing-code friction while keeping DMs locked down.
       // Find your ID by messaging the bot once, then check:
@@ -274,7 +279,7 @@
   approvals: {
     exec: {
       enabled: true,
-      mode: "targets",
+      mode: "both",
       agentFilter: ["main", "power"],
       targets: [{ channel: "telegram", to: "${TELEGRAM_OWNER_ID}" }],
     },

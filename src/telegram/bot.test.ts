@@ -343,7 +343,7 @@ describe("createTelegramBot", () => {
     });
 
     expect(replySpy).not.toHaveBeenCalled();
-    expect(answerCallbackQuerySpy).toHaveBeenCalledWith("cbq-2");
+    expect(answerCallbackQuerySpy).toHaveBeenCalledWith("cbq-2", undefined);
   });
 
   it("routes allow-once approval callbacks to /approve and clears buttons", async () => {
@@ -430,6 +430,113 @@ describe("createTelegramBot", () => {
     expect(replySpy).toHaveBeenCalledTimes(1);
     const payload = replySpy.mock.calls[0]?.[0];
     expect(payload.Body).toContain("/approve approval-234 deny");
+  });
+
+  it("routes group approval callbacks for allowlisted senders", async () => {
+    onSpy.mockReset();
+    editMessageTextSpy.mockReset();
+    const replySpy = replyModule.__replySpy as unknown as ReturnType<typeof vi.fn>;
+    replySpy.mockReset();
+
+    createTelegramBot({
+      token: "tok",
+      config: {
+        channels: {
+          telegram: {
+            capabilities: { inlineButtons: "all" },
+            groupPolicy: "allowlist",
+            groupAllowFrom: ["9"],
+          },
+        },
+      },
+    });
+    const callbackHandler = onSpy.mock.calls.find((call) => call[0] === "callback_query")?.[1] as (
+      ctx: Record<string, unknown>,
+    ) => Promise<void>;
+    expect(callbackHandler).toBeDefined();
+
+    const callbackData = buildExecApprovalCallbackData({
+      approvalId: "approval-group-1",
+      action: "allow-once",
+    });
+    expect(callbackData).toBeTruthy();
+
+    await callbackHandler({
+      callbackQuery: {
+        id: "cbq-group-approve-once",
+        data: callbackData ?? "",
+        from: { id: 9, first_name: "Ada", username: "ada_bot" },
+        message: {
+          chat: { id: -1001234567890, type: "supergroup", title: "Ops" },
+          date: 1736380800,
+          message_id: 130,
+          text: "Approval prompt",
+        },
+      },
+      me: { username: "openclaw_bot" },
+      getFile: async () => ({ download: async () => new Uint8Array() }),
+    });
+
+    expect(editMessageTextSpy).toHaveBeenCalledTimes(1);
+    expect(editMessageTextSpy.mock.calls[0]?.[3]).toEqual({
+      reply_markup: { inline_keyboard: [] },
+    });
+    expect(replySpy).toHaveBeenCalledTimes(1);
+    const payload = replySpy.mock.calls[0]?.[0];
+    expect(payload.Body).toContain("/approve approval-group-1 allow-once");
+  });
+
+  it("rejects group approval callbacks from non-allowlisted senders with visible feedback", async () => {
+    onSpy.mockReset();
+    editMessageTextSpy.mockReset();
+    answerCallbackQuerySpy.mockReset();
+    const replySpy = replyModule.__replySpy as unknown as ReturnType<typeof vi.fn>;
+    replySpy.mockReset();
+
+    createTelegramBot({
+      token: "tok",
+      config: {
+        channels: {
+          telegram: {
+            capabilities: { inlineButtons: "all" },
+            groupPolicy: "open",
+            groupAllowFrom: ["7"],
+          },
+        },
+      },
+    });
+    const callbackHandler = onSpy.mock.calls.find((call) => call[0] === "callback_query")?.[1] as (
+      ctx: Record<string, unknown>,
+    ) => Promise<void>;
+    expect(callbackHandler).toBeDefined();
+
+    const callbackData = buildExecApprovalCallbackData({
+      approvalId: "approval-group-2",
+      action: "deny",
+    });
+    expect(callbackData).toBeTruthy();
+
+    await callbackHandler({
+      callbackQuery: {
+        id: "cbq-group-approve-deny",
+        data: callbackData ?? "",
+        from: { id: 9, first_name: "Ada", username: "ada_bot" },
+        message: {
+          chat: { id: -1001234567890, type: "supergroup", title: "Ops" },
+          date: 1736380800,
+          message_id: 131,
+          text: "Approval prompt",
+        },
+      },
+      me: { username: "openclaw_bot" },
+      getFile: async () => ({ download: async () => new Uint8Array() }),
+    });
+
+    expect(editMessageTextSpy).not.toHaveBeenCalled();
+    expect(replySpy).not.toHaveBeenCalled();
+    expect(answerCallbackQuerySpy).toHaveBeenCalledWith("cbq-group-approve-deny", {
+      text: "Only approved Telegram users can use these buttons.",
+    });
   });
 
   it("routes confirm-always approval callbacks to /approve allow-always", async () => {
@@ -759,7 +866,7 @@ describe("createTelegramBot", () => {
     });
 
     expect(editMessageTextSpy).not.toHaveBeenCalled();
-    expect(answerCallbackQuerySpy).toHaveBeenCalledWith("cbq-4");
+    expect(answerCallbackQuerySpy).toHaveBeenCalledWith("cbq-4", undefined);
   });
 
   it("includes sender identity in group envelope headers", async () => {

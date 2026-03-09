@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   extractLegacyExecTextCalls,
-  recoverLegacyExecTextCallsInPayloads,
+  stripLegacyExecTextCallsInPayloads,
 } from "./legacy-exec-fallback.js";
 
 describe("legacy exec fallback", () => {
@@ -45,13 +45,8 @@ describe("legacy exec fallback", () => {
     });
   });
 
-  it("invokes exec for recovered legacy calls and strips the raw marker from payloads", async () => {
-    const execute = vi.fn(async () => ({
-      content: [{ type: "text", text: "Approval required." }],
-    }));
-    const createTools = vi.fn(() => [{ name: "exec", execute }]);
-
-    const payloads = await recoverLegacyExecTextCallsInPayloads({
+  it("strips recovered legacy calls from payloads without executing them", async () => {
+    const payloads = await stripLegacyExecTextCallsInPayloads({
       payloads: [
         {
           text:
@@ -60,15 +55,8 @@ describe("legacy exec fallback", () => {
             `\nNow choose **Approve / Deny**.`,
         },
       ],
-      createTools: createTools as never,
     });
 
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(execute).toHaveBeenCalledWith(
-      expect.stringMatching(/^legacy_exec_/),
-      { command: "echo hello" },
-      undefined,
-    );
     expect(payloads).toEqual([
       {
         text: "Intro.\nNow choose **Approve / Deny**.",
@@ -76,24 +64,15 @@ describe("legacy exec fallback", () => {
     ]);
   });
 
-  it("invokes exec for recovered bare command JSON and strips it from payloads", async () => {
-    const execute = vi.fn(async () => ({
-      content: [{ type: "text", text: "Approval required." }],
-    }));
-    const payloads = await recoverLegacyExecTextCallsInPayloads({
+  it("strips recovered bare command JSON from payloads without executing it", async () => {
+    const payloads = await stripLegacyExecTextCallsInPayloads({
       payloads: [
         {
           text: 'Run a harmless, read-only command (`pwd`) as a shell approval test. Please approve.{"cmd":"pwd"}Run a harmless, read-only shell command (`pwd`) as an approval test. Please approve.',
         },
       ],
-      createTools: (() => [{ name: "exec", execute }]) as never,
     });
 
-    expect(execute).toHaveBeenCalledWith(
-      expect.stringMatching(/^legacy_exec_/),
-      { command: "pwd" },
-      undefined,
-    );
     expect(payloads).toEqual([
       {
         text: "Run a harmless, read-only command (`pwd`) as a shell approval test. Please approve. Run a harmless, read-only shell command (`pwd`) as an approval test. Please approve.",
@@ -102,10 +81,8 @@ describe("legacy exec fallback", () => {
   });
 
   it("drops payloads that only contained a legacy exec marker", async () => {
-    const execute = vi.fn(async () => ({}));
-    const payloads = await recoverLegacyExecTextCallsInPayloads({
+    const payloads = await stripLegacyExecTextCallsInPayloads({
       payloads: [{ text: `[exec cmd="echo hello"]{"cmd":"echo hello"}` }],
-      createTools: (() => [{ name: "exec", execute }]) as never,
     });
     expect(payloads).toBeUndefined();
   });

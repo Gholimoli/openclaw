@@ -303,12 +303,18 @@ export const registerTelegramHandlers = ({
     if (shouldSkipUpdate(ctx)) {
       return;
     }
-    // Answer immediately to prevent Telegram from retrying while we process
-    await withTelegramApiErrorLogging({
-      operation: "answerCallbackQuery",
-      runtime,
-      fn: () => bot.api.answerCallbackQuery(callback.id),
-    }).catch(() => {});
+    let callbackAnswered = false;
+    const answerCallback = async (params?: { text?: string; show_alert?: boolean }) => {
+      if (callbackAnswered) {
+        return;
+      }
+      callbackAnswered = true;
+      await withTelegramApiErrorLogging({
+        operation: "answerCallbackQuery",
+        runtime,
+        fn: () => bot.api.answerCallbackQuery(callback.id, params),
+      }).catch(() => {});
+    };
     try {
       const data = (callback.data ?? "").trim();
       const callbackMessage = callback.message;
@@ -316,6 +322,12 @@ export const registerTelegramHandlers = ({
         return;
       }
       const currentText = callbackMessage.text ?? callbackMessage.caption ?? "";
+      const approvalCallback = parseExecApprovalCallbackData(data);
+      const workApprovalCallback = parseTelegramWorkApprovalCallbackData(data);
+      const choiceCallback = parseTelegramChoiceCallbackData(data);
+      const requiresAllowlistedCallbackActor =
+        approvalCallback !== null || workApprovalCallback !== null || choiceCallback !== null;
+      const unauthorizedCallbackText = "Only approved Telegram users can use these buttons.";
 
       const editCallbackButtons = async (
         buttons: Array<Array<{ text: string; callback_data: string }>>,
@@ -380,12 +392,18 @@ export const registerTelegramHandlers = ({
       if (isGroup) {
         if (groupConfig?.enabled === false) {
           logVerbose(`Blocked telegram group ${chatId} (group disabled)`);
+          if (requiresAllowlistedCallbackActor) {
+            await answerCallback({ text: unauthorizedCallbackText });
+          }
           return;
         }
         if (topicConfig?.enabled === false) {
           logVerbose(
             `Blocked telegram topic ${chatId} (${resolvedThreadId ?? "unknown"}) (topic disabled)`,
           );
+          if (requiresAllowlistedCallbackActor) {
+            await answerCallback({ text: unauthorizedCallbackText });
+          }
           return;
         }
         if (typeof groupAllowOverride !== "undefined") {
@@ -400,6 +418,9 @@ export const registerTelegramHandlers = ({
             logVerbose(
               `Blocked telegram group sender ${senderId || "unknown"} (group allowFrom override)`,
             );
+            if (requiresAllowlistedCallbackActor) {
+              await answerCallback({ text: unauthorizedCallbackText });
+            }
             return;
           }
         }
@@ -413,17 +434,26 @@ export const registerTelegramHandlers = ({
         );
         if (groupPolicy === "disabled") {
           logVerbose(`Blocked telegram group message (groupPolicy: disabled)`);
+          if (requiresAllowlistedCallbackActor) {
+            await answerCallback({ text: unauthorizedCallbackText });
+          }
           return;
         }
         if (groupPolicy === "allowlist") {
           if (!senderId) {
             logVerbose(`Blocked telegram group message (no sender ID, groupPolicy: allowlist)`);
+            if (requiresAllowlistedCallbackActor) {
+              await answerCallback({ text: unauthorizedCallbackText });
+            }
             return;
           }
           if (!effectiveGroupAllow.hasEntries) {
             logVerbose(
               "Blocked telegram group message (groupPolicy: allowlist, no group allowlist entries)",
             );
+            if (requiresAllowlistedCallbackActor) {
+              await answerCallback({ text: unauthorizedCallbackText });
+            }
             return;
           }
           if (
@@ -434,6 +464,9 @@ export const registerTelegramHandlers = ({
             })
           ) {
             logVerbose(`Blocked telegram group message from ${senderId} (groupPolicy: allowlist)`);
+            if (requiresAllowlistedCallbackActor) {
+              await answerCallback({ text: unauthorizedCallbackText });
+            }
             return;
           }
         }
@@ -443,13 +476,36 @@ export const registerTelegramHandlers = ({
             { chatId, title: callbackMessage.chat.title, reason: "not-allowed" },
             "skipping group message",
           );
+          if (requiresAllowlistedCallbackActor) {
+            await answerCallback({ text: unauthorizedCallbackText });
+          }
           return;
+        }
+        if (requiresAllowlistedCallbackActor) {
+          const allowed =
+            effectiveGroupAllow.hasWildcard ||
+            (effectiveGroupAllow.hasEntries &&
+              isSenderAllowed({
+                allow: effectiveGroupAllow,
+                senderId,
+                senderUsername,
+              }));
+          if (!allowed) {
+            logVerbose(
+              `Blocked telegram callback from ${senderId || "unknown"} (no group allowlist entry)`,
+            );
+            await answerCallback({ text: unauthorizedCallbackText });
+            return;
+          }
         }
       }
 
       if (inlineButtonsScope === "allowlist") {
         if (!isGroup) {
           if (dmPolicy === "disabled") {
+            if (requiresAllowlistedCallbackActor) {
+              await answerCallback({ text: unauthorizedCallbackText });
+            }
             return;
           }
           if (dmPolicy !== "open") {
@@ -462,6 +518,9 @@ export const registerTelegramHandlers = ({
                   senderUsername,
                 }));
             if (!allowed) {
+              if (requiresAllowlistedCallbackActor) {
+                await answerCallback({ text: unauthorizedCallbackText });
+              }
               return;
             }
           }
@@ -475,12 +534,16 @@ export const registerTelegramHandlers = ({
                 senderUsername,
               }));
           if (!allowed) {
+            if (requiresAllowlistedCallbackActor) {
+              await answerCallback({ text: unauthorizedCallbackText });
+            }
             return;
           }
         }
       }
 
-      const approvalCallback = parseExecApprovalCallbackData(data);
+      await answerCallback();
+
       if (approvalCallback) {
         if (approvalCallback.action === "always") {
           const buttons = buildExecApprovalConfirmButtons(approvalCallback.approvalId);
@@ -525,7 +588,6 @@ export const registerTelegramHandlers = ({
         return;
       }
 
-      const workApprovalCallback = parseTelegramWorkApprovalCallbackData(data);
       if (workApprovalCallback) {
         const token = extractTelegramWorkResumeToken(currentText);
         if (!token) {
@@ -720,7 +782,6 @@ export const registerTelegramHandlers = ({
         return;
       }
 
-      const choiceCallback = parseTelegramChoiceCallbackData(data);
       if (choiceCallback) {
         await editCallbackButtons([]).catch(() => undefined);
         const syntheticMessage: Message = {
@@ -760,6 +821,8 @@ export const registerTelegramHandlers = ({
       });
     } catch (err) {
       runtime.error?.(danger(`callback handler failed: ${String(err)}`));
+    } finally {
+      await answerCallback();
     }
   });
 

@@ -11,7 +11,7 @@ sudo -u openclaw bash -lc 'cd ~/openclaw-current && bash ops/vps/verify-coding-p
 Expected:
 
 - the verifier prints `OK`
-- Ted still has an approval-capable coding-pack config (Telegram allowlist, `work` enabled, and `main` can request `exec` approvals)
+- Ted still has an approval-capable coding-pack config (`inlineButtons: "allowlist"`, Telegram allowlist, `work` enabled, mirrored exec approvals, and `main` can request `exec` approvals)
 
 ## 2. Confirm the live release
 
@@ -64,8 +64,10 @@ Trigger a host action that requires approval, for example:
 
 Expected:
 
-- Telegram DM shows inline Approve and Deny buttons
+- the originating Telegram chat shows inline Approve and Deny buttons, even when the request started in a dedicated group
+- the operator DM also receives the mirrored approval prompt
 - tapping one resolves the approval and clears the buttons
+- non-allowlisted group members cannot resolve the approval buttons
 - the message still includes the resume token and manual `/work resume ...` fallback
 - the same approval appears in the Office view
 
@@ -76,7 +78,7 @@ toggle or follow-up clarification that ends with `Options: ...`.
 
 Expected:
 
-- Telegram DM renders the options as inline menu buttons
+- Telegram renders the options as inline menu buttons in the active chat
 - tapping one clears the buttons
 - the selected option is routed back to Ted as user input
 

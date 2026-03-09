@@ -1,13 +1,3 @@
-import crypto from "node:crypto";
-import type { OpenClawConfig } from "../config/config.js";
-import type { ExecToolDefaults, ProcessToolDefaults } from "./bash-tools.js";
-import { createOpenClawCodingTools } from "./pi-tools.js";
-
-type ExecLikeTool = {
-  name: string;
-  execute: (toolCallId: string, args: unknown, signal?: AbortSignal) => Promise<unknown>;
-};
-
 type PayloadLike = {
   text?: string;
   mediaUrl?: string;
@@ -16,37 +6,8 @@ type PayloadLike = {
   isError?: boolean;
 };
 
-type RecoverLegacyExecPayloadsParams = {
+type StripLegacyExecPayloadsParams = {
   payloads?: PayloadLike[];
-  disableTools?: boolean;
-  abortSignal?: AbortSignal;
-  exec?: ExecToolDefaults & ProcessToolDefaults;
-  messageProvider?: string;
-  agentAccountId?: string;
-  messageTo?: string;
-  messageThreadId?: string | number;
-  groupId?: string | null;
-  groupChannel?: string | null;
-  groupSpace?: string | null;
-  senderId?: string | null;
-  senderName?: string | null;
-  senderUsername?: string | null;
-  senderE164?: string | null;
-  senderIsOwner?: boolean;
-  sessionKey?: string;
-  agentDir?: string;
-  workspaceDir?: string;
-  config?: OpenClawConfig;
-  modelProvider?: string;
-  modelId?: string;
-  currentChannelId?: string;
-  currentThreadTs?: string;
-  replyToMode?: "off" | "first" | "all";
-  hasRepliedRef?: { value: boolean };
-  modelHasVision?: boolean;
-  requireExplicitMessageTarget?: boolean;
-  createTools?: typeof createOpenClawCodingTools;
-  onRecoverError?: (error: unknown, command: string) => void;
 };
 
 type LegacyExecTextCall = {
@@ -305,16 +266,13 @@ export function extractLegacyExecTextCalls(text: string): {
   };
 }
 
-export async function recoverLegacyExecTextCallsInPayloads(
-  params: RecoverLegacyExecPayloadsParams,
+export async function stripLegacyExecTextCallsInPayloads(
+  params: StripLegacyExecPayloadsParams,
 ): Promise<PayloadLike[] | undefined> {
-  if (!params.payloads?.length || params.disableTools) {
+  if (!params.payloads?.length) {
     return params.payloads;
   }
 
-  let tools: ExecLikeTool[] | null = null;
-  let execTool: ExecLikeTool | undefined;
-  const createTools = params.createTools ?? createOpenClawCodingTools;
   const nextPayloads: PayloadLike[] = [];
 
   for (const payload of params.payloads) {
@@ -327,56 +285,6 @@ export async function recoverLegacyExecTextCallsInPayloads(
     if (calls.length === 0) {
       nextPayloads.push(payload);
       continue;
-    }
-
-    if (!tools) {
-      tools = createTools({
-        exec: params.exec,
-        messageProvider: params.messageProvider,
-        agentAccountId: params.agentAccountId,
-        messageTo: params.messageTo,
-        messageThreadId: params.messageThreadId,
-        groupId: params.groupId,
-        groupChannel: params.groupChannel,
-        groupSpace: params.groupSpace,
-        senderId: params.senderId,
-        senderName: params.senderName,
-        senderUsername: params.senderUsername,
-        senderE164: params.senderE164,
-        senderIsOwner: params.senderIsOwner,
-        sessionKey: params.sessionKey,
-        agentDir: params.agentDir,
-        workspaceDir: params.workspaceDir,
-        config: params.config,
-        abortSignal: params.abortSignal,
-        modelProvider: params.modelProvider,
-        modelId: params.modelId,
-        currentChannelId: params.currentChannelId,
-        currentThreadTs: params.currentThreadTs,
-        replyToMode: params.replyToMode,
-        hasRepliedRef: params.hasRepliedRef,
-        modelHasVision: params.modelHasVision,
-        requireExplicitMessageTarget: params.requireExplicitMessageTarget,
-        disableMessageTool: true,
-      }) as ExecLikeTool[];
-      execTool = tools.find((tool) => tool.name === "exec");
-    }
-
-    if (!execTool) {
-      nextPayloads.push(payload);
-      continue;
-    }
-
-    for (const call of calls) {
-      try {
-        await execTool.execute(
-          `legacy_exec_${crypto.randomUUID()}`,
-          { command: call.command },
-          params.abortSignal,
-        );
-      } catch (error) {
-        params.onRecoverError?.(error, call.command);
-      }
     }
 
     const nextPayload: PayloadLike = {
