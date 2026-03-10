@@ -17,6 +17,12 @@ function testConfig(): OpenClawConfig {
             label: "Acme",
             defaultAgentId: "coder",
             allowedAgents: ["coder", "power"],
+            orchestration: {
+              enabled: true,
+              peerAgents: ["power"],
+              peerReplyPolicy: "mention",
+              historyLimit: 32,
+            },
           },
         },
       },
@@ -80,6 +86,7 @@ describe("/client command", () => {
     );
     expect(result?.shouldContinue).toBe(false);
     expect(result?.reply?.text).toContain("Assigned agent: power");
+    expect(result?.reply?.text).toContain("Orchestration: enabled");
   });
 
   it("lists configured Telegram client routes", async () => {
@@ -92,5 +99,6 @@ describe("/client command", () => {
     expect(result?.shouldContinue).toBe(false);
     expect(result?.reply?.text).toContain("Telegram client routes:");
     expect(result?.reply?.text).toContain("Acme");
+    expect(result?.reply?.text).toContain("orchestration:mention");
   });
 });

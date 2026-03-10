@@ -243,6 +243,33 @@ Example:
 }
 ```
 
+To turn a client room into a shared handoff room with one always-on lead agent plus quiet peers that only speak when you mention them, add `orchestration`:
+
+```json5
+{
+  channels: {
+    telegram: {
+      groups: { "*": { requireMention: true } },
+      clients: {
+        "-1001234567890": {
+          label: "Acme build room",
+          defaultAgentId: "main",
+          allowedAgents: ["main", "coder", "devops"],
+          orchestration: {
+            enabled: true,
+            peerAgents: ["coder", "devops"],
+            peerReplyPolicy: "mention",
+            historyLimit: 40,
+            strategy: "sequential",
+            includeAgentReplies: true,
+          },
+        },
+      },
+    },
+  },
+}
+```
+
 Operator commands:
 
 - `/client` or `/client status` shows the current chat route
@@ -255,6 +282,10 @@ Operational notes:
 - Configure the chat first, then let the operator reassign it at runtime.
 - `/client assign` writes state under the OpenClaw state dir and survives gateway restarts.
 - If a client route is disabled in config, runtime overrides are ignored.
+- In an orchestrated client room, the lead agent replies without `@mention` even when general Telegram groups still require mention.
+- Quiet peer agents stay room-aware through a bounded shared room log, but `peerReplyPolicy: "mention"` keeps them silent until you explicitly mention them.
+- Peer mentions suppress the lead reply unless the lead is also mentioned.
+- The shared room log stores only room-visible text such as human messages and final agent replies. Tool output and internal reasoning stay private to each agent session.
 
 ## Runtime behavior
 

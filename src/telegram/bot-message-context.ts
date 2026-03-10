@@ -3,6 +3,7 @@ import type { MsgContext } from "../auto-reply/templating.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type { DmPolicy, TelegramGroupConfig, TelegramTopicConfig } from "../config/types.js";
 import type { StickerMetadata, TelegramContext } from "./bot/types.js";
+import type { TelegramResolvedClientRoute } from "./client-routing.js";
 import { resolveAckReaction } from "../agents/identity.js";
 import {
   findModelInCatalog,
@@ -63,9 +64,23 @@ export type TelegramMediaRef = {
   stickerMetadata?: StickerMetadata;
 };
 
-type TelegramMessageContextOptions = {
+export type TelegramMessageContextOptions = {
   forceWasMentioned?: boolean;
   messageIdOverride?: string;
+  routeOverride?: TelegramResolvedClientRoute["route"];
+  resolvedClientRouteOverride?: TelegramResolvedClientRoute;
+  allowWithoutMention?: boolean;
+  skipPendingHistory?: boolean;
+  untrustedContext?: string[];
+  roomState?: {
+    accountId?: string | null;
+    peerId: string;
+    historyLimit: number;
+    includeAgentReplies: boolean;
+    multiSpeakerRoom: boolean;
+  };
+  roomSpeakerLabel?: string;
+  responsePrefixOverride?: string;
 };
 
 type TelegramLogger = {
@@ -166,16 +181,18 @@ export const buildTelegramMessageContext = async ({
   const peerId = isGroup ? buildTelegramGroupPeerId(chatId, resolvedThreadId) : String(chatId);
   const parentPeer = buildTelegramParentPeer({ isGroup, resolvedThreadId, chatId });
   // Fresh config for bindings lookup; other routing inputs are payload-derived.
-  const resolvedClientRoute = resolveTelegramClientRoute({
-    cfg: loadConfig(),
-    accountId: account.accountId,
-    peer: {
-      kind: isGroup ? "group" : "direct",
-      id: peerId,
-    },
-    parentPeer,
-  });
-  const route = resolvedClientRoute.route;
+  const resolvedClientRoute =
+    options?.resolvedClientRouteOverride ??
+    resolveTelegramClientRoute({
+      cfg: loadConfig(),
+      accountId: account.accountId,
+      peer: {
+        kind: isGroup ? "group" : "direct",
+        id: peerId,
+      },
+      parentPeer,
+    });
+  const route = options?.routeOverride ?? resolvedClientRoute.route;
   const baseSessionKey = route.sessionKey;
   // DMs: use raw messageThreadId for thread sessions (not forum topic ids)
   const dmThreadId = threadSpec.scope === "dm" ? threadSpec.id : undefined;
@@ -464,7 +481,7 @@ export const buildTelegramMessageContext = async ({
   const replyFromId = msg.reply_to_message?.from?.id;
   const implicitMention = botId != null && replyFromId === botId;
   const canDetectMention = Boolean(botUsername) || mentionRegexes.length > 0;
-  const mentionGate = resolveMentionGatingWithBypass({
+  const baseMentionGate = resolveMentionGatingWithBypass({
     isGroup,
     requireMention: Boolean(requireMention),
     canDetectMention,
@@ -475,6 +492,15 @@ export const buildTelegramMessageContext = async ({
     hasControlCommand: hasControlCommandInMessage,
     commandAuthorized,
   });
+  const mentionGate =
+    isGroup && options?.allowWithoutMention
+      ? {
+          ...baseMentionGate,
+          effectiveWasMentioned: true,
+          shouldSkip: false,
+          shouldBypassMention: true,
+        }
+      : baseMentionGate;
   const effectiveWasMentioned = mentionGate.effectiveWasMentioned;
   if (isGroup && requireMention && canDetectMention) {
     if (mentionGate.shouldSkip) {
@@ -580,7 +606,7 @@ export const buildTelegramMessageContext = async ({
     envelope: envelopeOptions,
   });
   let combinedBody = body;
-  if (isGroup && historyKey && historyLimit > 0) {
+  if (!options?.skipPendingHistory && isGroup && historyKey && historyLimit > 0) {
     combinedBody = buildPendingHistoryContextFromMap({
       historyMap: groupHistories,
       historyKey,
@@ -608,7 +634,7 @@ export const buildTelegramMessageContext = async ({
     systemPromptParts.length > 0 ? systemPromptParts.join("\n\n") : undefined;
   const commandBody = normalizeCommandBody(rawBody, { botUsername });
   const inboundHistory =
-    isGroup && historyKey && historyLimit > 0
+    !options?.skipPendingHistory && isGroup && historyKey && historyLimit > 0
       ? (groupHistories.get(historyKey) ?? []).map((entry) => ({
           sender: entry.sender,
           body: entry.body,
@@ -630,6 +656,7 @@ export const buildTelegramMessageContext = async ({
     ConversationLabel: conversationLabel,
     GroupSubject: isGroup ? (msg.chat.title ?? undefined) : undefined,
     GroupSystemPrompt: isGroup ? groupSystemPrompt : undefined,
+    UntrustedContext: options?.untrustedContext,
     SenderName: senderName,
     SenderId: senderId || undefined,
     SenderUsername: senderUsername || undefined,
@@ -743,6 +770,9 @@ export const buildTelegramMessageContext = async ({
     reactionApi,
     removeAckAfterReply,
     accountId: account.accountId,
+    roomState: options?.roomState,
+    roomSpeakerLabel: options?.roomSpeakerLabel,
+    responsePrefixOverride: options?.responsePrefixOverride,
   };
 };
 

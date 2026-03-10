@@ -9,6 +9,7 @@ import type {
   TelegramTopicConfig,
 } from "../config/types.js";
 import type { RuntimeEnv } from "../runtime.js";
+import type { TelegramMessageContextOptions } from "./bot-message-context.js";
 import type { TelegramContext } from "./bot/types.js";
 import { resolveChunkMode } from "../auto-reply/chunk.js";
 import {
@@ -83,6 +84,13 @@ export type RegisterTelegramHandlerParams = {
   runtime: RuntimeEnv;
   telegramCfg: TelegramAccountConfig;
   groupAllowFrom?: Array<string | number>;
+  resolveGroupActivation: (params: {
+    chatId: string | number;
+    agentId?: string;
+    messageThreadId?: number;
+    sessionKey?: string;
+  }) => boolean | undefined;
+  resolveGroupRequireMention: (chatId: string | number) => boolean;
   resolveGroupPolicy: (chatId: string | number) => ChannelGroupPolicy;
   resolveTelegramGroupConfig: (
     chatId: string | number,
@@ -93,10 +101,7 @@ export type RegisterTelegramHandlerParams = {
     ctx: TelegramContext,
     allMedia: Array<{ path: string; contentType?: string }>,
     storeAllowFrom: string[],
-    options?: {
-      messageIdOverride?: string;
-      forceWasMentioned?: boolean;
-    },
+    options?: TelegramMessageContextOptions,
   ) => Promise<void>;
   logger: ReturnType<typeof getChildLogger>;
 };

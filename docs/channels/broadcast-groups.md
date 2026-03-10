@@ -1,8 +1,8 @@
 ---
-summary: "Broadcast a WhatsApp message to multiple agents"
+summary: "Broadcast a chat to multiple agents with shared room awareness"
 read_when:
   - Configuring broadcast groups
-  - Debugging multi-agent replies in WhatsApp
+  - Debugging multi-agent replies in WhatsApp or Telegram
 status: experimental
 title: "Broadcast Groups"
 ---
@@ -14,11 +14,14 @@ title: "Broadcast Groups"
 
 ## Overview
 
-Broadcast Groups enable multiple agents to process and respond to the same message simultaneously. This allows you to create specialized agent teams that work together in a single WhatsApp group or DM — all using one phone number.
+Broadcast Groups enable multiple agents to process and respond to the same message in one chat while keeping each agent's private session, tools, and auth isolated.
 
-Current scope: **WhatsApp only** (web channel).
+Current scope:
 
-Broadcast groups are evaluated after channel allowlists and group activation rules. In WhatsApp groups, this means broadcasts happen when OpenClaw would normally reply (for example: on mention, depending on your group settings).
+- WhatsApp groups and DMs
+- Telegram groups, supergroups, and forum topics
+
+Broadcast groups are evaluated after channel allowlists and activation rules. In Telegram groups, this means the normal mention rules still decide whether the room is active, and then the configured broadcast agents fan out from the same inbound event.
 
 ## Use Cases
 
@@ -70,10 +73,12 @@ Agents:
 
 ### Basic Setup
 
-Add a top-level `broadcast` section (next to `bindings`). Keys are WhatsApp peer ids:
+Add a top-level `broadcast` section (next to `bindings`). Keys are peer ids for the target chat:
 
-- group chats: group JID (e.g. `120363403215116621@g.us`)
-- DMs: E.164 phone number (e.g. `+15551234567`)
+- WhatsApp group chats: group JID (for example `120363403215116621@g.us`)
+- WhatsApp DMs: E.164 phone number (for example `+15551234567`)
+- Telegram groups and supergroups: chat id (for example `-1001234567890`)
+- Telegram forum topics: `<groupId>:topic:<threadId>`
 
 ```json
 {
@@ -84,6 +89,18 @@ Add a top-level `broadcast` section (next to `bindings`). Keys are WhatsApp peer
 ```
 
 **Result:** When OpenClaw would reply in this chat, it will run all three agents.
+
+Telegram example:
+
+```json5
+{
+  broadcast: {
+    strategy: "sequential",
+    "-1001234567890": ["main", "coder", "devops"],
+    "-1001234567890:topic:42": ["main", "power"],
+  },
+}
+```
 
 ### Processing Strategy
 
@@ -170,11 +187,11 @@ Note: broadcast groups do not bypass channel allowlists or group activation rule
 Each agent in a broadcast group maintains completely separate:
 
 - **Session keys** (`agent:alfred:whatsapp:group:120363...` vs `agent:baerbel:whatsapp:group:120363...`)
-- **Conversation history** (agent doesn't see other agents' messages)
+- **Private session history** (agent memory, tools, auth, and approvals stay isolated)
 - **Workspace** (separate sandboxes if configured)
 - **Tool access** (different allow/deny lists)
 - **Memory/context** (separate IDENTITY.md, SOUL.md, etc.)
-- **Group context buffer** (recent group messages used for context) is shared per peer, so all broadcast agents see the same context when triggered
+- **Shared room log** is shared per peer, so all broadcast agents see the same bounded room-visible context snapshot when triggered
 
 This allows each agent to have:
 
@@ -183,7 +200,24 @@ This allows each agent to have:
 - Different models (e.g., opus vs. sonnet)
 - Different skills installed
 
-### Example: Isolated Sessions
+### Shared room context
+
+For Telegram broadcast rooms, OpenClaw now persists a bounded room log under the state directory and injects it as untrusted room context on each triggered turn. That log includes:
+
+- visible inbound human messages
+- visible final agent replies
+- explicit system or handoff notes when OpenClaw adds them in the future
+
+It does not include:
+
+- tool output
+- internal reasoning
+- approval payloads
+- private auth or session data
+
+All broadcast targets for the same inbound event receive the same room snapshot, which avoids the fragmented "each agent only saw what was said directly to it" behavior.
+
+### Example: isolated sessions
 
 In group `120363403215116621@g.us` with agents `["alfred", "baerbel"]`:
 
@@ -191,7 +225,7 @@ In group `120363403215116621@g.us` with agents `["alfred", "baerbel"]`:
 
 ```
 Session: agent:alfred:whatsapp:group:120363403215116621@g.us
-History: [user message, alfred's previous responses]
+Private history: [user message, Alfred's previous responses]
 Workspace: /Users/pascal/openclaw-alfred/
 Tools: read, write, exec
 ```
@@ -200,7 +234,7 @@ Tools: read, write, exec
 
 ```
 Session: agent:baerbel:whatsapp:group:120363403215116621@g.us
-History: [user message, baerbel's previous responses]
+Private history: [user message, Bärbel's previous responses]
 Workspace: /Users/pascal/openclaw-baerbel/
 Tools: read only
 ```

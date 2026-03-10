@@ -119,6 +119,7 @@ Notes:
 
 - DM access control is **global per WhatsApp account** (pairing/allowlist), not per agent.
 - For shared groups, bind the group to one agent or use [Broadcast groups](/channels/broadcast-groups).
+- For Telegram client handoff rooms, you can keep one lead agent always-on and add quiet peer agents with shared room awareness through `channels.telegram.clients.<peerId>.orchestration`. See [Telegram](/channels/telegram#client-chats-and-takeover).
 
 ## Routing rules (how messages pick an agent)
 
@@ -147,6 +148,7 @@ multiple phone numbers without mixing sessions.
 - `accountId`: one channel account instance (e.g. WhatsApp account `"personal"` vs `"biz"`).
 - `binding`: routes inbound messages to an `agentId` by `(channel, accountId, peer)` and optionally guild/team ids.
 - Direct chats collapse to `agent:<agentId>:<mainKey>` (per-agent “main”; `session.mainKey`).
+- Shared-room orchestration is a separate layer on top of routing. It lets multiple agents stay aware of the same room-visible context without merging their private sessions, tools, or auth.
 
 ## Example: two WhatsApps → two agents
 

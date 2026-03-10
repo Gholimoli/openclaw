@@ -24,6 +24,9 @@ This folder is the “implementation bundle” for the secure VPS setup + `/work
 - The default VPS preset avoids OpenAI API-key-dependent voice features: inbound audio uses local Whisper.cpp only, and TTS is disabled until you configure a non-keyless path yourself.
 - Manual host use stays separate from `/work` and uses `tmux`-backed one-time login sessions for `codex`, `gh`, optional `gemini`, and `agent`.
 - Phase-two Telegram client takeover is available through allowlisted `channels.telegram.clients` routes and the `/client` operator command.
+- Telegram client takeover rooms can now use shared-room orchestration so one lead agent stays always-on while quiet peers remain fully room-aware and only speak when mentioned.
+- Telegram worker groups can also use top-level `broadcast` fanout with the same bounded shared room log, which is useful for internal delivery rooms where multiple specialists should track the same client thread.
+- The VPS coding-pack template now pins explicit per-agent `agentDir` paths so deploy preflight boots can reuse the real auth stores instead of looking inside temporary preflight state.
 
 ## Files
 

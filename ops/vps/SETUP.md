@@ -137,6 +137,9 @@ Key decisions in this config:
 - `google-gemini-cli-auth` bundled plugin enabled so the runtime can use Gemini CLI OAuth models
 - set `plugins.entries.work.config.lobsterPath` to the absolute Lobster binary in production when possible (for this Ubuntu bootstrap path, `/usr/bin/lobster`)
 - Telegram client takeover stays disabled until you add explicit `channels.telegram.clients.<peerId>` entries; operators then use `/client assign` and `/client clear` to hand a client chat to an allowlisted agent
+- Telegram client takeover rooms can enable `orchestration` so the lead agent is always on, peer agents stay room-aware through a bounded shared room log, and peers only speak on mention by default
+- Top-level `broadcast` can now target Telegram groups and forum topics too; each targeted agent gets the same shared room snapshot for that inbound event while keeping its own private session state
+- The VPS coding-pack template pins each agent's `agentDir` under `~/.openclaw/agents/<id>/agent`, which keeps provider auth stable during deploy preflight runs that use a temporary `OPENCLAW_STATE_DIR`
 
 ### Configure coding CLI defaults
 

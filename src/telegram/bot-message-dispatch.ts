@@ -24,6 +24,7 @@ import { danger, logVerbose } from "../globals.js";
 import { deliverReplies } from "./bot/delivery.js";
 import { resolveTelegramDraftStreamingChunking } from "./draft-chunking.js";
 import { createTelegramDraftStream } from "./draft-stream.js";
+import { appendTelegramRoomStateVisibleReply } from "./room-state.js";
 import { cacheSticker, describeStickerImage } from "./sticker-cache.js";
 
 const EMPTY_RESPONSE_FALLBACK = "No response generated. Please try again.";
@@ -86,6 +87,9 @@ export const dispatchTelegramMessage = async ({
     ackReactionPromise,
     reactionApi,
     removeAckAfterReply,
+    roomState,
+    roomSpeakerLabel,
+    responsePrefixOverride,
   } = context;
 
   const isPrivateChat = msg.chat.type === "private";
@@ -181,6 +185,10 @@ export const dispatchTelegramMessage = async ({
     channel: "telegram",
     accountId: route.accountId,
   });
+  const effectiveResponsePrefix =
+    prefixOptions.responsePrefix !== undefined
+      ? prefixOptions.responsePrefix
+      : responsePrefixOverride;
   const tableMode = resolveMarkdownTableMode({
     cfg,
     channel: "telegram",
@@ -256,6 +264,7 @@ export const dispatchTelegramMessage = async ({
     cfg,
     dispatcherOptions: {
       ...prefixOptions,
+      responsePrefix: effectiveResponsePrefix,
       deliver: async (payload, info) => {
         if (info.kind === "final") {
           await flushDraft();
@@ -278,6 +287,21 @@ export const dispatchTelegramMessage = async ({
         });
         if (result.delivered) {
           deliveryState.delivered = true;
+          if (info.kind === "final" && roomState?.includeAgentReplies) {
+            try {
+              await appendTelegramRoomStateVisibleReply({
+                accountId: roomState.accountId,
+                peerId: roomState.peerId,
+                historyLimit: roomState.historyLimit,
+                actorLabel: roomSpeakerLabel ?? route.agentId,
+                agentId: route.agentId,
+                text: payload.text,
+                mediaUrls: payload.mediaUrls ?? (payload.mediaUrl ? [payload.mediaUrl] : undefined),
+              });
+            } catch (err) {
+              logVerbose(`telegram room-state reply mirror failed: ${String(err)}`);
+            }
+          }
         }
       },
       onSkip: (_payload, info) => {
@@ -329,7 +353,7 @@ export const dispatchTelegramMessage = async ({
 
   const hasFinalResponse = queuedFinal || sentFallback;
   if (!hasFinalResponse) {
-    if (isGroup && historyKey) {
+    if (isGroup && historyKey && !roomState) {
       clearHistoryEntriesIfEnabled({ historyMap: groupHistories, historyKey, limit: historyLimit });
     }
     return;
@@ -351,7 +375,7 @@ export const dispatchTelegramMessage = async ({
       });
     },
   });
-  if (isGroup && historyKey) {
+  if (isGroup && historyKey && !roomState) {
     clearHistoryEntriesIfEnabled({ historyMap: groupHistories, historyKey, limit: historyLimit });
   }
 };

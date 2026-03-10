@@ -7,6 +7,7 @@ import {
   buildTelegramMessageContext,
   type BuildTelegramMessageContextParams,
   type TelegramMediaRef,
+  type TelegramMessageContextOptions,
 } from "./bot-message-context.js";
 import { dispatchTelegramMessage } from "./bot-message-dispatch.js";
 
@@ -52,7 +53,7 @@ export const createTelegramMessageProcessor = (deps: TelegramMessageProcessorDep
     primaryCtx: TelegramContext,
     allMedia: TelegramMediaRef[],
     storeAllowFrom: string[],
-    options?: { messageIdOverride?: string; forceWasMentioned?: boolean },
+    options?: TelegramMessageContextOptions,
   ) => {
     const context = await buildTelegramMessageContext({
       primaryCtx,

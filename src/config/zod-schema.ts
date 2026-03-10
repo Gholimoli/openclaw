@@ -765,4 +765,57 @@ export const OpenClawSchema = z
         }
       }
     }
+
+    const validateTelegramClientOrchestration = (
+      clients: Record<
+        string,
+        | {
+            orchestration?: {
+              peerAgents?: string[];
+            };
+          }
+        | undefined
+      >,
+      pathPrefix: Array<string>,
+    ) => {
+      for (const [peerId, client] of Object.entries(clients)) {
+        if (!client) {
+          continue;
+        }
+        const peerAgents = client.orchestration?.peerAgents;
+        if (!Array.isArray(peerAgents)) {
+          continue;
+        }
+        for (let idx = 0; idx < peerAgents.length; idx += 1) {
+          const agentId = peerAgents[idx];
+          if (!agentIds.has(agentId)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: [...pathPrefix, peerId, "orchestration", "peerAgents", idx],
+              message: `Unknown agent id "${agentId}" (not in agents.list).`,
+            });
+          }
+        }
+      }
+    };
+
+    validateTelegramClientOrchestration(cfg.channels?.telegram?.clients ?? {}, [
+      "channels",
+      "telegram",
+      "clients",
+    ]);
+
+    const telegramAccounts = cfg.channels?.telegram?.accounts ?? {};
+    for (const [accountId, account] of Object.entries(telegramAccounts)) {
+      if (!account) {
+        continue;
+      }
+      validateTelegramClientOrchestration(account.clients ?? {}, [
+        "channels",
+        "telegram",
+        "accounts",
+        accountId,
+        "clients",
+      ]);
+    }
   });

@@ -52,6 +52,18 @@ function formatSummary(summary: NonNullable<ReturnType<typeof resolveTelegramCli
   if (summary.allowedAgents && summary.allowedAgents.length > 0) {
     lines.push(`Allowed agents: ${summary.allowedAgents.join(", ")}`);
   }
+  if (summary.orchestration) {
+    lines.push("Orchestration: enabled");
+    lines.push(`Peer agents: ${summary.orchestration.peerAgents.join(", ") || "-"}`);
+    lines.push(`Peer reply policy: ${summary.orchestration.peerReplyPolicy}`);
+    lines.push(`Shared history limit: ${summary.orchestration.historyLimit}`);
+    lines.push(`Strategy: ${summary.orchestration.strategy}`);
+    lines.push(
+      `Include agent replies in room log: ${summary.orchestration.includeAgentReplies ? "yes" : "no"}`,
+    );
+  } else {
+    lines.push("Orchestration: disabled");
+  }
   if (summary.updatedAt) {
     lines.push(`Updated: ${new Date(summary.updatedAt).toISOString()}`);
   }
@@ -105,7 +117,15 @@ export const handleTelegramClientCommand: CommandHandler = async (params, allowT
     for (const entry of entries.slice(0, 20)) {
       const label = entry.label ?? entry.peerId;
       const assigned = entry.assignedAgentId ?? entry.defaultAgentId ?? "-";
-      lines.push(`- ${label} (${entry.peerId}) -> ${assigned}`);
+      const orchestration =
+        entry.orchestration?.enabled === true
+          ? ` | orchestration:${entry.orchestration.peerReplyPolicy}`
+          : "";
+      const peers =
+        entry.orchestration && entry.orchestration.peerAgents.length > 0
+          ? ` | peers:${entry.orchestration.peerAgents.join(",")}`
+          : "";
+      lines.push(`- ${label} (${entry.peerId}) -> ${assigned}${orchestration}${peers}`);
     }
     if (entries.length > 20) {
       lines.push(`- ... ${entries.length - 20} more`);

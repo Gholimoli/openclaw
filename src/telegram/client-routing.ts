@@ -1,7 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { MsgContext } from "../auto-reply/templating.js";
-import type { OpenClawConfig, TelegramClientConfig } from "../config/config.js";
+import type {
+  OpenClawConfig,
+  TelegramClientConfig,
+  TelegramClientPeerReplyPolicy,
+} from "../config/config.js";
 import type { ResolvedAgentRoute, RoutePeer } from "../routing/resolve-route.js";
 import { listAgentIds } from "../agents/agent-scope.js";
 import { resolveStateDir } from "../config/paths.js";
@@ -43,8 +47,18 @@ export type TelegramResolvedClientRouteSummary = {
   defaultAgentId?: string;
   assignedAgentId?: string;
   allowedAgents?: string[];
+  orchestration?: TelegramResolvedClientOrchestrationSummary;
   updatedAt?: number;
   updatedBy?: string;
+};
+
+export type TelegramResolvedClientOrchestrationSummary = {
+  enabled: boolean;
+  peerAgents: string[];
+  peerReplyPolicy: TelegramClientPeerReplyPolicy;
+  historyLimit: number;
+  strategy: "sequential" | "parallel";
+  includeAgentReplies: boolean;
 };
 
 const STORE_VERSION = 1 as const;
@@ -185,6 +199,67 @@ function normalizeAllowedAgents(
     .map((entry) => normalizeAgentId(entry))
     .filter((entry) => entry && valid.has(entry));
   return next.length > 0 ? next : [];
+}
+
+function normalizeAgentList(
+  cfg: OpenClawConfig,
+  raw: string[] | undefined,
+  excludedAgentIds: Set<string> = new Set(),
+): string[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return [];
+  }
+  const valid = new Set(listAgentIds(cfg));
+  const seen = new Set<string>();
+  const next: string[] = [];
+  for (const entry of raw) {
+    const normalized = normalizeAgentId(entry);
+    if (!normalized || !valid.has(normalized) || excludedAgentIds.has(normalized)) {
+      continue;
+    }
+    if (seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    next.push(normalized);
+  }
+  return next;
+}
+
+export function resolveTelegramClientOrchestrationConfig(params: {
+  cfg: OpenClawConfig;
+  clientConfig?: TelegramClientConfig;
+  assignedAgentId?: string;
+}): TelegramResolvedClientOrchestrationSummary | undefined {
+  const orchestration = params.clientConfig?.orchestration;
+  if (!orchestration || orchestration.enabled !== true) {
+    return undefined;
+  }
+  const leadAgentId =
+    params.assignedAgentId ||
+    (params.clientConfig?.defaultAgentId
+      ? normalizeAgentId(params.clientConfig.defaultAgentId)
+      : undefined);
+  const excluded = new Set<string>();
+  if (leadAgentId) {
+    excluded.add(leadAgentId);
+  }
+  const peerAgents = normalizeAgentList(params.cfg, orchestration.peerAgents, excluded);
+  const peerReplyPolicy = ((): TelegramClientPeerReplyPolicy => {
+    const value = orchestration.peerReplyPolicy;
+    return value === "observe" || value === "auto" ? value : "mention";
+  })();
+  return {
+    enabled: true,
+    peerAgents,
+    peerReplyPolicy,
+    historyLimit:
+      typeof orchestration.historyLimit === "number" && Number.isFinite(orchestration.historyLimit)
+        ? Math.max(0, Math.floor(orchestration.historyLimit))
+        : 40,
+    strategy: orchestration.strategy === "parallel" ? "parallel" : "sequential",
+    includeAgentReplies: orchestration.includeAgentReplies !== false,
+  };
 }
 
 function resolveAssignedAgentId(params: {
@@ -368,6 +443,11 @@ export function resolveTelegramClientRouteSummary(params: {
     return null;
   }
   const allowedAgents = normalizeAllowedAgents(params.cfg, clientConfig);
+  const orchestration = resolveTelegramClientOrchestrationConfig({
+    cfg: params.cfg,
+    clientConfig,
+    assignedAgentId: routeState?.agentId,
+  });
   return {
     peerId,
     accountId,
@@ -378,6 +458,7 @@ export function resolveTelegramClientRouteSummary(params: {
       : undefined,
     assignedAgentId: routeState?.agentId,
     allowedAgents,
+    orchestration,
     updatedAt: routeState?.updatedAt,
     updatedBy: routeState?.updatedBy,
   };

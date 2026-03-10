@@ -9,15 +9,19 @@ import {
 } from "../auto-reply/inbound-debounce.js";
 import { buildCommandsPaginationKeyboard } from "../auto-reply/reply/commands-info.js";
 import { buildModelsProviderData } from "../auto-reply/reply/commands-models.js";
+import { buildMentionRegexes, matchesMentionWithExplicit } from "../auto-reply/reply/mentions.js";
 import { resolveStoredModelOverride } from "../auto-reply/reply/model-selection.js";
 import { listSkillCommandsForAgents } from "../auto-reply/skill-commands.js";
 import { buildCommandsMessagePaginated } from "../auto-reply/status.js";
+import { resolveMentionGatingWithBypass } from "../channels/mention-gating.js";
 import { resolveChannelConfigWrites } from "../channels/plugins/config-writes.js";
 import { loadConfig } from "../config/config.js";
 import { writeConfigFile } from "../config/io.js";
 import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
 import { danger, logVerbose, warn } from "../globals.js";
 import { readChannelAllowFromStore } from "../pairing/pairing-store.js";
+import { buildAgentSessionKey } from "../routing/resolve-route.js";
+import { buildAgentMainSessionKey, DEFAULT_MAIN_KEY } from "../routing/session-key.js";
 import { resolveThreadSessionKeys } from "../routing/session-key.js";
 import { withTelegramApiErrorLogging } from "./api-logging.js";
 import { firstDefined, isSenderAllowed, normalizeAllowFromWithStore } from "./bot-access.js";
@@ -25,8 +29,11 @@ import { RegisterTelegramHandlerParams } from "./bot-native-commands.js";
 import { MEDIA_GROUP_TIMEOUT_MS, type MediaGroupEntry } from "./bot-updates.js";
 import { resolveMedia } from "./bot/delivery.js";
 import {
+  buildSenderLabel,
   buildTelegramGroupPeerId,
   buildTelegramParentPeer,
+  expandTextLinks,
+  hasBotMention,
   resolveTelegramForumThreadId,
 } from "./bot/helpers.js";
 import { parseTelegramChoiceCallbackData } from "./choice-buttons.js";
@@ -46,6 +53,12 @@ import {
   parseModelCallbackData,
   type ProviderInfo,
 } from "./model-buttons.js";
+import { resolveTelegramRoomPlan, resolveTelegramRoomSpeakerLabel } from "./orchestration.js";
+import {
+  appendTelegramRoomStateEntry,
+  buildTelegramRoomStateContext,
+  readTelegramRoomStateEntries,
+} from "./room-state.js";
 import { buildInlineKeyboard } from "./send.js";
 import {
   extractTelegramWorkResumeToken,
@@ -61,7 +74,9 @@ export const registerTelegramHandlers = ({
   mediaMaxBytes,
   telegramCfg,
   groupAllowFrom,
+  resolveGroupActivation,
   resolveGroupPolicy,
+  resolveGroupRequireMention,
   resolveTelegramGroupConfig,
   shouldSkipUpdate,
   processMessage,
@@ -122,7 +137,7 @@ export const registerTelegramHandlers = ({
         return;
       }
       if (entries.length === 1) {
-        await processMessage(last.ctx, last.allMedia, last.storeAllowFrom);
+        await processInboundTelegramRoom(last.ctx, last.allMedia, last.storeAllowFrom);
         return;
       }
       const combinedText = entries
@@ -145,7 +160,7 @@ export const registerTelegramHandlers = ({
         date: last.msg.date ?? first.msg.date,
       };
       const messageIdOverride = last.msg.message_id ? String(last.msg.message_id) : undefined;
-      await processMessage(
+      await processInboundTelegramRoom(
         { message: syntheticMessage, me: baseCtx.me, getFile },
         [],
         first.storeAllowFrom,
@@ -216,6 +231,248 @@ export const registerTelegramHandlers = ({
     return typeof modelCfg === "string" ? modelCfg : modelCfg?.primary;
   };
 
+  const buildRoomTargetRoute = (params: {
+    agentId: string;
+    peerId: string;
+    isGroup: boolean;
+    route: ReturnType<typeof resolveTelegramClientRoute>["route"];
+  }) => ({
+    ...params.route,
+    agentId: params.agentId,
+    sessionKey: buildAgentSessionKey({
+      agentId: params.agentId,
+      channel: "telegram",
+      accountId: params.route.accountId,
+      peer: {
+        kind: params.isGroup ? "group" : "direct",
+        id: params.peerId,
+      },
+      dmScope: cfg.session?.dmScope,
+      identityLinks: cfg.session?.identityLinks,
+    }),
+    mainSessionKey: buildAgentMainSessionKey({
+      agentId: params.agentId,
+      mainKey: DEFAULT_MAIN_KEY,
+    }),
+  });
+
+  const resolveVisibleRoomBody = (msg: Message, allMedia: TelegramMediaRef[]): string => {
+    const rawText = expandTextLinks(
+      msg.text ?? msg.caption ?? "",
+      msg.entities ?? msg.caption_entities,
+    ).trim();
+    if (rawText) {
+      return rawText;
+    }
+    if (msg.sticker) {
+      return "<media:sticker>";
+    }
+    if (msg.photo) {
+      return allMedia.length > 1 ? `<media:image> (${allMedia.length} images)` : "<media:image>";
+    }
+    if (msg.video || msg.video_note) {
+      return "<media:video>";
+    }
+    if (msg.audio || msg.voice) {
+      return "<media:audio>";
+    }
+    if (msg.document) {
+      return "<media:document>";
+    }
+    if (allMedia.length > 0) {
+      return allMedia.length > 1 ? `<media> (${allMedia.length} items)` : "<media>";
+    }
+    return "";
+  };
+
+  const shouldFanoutTelegramBroadcast = (params: {
+    cfg: ReturnType<typeof loadConfig>;
+    msg: Message;
+    route: ReturnType<typeof resolveTelegramClientRoute>["route"];
+    groupConfig?: ReturnType<typeof resolveTelegramGroupConfig>["groupConfig"];
+    topicConfig?: ReturnType<typeof resolveTelegramGroupConfig>["topicConfig"];
+    chatId: string | number;
+    resolvedThreadId?: number;
+    isGroup: boolean;
+    botUsername?: string;
+    botId?: number;
+  }): boolean => {
+    if (!params.isGroup) {
+      return true;
+    }
+    const activationOverride = resolveGroupActivation({
+      chatId: params.chatId,
+      messageThreadId: params.resolvedThreadId,
+      sessionKey: params.route.sessionKey,
+      agentId: params.route.agentId,
+    });
+    const requireMention = firstDefined(
+      activationOverride,
+      params.topicConfig?.requireMention,
+      params.groupConfig?.requireMention,
+      resolveGroupRequireMention(params.chatId),
+    );
+    if (!requireMention) {
+      return true;
+    }
+    const text = params.msg.text ?? params.msg.caption ?? "";
+    const mentionRegexes = buildMentionRegexes(params.cfg, params.route.agentId);
+    const hasAnyMention = (params.msg.entities ?? params.msg.caption_entities ?? []).some(
+      (entity) => entity.type === "mention",
+    );
+    const explicitlyMentioned = params.botUsername
+      ? hasBotMention(params.msg, params.botUsername)
+      : false;
+    const implicitMention =
+      params.botId != null && params.msg.reply_to_message?.from?.id === params.botId;
+    const wasMentioned = matchesMentionWithExplicit({
+      text,
+      mentionRegexes,
+      explicit: {
+        hasAnyMention,
+        isExplicitlyMentioned: explicitlyMentioned,
+        canResolveExplicit: Boolean(params.botUsername),
+      },
+    });
+    return !resolveMentionGatingWithBypass({
+      isGroup: true,
+      requireMention: true,
+      canDetectMention: Boolean(params.botUsername) || mentionRegexes.length > 0,
+      wasMentioned,
+      implicitMention,
+      hasAnyMention,
+      allowTextCommands: true,
+      hasControlCommand: hasControlCommand(text, params.cfg, {
+        botUsername: params.botUsername,
+      }),
+      commandAuthorized: true,
+    }).shouldSkip;
+  };
+
+  const processInboundTelegramRoom = async (
+    primaryCtx: TelegramContext,
+    allMedia: TelegramMediaRef[],
+    storeAllowFrom: string[],
+    options?: { messageIdOverride?: string; forceWasMentioned?: boolean },
+  ) => {
+    const msg = primaryCtx.message;
+    const chatId = msg.chat.id;
+    const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
+    const messageThreadId = msg.message_thread_id;
+    const isForum = msg.chat.is_forum === true;
+    const resolvedThreadId = resolveTelegramForumThreadId({
+      isForum,
+      messageThreadId,
+    });
+    const peerId = isGroup ? buildTelegramGroupPeerId(chatId, resolvedThreadId) : String(chatId);
+    const parentPeer = buildTelegramParentPeer({ isGroup, resolvedThreadId, chatId });
+    const freshCfg = loadConfig();
+    const resolvedClientRoute = resolveTelegramClientRoute({
+      cfg: freshCfg,
+      accountId,
+      peer: {
+        kind: isGroup ? "group" : "direct",
+        id: peerId,
+      },
+      parentPeer,
+    });
+    const { groupConfig, topicConfig } = resolveTelegramGroupConfig(chatId, resolvedThreadId);
+    const plan = resolveTelegramRoomPlan({
+      cfg: freshCfg,
+      telegramCfg,
+      peerId,
+      accountId,
+      message: msg,
+      resolvedClientRoute,
+    });
+
+    if (plan.kind === "single") {
+      await processMessage(primaryCtx, allMedia, storeAllowFrom, options);
+      return;
+    }
+
+    if (
+      plan.kind === "broadcast" &&
+      !shouldFanoutTelegramBroadcast({
+        cfg: freshCfg,
+        msg,
+        route: resolvedClientRoute.route,
+        groupConfig,
+        topicConfig,
+        chatId,
+        resolvedThreadId,
+        isGroup,
+        botUsername: primaryCtx.me?.username?.toLowerCase(),
+        botId: primaryCtx.me?.id,
+      })
+    ) {
+      logger.info({ chatId, reason: "broadcast-no-mention" }, "skipping broadcast message");
+      return;
+    }
+
+    const messageId = options?.messageIdOverride ?? String(msg.message_id);
+    const visibleBody = resolveVisibleRoomBody(msg, allMedia);
+    if (visibleBody) {
+      await appendTelegramRoomStateEntry({
+        accountId: plan.roomState.accountId,
+        peerId: plan.roomState.peerId,
+        historyLimit: plan.roomState.historyLimit,
+        entry: {
+          kind: "human",
+          actorLabel: buildSenderLabel(msg, msg.from?.id ? String(msg.from.id) : chatId),
+          body: visibleBody,
+          timestamp: msg.date ? msg.date * 1000 : Date.now(),
+          messageId,
+        },
+      });
+    }
+
+    const roomEntries = await readTelegramRoomStateEntries({
+      accountId: plan.roomState.accountId,
+      peerId: plan.roomState.peerId,
+      limit: plan.roomState.historyLimit,
+    });
+    const roomContext = buildTelegramRoomStateContext({
+      entries: roomEntries,
+      excludeMessageId: messageId,
+    });
+
+    const runTarget = async (target: (typeof plan.targets)[number]) => {
+      const routeOverride =
+        target.agentId === resolvedClientRoute.route.agentId
+          ? resolvedClientRoute.route
+          : buildRoomTargetRoute({
+              agentId: target.agentId,
+              peerId,
+              isGroup,
+              route: resolvedClientRoute.route,
+            });
+      const speakerLabel = resolveTelegramRoomSpeakerLabel({
+        cfg: freshCfg,
+        agentId: target.agentId,
+      });
+      await processMessage(primaryCtx, allMedia, storeAllowFrom, {
+        ...options,
+        routeOverride,
+        resolvedClientRouteOverride: resolvedClientRoute,
+        allowWithoutMention: target.allowWithoutMention,
+        skipPendingHistory: true,
+        untrustedContext: roomContext ? [roomContext] : undefined,
+        roomState: plan.roomState,
+        roomSpeakerLabel: speakerLabel,
+        responsePrefixOverride: plan.roomState.multiSpeakerRoom ? `[${speakerLabel}]` : undefined,
+      });
+    };
+
+    if (plan.strategy === "parallel") {
+      await Promise.allSettled(plan.targets.map(runTarget));
+      return;
+    }
+    for (const target of plan.targets) {
+      await runTarget(target);
+    }
+  };
+
   const processMediaGroup = async (entry: MediaGroupEntry) => {
     try {
       entry.messages.sort((a, b) => a.msg.message_id - b.msg.message_id);
@@ -236,7 +493,7 @@ export const registerTelegramHandlers = ({
       }
 
       const storeAllowFrom = await readChannelAllowFromStore("telegram").catch(() => []);
-      await processMessage(primaryEntry.ctx, allMedia, storeAllowFrom);
+      await processInboundTelegramRoom(primaryEntry.ctx, allMedia, storeAllowFrom);
     } catch (err) {
       runtime.error?.(danger(`media group handler failed: ${String(err)}`));
     }
@@ -271,7 +528,7 @@ export const registerTelegramHandlers = ({
       const getFile =
         typeof baseCtx.getFile === "function" ? baseCtx.getFile.bind(baseCtx) : async () => ({});
 
-      await processMessage(
+      await processInboundTelegramRoom(
         { message: syntheticMessage, me: baseCtx.me, getFile },
         [],
         storeAllowFrom,

@@ -41,6 +41,17 @@ const TelegramClientSchema = z
     label: z.string().optional(),
     defaultAgentId: z.string().optional(),
     allowedAgents: z.array(z.string()).optional(),
+    orchestration: z
+      .object({
+        enabled: z.boolean().optional(),
+        peerAgents: z.array(z.string()).optional(),
+        peerReplyPolicy: z.enum(["observe", "mention", "auto"]).optional(),
+        historyLimit: z.number().int().min(0).optional(),
+        strategy: z.enum(["sequential", "parallel"]).optional(),
+        includeAgentReplies: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

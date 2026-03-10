@@ -42,6 +42,25 @@ export type TelegramClientConfig = {
   defaultAgentId?: string;
   /** Optional allowlist of agents that may be assigned to this client. */
   allowedAgents?: string[];
+  /** Shared-room orchestration settings for this Telegram client chat. */
+  orchestration?: TelegramClientOrchestrationConfig;
+};
+
+export type TelegramClientPeerReplyPolicy = "observe" | "mention" | "auto";
+
+export type TelegramClientOrchestrationConfig = {
+  /** Enable shared-room orchestration for this Telegram client chat. */
+  enabled?: boolean;
+  /** Specialist peer agents that stay context-aware for this room. */
+  peerAgents?: string[];
+  /** How peer agents are allowed to speak in the room. Default: "mention". */
+  peerReplyPolicy?: TelegramClientPeerReplyPolicy;
+  /** Rolling shared room log limit. Default: 40. */
+  historyLimit?: number;
+  /** Multi-agent processing strategy. Default: "sequential". */
+  strategy?: "sequential" | "parallel";
+  /** Mirror visible agent replies back into shared room state. Default: true. */
+  includeAgentReplies?: boolean;
 };
 
 /** Custom command definition for Telegram bot menu. */

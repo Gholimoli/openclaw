@@ -5,6 +5,7 @@ import type { OpenClawConfig } from "../config/config.js";
 import {
   clearTelegramClientRouteStoreCacheForTest,
   resolveTelegramClientRoute,
+  resolveTelegramClientRouteSummary,
   setTelegramClientRouteAssignment,
 } from "./client-routing.js";
 
@@ -21,6 +22,13 @@ function testConfig(): OpenClawConfig {
             label: "Acme",
             defaultAgentId: "coder",
             allowedAgents: ["coder", "power"],
+            orchestration: {
+              enabled: true,
+              peerAgents: ["power"],
+              peerReplyPolicy: "mention",
+              historyLimit: 24,
+              strategy: "sequential",
+            },
           },
         },
       },
@@ -72,5 +80,23 @@ describe("telegram client routing", () => {
     expect(resolved.route.agentId).toBe("power");
     expect(resolved.assignedAgentId).toBe("power");
     expect(resolved.routeState?.updatedBy).toBe("owner");
+  });
+
+  it("includes orchestration details in client route summaries", () => {
+    process.env.OPENCLAW_STATE_DIR = path.join(os.tmpdir(), `openclaw-client-route-${Date.now()}`);
+    clearTelegramClientRouteStoreCacheForTest();
+    const summary = resolveTelegramClientRouteSummary({
+      cfg: testConfig(),
+      accountId: "default",
+      peerId: "12345",
+    });
+    expect(summary?.orchestration).toEqual({
+      enabled: true,
+      peerAgents: ["power"],
+      peerReplyPolicy: "mention",
+      historyLimit: 24,
+      strategy: "sequential",
+      includeAgentReplies: true,
+    });
   });
 });
