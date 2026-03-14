@@ -24,18 +24,6 @@ function getFirstDeliveryText(deliver: ReturnType<typeof vi.fn>): string {
   return firstCall?.payloads?.[0]?.text ?? "";
 }
 
-function getFirstDeliveryPayload(deliver: ReturnType<typeof vi.fn>) {
-  const firstCall = deliver.mock.calls[0]?.[0] as
-    | {
-        payloads?: Array<{
-          text?: string;
-          channelData?: Record<string, unknown>;
-        }>;
-      }
-    | undefined;
-  return firstCall?.payloads?.[0];
-}
-
 function getFirstTelegramSendText(sendTelegramMessage: ReturnType<typeof vi.fn>): string {
   return (sendTelegramMessage.mock.calls[0]?.[1] as string | undefined) ?? "";
 }
