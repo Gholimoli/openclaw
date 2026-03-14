@@ -180,7 +180,7 @@ Actions:
 ## Approval forwarding to chat channels
 
 You can forward exec approval prompts to any chat channel (including plugin channels) and approve
-them with `/approve`. This uses the normal outbound delivery pipeline.
+them with `/approve`.
 
 Default behavior:
 
@@ -223,11 +223,18 @@ Reply in chat:
 ```
 
 - `/approve` (no args) lists pending approvals for the current session and prints copyable commands.
-- Telegram DM forwarding can include tap-to-approve buttons.
+- Telegram forwarding is button-first for any forwarded exec approval request, regardless of which agent triggered it.
+  - OpenClaw sends a native inline keyboard to the Telegram target first.
   - One tap: **Approve** (allow once) or **Deny**
   - Two taps: **Always allow** (confirm step)
   - Final decisions clear buttons immediately
-- Telegram group targets stay text-only for approvals.
+  - Manual `/approve <id> ...` remains available as text fallback
+- Other chat channels stay manual-first and use `/approve`.
+
+Important:
+
+- Agents should trigger the real tool or workflow that needs approval and let OpenClaw produce the approval UI.
+- Agents should not simulate approval prompts in plain chat text or ask you to reply with a bare `approve`.
 
 ### macOS IPC flow
 

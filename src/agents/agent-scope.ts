@@ -17,6 +17,7 @@ type ResolvedAgentConfig = {
   name?: string;
   workspace?: string;
   agentDir?: string;
+  systemPrompt?: string;
   model?: AgentEntry["model"];
   skills?: AgentEntry["skills"];
   memorySearch?: AgentEntry["memorySearch"];
@@ -108,6 +109,7 @@ export function resolveAgentConfig(
     name: typeof entry.name === "string" ? entry.name : undefined,
     workspace: typeof entry.workspace === "string" ? entry.workspace : undefined,
     agentDir: typeof entry.agentDir === "string" ? entry.agentDir : undefined,
+    systemPrompt: typeof entry.systemPrompt === "string" ? entry.systemPrompt : undefined,
     model:
       typeof entry.model === "string" || (entry.model && typeof entry.model === "object")
         ? entry.model
@@ -122,6 +124,44 @@ export function resolveAgentConfig(
     sandbox: entry.sandbox,
     tools: entry.tools,
   };
+}
+
+export function resolveAgentSystemPrompt(
+  cfg: OpenClawConfig | undefined,
+  agentId: string | undefined,
+): string | undefined {
+  if (!cfg || !agentId) {
+    return undefined;
+  }
+  const systemPrompt = resolveAgentConfig(cfg, agentId)?.systemPrompt?.trim();
+  return systemPrompt || undefined;
+}
+
+export function mergeSystemPromptSections(
+  ...sections: Array<string | undefined | null>
+): string | undefined {
+  const merged: string[] = [];
+  const seen = new Set<string>();
+  for (const section of sections) {
+    const trimmed = typeof section === "string" ? section.trim() : "";
+    if (!trimmed || seen.has(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    merged.push(trimmed);
+  }
+  return merged.length > 0 ? merged.join("\n\n") : undefined;
+}
+
+export function resolveMergedAgentSystemPrompt(params: {
+  cfg?: OpenClawConfig;
+  agentId?: string;
+  extraSystemPrompt?: string;
+}): string | undefined {
+  return mergeSystemPromptSections(
+    resolveAgentSystemPrompt(params.cfg, params.agentId),
+    params.extraSystemPrompt,
+  );
 }
 
 export function resolveAgentSkillsFilter(

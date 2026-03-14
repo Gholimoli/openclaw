@@ -22,7 +22,8 @@ import {
   isTelegramInlineButtonsEnabled,
   resolveTelegramTargetChatType,
 } from "../telegram/inline-buttons.js";
-import { editMessageTelegram } from "../telegram/send.js";
+import { parseTelegramThreadId } from "../telegram/outbound-params.js";
+import { editMessageTelegram, sendMessageTelegram } from "../telegram/send.js";
 import { isDeliverableMessageChannel, normalizeMessageChannel } from "../utils/message-channel.js";
 import { deliverOutboundPayloads } from "./outbound/deliver.js";
 import { resolveSessionDeliveryTarget } from "./outbound/targets.js";
@@ -55,6 +56,7 @@ export type ExecApprovalForwarderDeps = {
   getConfig?: () => OpenClawConfig;
   deliver?: typeof deliverOutboundPayloads;
   editTelegramMessage?: typeof import("../telegram/send.js").editMessageTelegram;
+  sendTelegramMessage?: typeof import("../telegram/send.js").sendMessageTelegram;
   nowMs?: () => number;
   resolveSessionTarget?: (params: {
     cfg: OpenClawConfig;
@@ -149,7 +151,13 @@ function formatApprovalCommand(command: string): { inline: boolean; text: string
   return { inline: false, text: `${fence}\n${command}\n${fence}` };
 }
 
-function buildRequestMessage(request: ExecApprovalRequest, nowMs: number) {
+function buildRequestMessage(params: {
+  request: ExecApprovalRequest;
+  nowMs: number;
+  channel: string;
+  hasInlineButtons: boolean;
+}) {
+  const { request, nowMs, channel, hasInlineButtons } = params;
   const lines: string[] = ["🔒 Exec approval required", `ID: ${request.id}`];
   const command = formatApprovalCommand(request.request.command);
   if (command.inline) {
@@ -175,7 +183,12 @@ function buildRequestMessage(request: ExecApprovalRequest, nowMs: number) {
   }
   const expiresIn = Math.max(0, Math.round((request.expiresAtMs - nowMs) / 1000));
   lines.push(`Expires in: ${expiresIn}s`);
-  lines.push("Reply with: /approve <id> allow-once|allow-always|deny");
+  if (channel === "telegram" && hasInlineButtons) {
+    lines.push("Use the buttons below to approve or deny.");
+    lines.push("Fallback: /approve <id> allow-once|allow-always|deny");
+  } else {
+    lines.push("Reply with: /approve <id> allow-once|allow-always|deny");
+  }
   return lines.join("\n");
 }
 
@@ -221,16 +234,24 @@ function buildRequestPayload(params: {
   request: ExecApprovalRequest;
   nowMs: number;
 }): ReplyPayload {
-  const text = buildRequestMessage(params.request, params.nowMs);
   const channel = normalizeMessageChannel(params.target.channel) ?? params.target.channel;
+  const buttons =
+    channel === "telegram"
+      ? buildTelegramRequestButtons({
+          cfg: params.cfg,
+          target: params.target,
+          approvalId: params.request.id,
+        })
+      : null;
+  const text = buildRequestMessage({
+    request: params.request,
+    nowMs: params.nowMs,
+    channel,
+    hasInlineButtons: Boolean(buttons),
+  });
   if (channel !== "telegram") {
     return { text };
   }
-  const buttons = buildTelegramRequestButtons({
-    cfg: params.cfg,
-    target: params.target,
-    approvalId: params.request.id,
-  });
   if (!buttons) {
     return { text };
   }
@@ -278,6 +299,7 @@ async function deliverToTargets(params: {
   targets: ForwardTarget[];
   buildPayload: (target: ForwardTarget) => ReplyPayload | null;
   deliver: typeof deliverOutboundPayloads;
+  sendTelegramMessage: typeof import("../telegram/send.js").sendMessageTelegram;
   shouldSend?: () => boolean;
 }): Promise<
   Array<{
@@ -308,6 +330,27 @@ async function deliverToTargets(params: {
       return;
     }
     try {
+      if (channel === "telegram") {
+        const telegramData = payload.channelData?.telegram as
+          | { buttons?: ExecApprovalButtonRow[] }
+          | undefined;
+        const result = await params.sendTelegramMessage(target.to, payload.text ?? "", {
+          accountId: target.accountId,
+          buttons: telegramData?.buttons,
+          textMode: "html",
+          messageThreadId: parseTelegramThreadId(target.threadId),
+        });
+        if (typeof payload.text === "string" && payload.text.trim()) {
+          sentMessages.push({
+            channel: "telegram",
+            to: target.to,
+            accountId: target.accountId,
+            messageId: result.messageId,
+            text: payload.text,
+          });
+        }
+        return;
+      }
       const results = await params.deliver({
         cfg: params.cfg,
         channel,
@@ -368,6 +411,7 @@ export function createExecApprovalForwarder(
   const getConfig = deps.getConfig ?? loadConfig;
   const deliver = deps.deliver ?? deliverOutboundPayloads;
   const editTelegramMessage = deps.editTelegramMessage ?? editMessageTelegram;
+  const sendTelegramMessageFn = deps.sendTelegramMessage ?? sendMessageTelegram;
   const nowMs = deps.nowMs ?? Date.now;
   const resolveSessionTarget = deps.resolveSessionTarget ?? defaultResolveSessionTarget;
   const pending = new Map<string, PendingApproval>();
@@ -438,6 +482,7 @@ export function createExecApprovalForwarder(
           cfg,
           targets: entry.targets,
           deliver,
+          sendTelegramMessage: sendTelegramMessageFn,
           buildPayload: () => ({ text: expiredText }),
         });
       })();
@@ -460,6 +505,7 @@ export function createExecApprovalForwarder(
       cfg,
       targets,
       deliver,
+      sendTelegramMessage: sendTelegramMessageFn,
       buildPayload: (target) =>
         buildRequestPayload({
           cfg,
@@ -492,6 +538,7 @@ export function createExecApprovalForwarder(
       cfg,
       targets: entry.targets,
       deliver,
+      sendTelegramMessage: sendTelegramMessageFn,
       buildPayload: () => ({ text }),
     });
   };

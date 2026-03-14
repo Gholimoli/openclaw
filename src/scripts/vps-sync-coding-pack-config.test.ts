@@ -22,6 +22,7 @@ describe("ops/vps/sync-coding-pack-config.sh", () => {
     tempRoots.push(root);
 
     const configPath = path.join(root, "openclaw.json");
+    const approvalsPath = path.join(root, "exec-approvals.json");
     const templatePath = path.join(root, "openclaw.vps-coding.json5");
 
     await writeFile(
@@ -38,6 +39,7 @@ describe("ops/vps/sync-coding-pack-config.sh", () => {
               allowFrom: ["7652107499"],
               groupAllowFrom: ["7652107499"],
               groups: {
+                "-1001111111111": { requireMention: false },
                 "-100999": { requireMention: true },
               },
               capabilities: { inlineButtons: "off" },
@@ -66,6 +68,10 @@ describe("ops/vps/sync-coding-pack-config.sh", () => {
           },
           bindings: [
             {
+              agentId: "power",
+              match: { channel: "telegram", peer: { kind: "group", id: "-1002222222222" } },
+            },
+            {
               agentId: "coder",
               match: { channel: "telegram", peer: { kind: "group", id: "-100999" } },
             },
@@ -75,6 +81,23 @@ describe("ops/vps/sync-coding-pack-config.sh", () => {
               enabled: true,
               mode: "targets",
               targets: [{ channel: "telegram", to: "7652107499" }],
+            },
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    await writeFile(
+      approvalsPath,
+      JSON.stringify(
+        {
+          version: 1,
+          defaults: { security: "allowlist", ask: "always", askFallback: "deny" },
+          agents: {
+            power: {
+              allowlist: [{ id: "a", pattern: "/usr/bin/echo", lastUsedAt: 1 }],
             },
           },
         },
@@ -103,9 +126,6 @@ describe("ops/vps/sync-coding-pack-config.sh", () => {
             allowFrom: ["\${TELEGRAM_OWNER_ID}"],
             groupPolicy: "allowlist",
             groupAllowFrom: ["\${TELEGRAM_OWNER_ID}"],
-            groups: {
-              "-100111": { requireMention: false },
-            },
             configWrites: false,
             streamMode: "off",
           },
@@ -134,28 +154,52 @@ describe("ops/vps/sync-coding-pack-config.sh", () => {
           list: [
             {
               id: "main",
-              model: { primary: "openai-codex/gpt-5.3-codex" },
+              agentDir: "~/.openclaw/agents/main/agent",
+              model: {
+                primary: "openai-codex/gpt-5.3-codex",
+                fallbacks: ["openai/gpt-5.4", "google/gemini-3-pro-preview"],
+              },
               workspace: "~/work/repos",
-              tools: { allow: ["read", "exec", "process"], deny: ["browser"] },
+              tools: { alsoAllow: ["read", "exec", "process"], deny: ["browser"] },
             },
             {
               id: "coder",
+              agentDir: "~/.openclaw/agents/coder/agent",
+              model: {
+                primary: "openai-codex/gpt-5.3-codex",
+                fallbacks: ["openai/gpt-5.4", "google/gemini-3-pro-preview"],
+              },
               workspace: "~/work/repos",
               tools: { allow: ["exec"], deny: ["browser"] },
             },
+            {
+              id: "power",
+              agentDir: "~/.openclaw/agents/power/agent",
+              model: {
+                primary: "openai-codex/gpt-5.3-codex",
+                fallbacks: ["openai/gpt-5.4", "google/gemini-3-pro-preview"],
+              },
+              workspace: "~/.openclaw/workspace/power",
+              systemPrompt:
+                "Consult the operator before deploys, restarts, service control, git push/merge/rebase/reset/branch deletion/tagging/force operations, publish/release steps, secret/token/env/live-config changes, destructive file/data operations, or other external side effects that could break production or leak data.",
+            },
+            {
+              id: "devops",
+              agentDir: "~/.openclaw/agents/devops/agent",
+              model: {
+                primary: "openai-codex/gpt-5.3-codex",
+                fallbacks: ["openai/gpt-5.4", "google/gemini-3-pro-preview"],
+              },
+              workspace: "~/.openclaw/workspace/devops",
+            },
           ],
         },
-        bindings: [
-          {
-            agentId: "coder",
-            match: { channel: "telegram", peer: { kind: "group", id: "-100111" } },
-          },
-        ],
+        bindings: [],
         approvals: {
           exec: {
             enabled: true,
             mode: "both",
-            agentFilter: ["main", "power"],
+            agentFilter: ["main"],
             targets: [{ channel: "telegram", to: "\${TELEGRAM_OWNER_ID}" }],
           },
         },
@@ -171,8 +215,16 @@ describe("ops/vps/sync-coding-pack-config.sh", () => {
     });
 
     const synced = JSON.parse(await readFile(configPath, "utf8")) as {
-      agents?: { list?: Array<{ id?: string; workspace?: string; model?: { primary?: string } }> };
-      approvals?: { exec?: { mode?: string; targets?: unknown[] } };
+      agents?: {
+        list?: Array<{
+          id?: string;
+          agentDir?: string;
+          workspace?: string;
+          systemPrompt?: string;
+          model?: { primary?: string; fallbacks?: string[] };
+        }>;
+      };
+      approvals?: { exec?: { agentFilter?: string[]; mode?: string; targets?: unknown[] } };
       bindings?: Array<{ agentId?: string; match?: { peer?: { id?: string } } }>;
       channels?: {
         telegram?: {
@@ -188,8 +240,18 @@ describe("ops/vps/sync-coding-pack-config.sh", () => {
       gateway?: { auth?: { token?: string }; bind?: string };
       plugins?: { entries?: { work?: { enabled?: boolean; config?: { lobsterPath?: string } } } };
     };
+    const syncedApprovals = JSON.parse(await readFile(approvalsPath, "utf8")) as {
+      defaults?: { security?: string; ask?: string; askFallback?: string };
+      agents?: Record<
+        string,
+        { security?: string; ask?: string; askFallback?: string; allowlist?: unknown[] }
+      >;
+    };
 
     const mainAgent = synced.agents?.list?.find((agent) => agent.id === "main");
+    const coderAgent = synced.agents?.list?.find((agent) => agent.id === "coder");
+    const powerAgent = synced.agents?.list?.find((agent) => agent.id === "power");
+    const devopsAgent = synced.agents?.list?.find((agent) => agent.id === "devops");
     expect(synced.gateway?.bind).toBe("loopback");
     expect(synced.gateway?.auth?.token).toBe("literal-token");
     expect(synced.channels?.telegram?.botToken).toBe("literal-bot-token");
@@ -202,10 +264,50 @@ describe("ops/vps/sync-coding-pack-config.sh", () => {
     expect(synced.plugins?.entries?.work?.enabled).toBe(true);
     expect(synced.plugins?.entries?.work?.config?.lobsterPath).toBe("/usr/bin/lobster");
     expect(mainAgent?.workspace).toBe("/srv/custom-main");
+    expect(mainAgent?.agentDir).toBe("~/.openclaw/agents/main/agent");
     expect(mainAgent?.model?.primary).toBe("openai-codex/gpt-5.3-codex");
-    expect(synced.bindings?.[0]?.match?.peer?.id).toBe("-100999");
+    expect(mainAgent?.model?.fallbacks).toEqual(["openai/gpt-5.4", "google/gemini-3-pro-preview"]);
+    expect(mainAgent?.tools).toMatchObject({
+      alsoAllow: ["read", "exec", "process"],
+    });
+    expect(mainAgent?.tools?.allow).toBeUndefined();
+    expect(coderAgent?.agentDir).toBe("~/.openclaw/agents/coder/agent");
+    expect(coderAgent?.model?.fallbacks).toEqual(["openai/gpt-5.4", "google/gemini-3-pro-preview"]);
+    expect(powerAgent?.agentDir).toBe("~/.openclaw/agents/power/agent");
+    expect(powerAgent?.model?.primary).toBe("openai-codex/gpt-5.3-codex");
+    expect(powerAgent?.systemPrompt).toContain("Consult the operator before deploys");
+    expect(devopsAgent?.agentDir).toBe("~/.openclaw/agents/devops/agent");
+    expect(devopsAgent?.model?.fallbacks).toEqual([
+      "openai/gpt-5.4",
+      "google/gemini-3-pro-preview",
+    ]);
+    expect(synced.bindings).toEqual([
+      {
+        agentId: "coder",
+        match: { channel: "telegram", peer: { kind: "group", id: "-100999" } },
+      },
+    ]);
     expect(synced.approvals?.exec?.mode).toBe("both");
+    expect(synced.approvals?.exec?.agentFilter).toEqual(["main"]);
     expect(synced.approvals?.exec?.targets).toEqual([{ channel: "telegram", to: "7652107499" }]);
+    expect(syncedApprovals.defaults).toMatchObject({
+      security: "allowlist",
+      ask: "always",
+      askFallback: "deny",
+    });
+    expect(syncedApprovals.agents?.main).toMatchObject({
+      security: "allowlist",
+      ask: "always",
+      askFallback: "deny",
+    });
+    expect(syncedApprovals.agents?.power).toMatchObject({
+      security: "full",
+      ask: "off",
+      askFallback: "deny",
+    });
+    expect(syncedApprovals.agents?.power?.allowlist).toEqual([
+      { id: "a", pattern: "/usr/bin/echo", lastUsedAt: 1 },
+    ]);
   });
 
   it("preserves the current sandbox user and drops unresolved sandbox env refs", async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractLegacyExecTextCalls,
+  extractLegacyTextToolCalls,
   stripLegacyExecTextCallsInPayloads,
 } from "./legacy-exec-fallback.js";
 
@@ -45,6 +46,41 @@ describe("legacy exec fallback", () => {
     });
   });
 
+  it("extracts to=exec code blocks with JSON args", () => {
+    const text = `Checking host now.\nto=exec code\n\`\`\`json\n{"command":"hostname"}\n\`\`\`\nBack to the user.`;
+    expect(extractLegacyTextToolCalls(text)).toEqual({
+      cleanedText: "Checking host now.\nBack to the user.",
+      calls: [
+        {
+          toolName: "exec",
+          rawInput: '{"command":"hostname"}',
+          args: { command: "hostname" },
+        },
+      ],
+    });
+  });
+
+  it("extracts to=apply_patch code blocks with raw patch input", () => {
+    const text =
+      "Intro.\n" +
+      "to=apply_patch code\n" +
+      "*** Begin Patch\n" +
+      "*** Add File: note.txt\n" +
+      "+hello\n" +
+      "*** End Patch\n" +
+      "Back to the user.";
+    expect(extractLegacyTextToolCalls(text)).toEqual({
+      cleanedText: "Intro.\nBack to the user.",
+      calls: [
+        {
+          toolName: "apply_patch",
+          rawInput: "*** Begin Patch\n*** Add File: note.txt\n+hello\n*** End Patch",
+          args: undefined,
+        },
+      ],
+    });
+  });
+
   it("strips recovered legacy calls from payloads without executing them", async () => {
     const payloads = await stripLegacyExecTextCallsInPayloads({
       payloads: [
@@ -83,6 +119,22 @@ describe("legacy exec fallback", () => {
   it("drops payloads that only contained a legacy exec marker", async () => {
     const payloads = await stripLegacyExecTextCallsInPayloads({
       payloads: [{ text: `[exec cmd="echo hello"]{"cmd":"echo hello"}` }],
+    });
+    expect(payloads).toBeUndefined();
+  });
+
+  it("drops payloads that only contained a to=apply_patch code block", async () => {
+    const payloads = await stripLegacyExecTextCallsInPayloads({
+      payloads: [
+        {
+          text:
+            "to=apply_patch code\n" +
+            "*** Begin Patch\n" +
+            "*** Add File: note.txt\n" +
+            "+hello\n" +
+            "*** End Patch\n",
+        },
+      ],
     });
     expect(payloads).toBeUndefined();
   });

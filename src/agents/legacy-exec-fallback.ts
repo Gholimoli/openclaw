@@ -14,6 +14,12 @@ type LegacyExecTextCall = {
   command: string;
 };
 
+export type LegacyTextToolCall = {
+  toolName: string;
+  rawInput: string;
+  args?: Record<string, unknown>;
+};
+
 const BARE_JSON_EXEC_CUE_RE = /\b(?:approve|approval|deny|pending|shell|exec|tool|command|run)\b/i;
 
 function extractCommandFromJsonBlob(raw: string): string | null {
@@ -137,6 +143,200 @@ function parseBalancedJsonObject(
     }
   }
   return null;
+}
+
+function isInsideTripleBacktickFence(text: string, index: number): boolean {
+  const before = text.slice(0, index);
+  return (before.match(/```/g) ?? []).length % 2 === 1;
+}
+
+function parseFencedBody(text: string, start: number): { raw: string; nextIndex: number } | null {
+  if (!text.startsWith("```", start)) {
+    return null;
+  }
+  const openingLineEnd = text.indexOf("\n", start + 3);
+  if (openingLineEnd < 0) {
+    return null;
+  }
+  const closeMarker = "\n```";
+  const closingStart = text.indexOf(closeMarker, openingLineEnd + 1);
+  if (closingStart < 0) {
+    return null;
+  }
+  let nextIndex = closingStart + closeMarker.length;
+  if (text[nextIndex] === "\r") {
+    nextIndex += 1;
+  }
+  if (text[nextIndex] === "\n") {
+    nextIndex += 1;
+  }
+  return {
+    raw: text.slice(openingLineEnd + 1, closingStart),
+    nextIndex,
+  };
+}
+
+function parsePatchBody(text: string, start: number): { raw: string; nextIndex: number } | null {
+  if (!text.startsWith("*** Begin Patch", start)) {
+    return null;
+  }
+  const endMarker = "*** End Patch";
+  const endIndex = text.indexOf(endMarker, start);
+  if (endIndex < 0) {
+    return null;
+  }
+  let nextIndex = endIndex + endMarker.length;
+  if (text[nextIndex] === "\r") {
+    nextIndex += 1;
+  }
+  if (text[nextIndex] === "\n") {
+    nextIndex += 1;
+  }
+  return {
+    raw: text.slice(start, nextIndex).trim(),
+    nextIndex,
+  };
+}
+
+function parseLegacyToolBody(
+  text: string,
+  start: number,
+): { raw: string; nextIndex: number } | null {
+  let index = start;
+  while (index < text.length && /\s/.test(text[index] ?? "")) {
+    index += 1;
+  }
+  if (index >= text.length) {
+    return null;
+  }
+
+  const fenced = parseFencedBody(text, index);
+  if (fenced) {
+    return { raw: fenced.raw.trim(), nextIndex: fenced.nextIndex };
+  }
+
+  const patch = parsePatchBody(text, index);
+  if (patch) {
+    return patch;
+  }
+
+  const json = parseBalancedJsonObject(text, index);
+  if (json) {
+    return { raw: json.raw.trim(), nextIndex: json.nextIndex };
+  }
+
+  let nextIndex = index;
+  while (nextIndex < text.length && text[nextIndex] !== "\n" && text[nextIndex] !== "\r") {
+    nextIndex += 1;
+  }
+  const raw = text.slice(index, nextIndex).trim();
+  if (!raw) {
+    return null;
+  }
+  if (text[nextIndex] === "\r") {
+    nextIndex += 1;
+  }
+  if (text[nextIndex] === "\n") {
+    nextIndex += 1;
+  }
+  return { raw, nextIndex };
+}
+
+function maybeParseJsonRecord(raw: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseToolArgsFromRawInput(
+  toolName: string,
+  rawInput: string,
+): Record<string, unknown> | undefined {
+  const parsed = maybeParseJsonRecord(rawInput);
+  if (parsed) {
+    if (toolName === "exec" || toolName === "bash") {
+      const command =
+        typeof parsed.command === "string"
+          ? parsed.command
+          : typeof parsed.cmd === "string"
+            ? parsed.cmd
+            : undefined;
+      if (command) {
+        return { ...parsed, command };
+      }
+    }
+    if (toolName === "apply_patch") {
+      const input =
+        typeof parsed.input === "string"
+          ? parsed.input
+          : typeof parsed.patch === "string"
+            ? parsed.patch
+            : undefined;
+      if (input) {
+        return { ...parsed, input };
+      }
+    }
+    return parsed;
+  }
+  return undefined;
+}
+
+function extractLegacyToCodeCalls(text: string): {
+  cleanedText: string;
+  calls: LegacyTextToolCall[];
+} {
+  if (!text.includes("to=") || !/\bcode\b/i.test(text)) {
+    return { cleanedText: text, calls: [] };
+  }
+
+  const markerRe = /to=([A-Za-z][A-Za-z0-9_:-]*)\s+code\b/g;
+  const calls: LegacyTextToolCall[] = [];
+  let cleaned = "";
+  let cursor = 0;
+
+  for (const match of text.matchAll(markerRe)) {
+    const start = match.index ?? -1;
+    if (start < 0 || start < cursor) {
+      continue;
+    }
+    if (isInsideTripleBacktickFence(text, start)) {
+      continue;
+    }
+    const toolName = match[1]?.trim().toLowerCase();
+    if (!toolName) {
+      continue;
+    }
+    const body = parseLegacyToolBody(text, start + match[0].length);
+    if (!body) {
+      continue;
+    }
+
+    cleaned += text.slice(cursor, start);
+    calls.push({
+      toolName,
+      rawInput: body.raw,
+      args: parseToolArgsFromRawInput(toolName, body.raw),
+    });
+    const trailing = text.slice(body.nextIndex);
+    if (needsGapBetween(cleaned, trailing)) {
+      cleaned += " ";
+    }
+    cursor = body.nextIndex;
+  }
+
+  if (cursor < text.length) {
+    cleaned += text.slice(cursor);
+  }
+
+  return {
+    cleanedText: normalizeExecCleanup(cleaned),
+    calls,
+  };
 }
 
 function parseExecCommandFromTag(tagBody: string): string | null {
@@ -266,6 +466,25 @@ export function extractLegacyExecTextCalls(text: string): {
   };
 }
 
+export function extractLegacyTextToolCalls(text: string): {
+  cleanedText: string;
+  calls: LegacyTextToolCall[];
+} {
+  const exec = extractLegacyExecTextCalls(text);
+  const generic = extractLegacyToCodeCalls(exec.cleanedText);
+  return {
+    cleanedText: generic.cleanedText,
+    calls: [
+      ...exec.calls.map((call) => ({
+        toolName: "exec",
+        rawInput: call.command,
+        args: { command: call.command },
+      })),
+      ...generic.calls,
+    ],
+  };
+}
+
 export async function stripLegacyExecTextCallsInPayloads(
   params: StripLegacyExecPayloadsParams,
 ): Promise<PayloadLike[] | undefined> {
@@ -281,7 +500,7 @@ export async function stripLegacyExecTextCallsInPayloads(
       continue;
     }
 
-    const { cleanedText, calls } = extractLegacyExecTextCalls(payload.text);
+    const { cleanedText, calls } = extractLegacyTextToolCalls(payload.text);
     if (calls.length === 0) {
       nextPayloads.push(payload);
       continue;

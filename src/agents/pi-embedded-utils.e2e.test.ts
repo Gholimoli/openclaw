@@ -622,6 +622,18 @@ describe("stripDowngradedToolCallText", () => {
     expect(stripDowngradedToolCallText(text)).toBe("Intro.\nBack to the user.");
   });
 
+  it("strips leaked to=apply_patch code syntax", () => {
+    const text =
+      "Intro.\n" +
+      "to=apply_patch code\n" +
+      "*** Begin Patch\n" +
+      "*** Add File: note.txt\n" +
+      "+hello\n" +
+      "*** End Patch\n" +
+      "Back to the user.";
+    expect(stripDowngradedToolCallText(text)).toBe("Intro.\nBack to the user.");
+  });
+
   it("returns empty string for empty input", () => {
     expect(stripDowngradedToolCallText("")).toBe("");
   });

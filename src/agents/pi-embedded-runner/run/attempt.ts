@@ -1,9 +1,11 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { ImageContent } from "@mariozechner/pi-ai";
+import type { AssistantMessage, ImageContent, ToolResultMessage, Usage } from "@mariozechner/pi-ai";
 import { streamSimple } from "@mariozechner/pi-ai";
 import { createAgentSession, SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
+import type { AnyAgentTool } from "../../pi-tools.types.js";
 import type { EmbeddedRunAttemptParams, EmbeddedRunAttemptResult } from "./types.js";
 import { resolveHeartbeatPrompt } from "../../../auto-reply/heartbeat.js";
 import { resolveChannelCapabilities } from "../../../config/channel-capabilities.js";
@@ -23,7 +25,7 @@ import { resolveUserPath } from "../../../utils.js";
 import { normalizeMessageChannel } from "../../../utils/message-channel.js";
 import { isReasoningTagProvider } from "../../../utils/provider-utils.js";
 import { resolveOpenClawAgentDir } from "../../agent-paths.js";
-import { resolveSessionAgentIds } from "../../agent-scope.js";
+import { resolveMergedAgentSystemPrompt, resolveSessionAgentIds } from "../../agent-scope.js";
 import { createAnthropicPayloadLogger } from "../../anthropic-payload-log.js";
 import { makeBootstrapWarn, resolveBootstrapContextForRun } from "../../bootstrap-files.js";
 import { createCacheTrace } from "../../cache-trace.js";
@@ -33,6 +35,7 @@ import {
 } from "../../channel-tools.js";
 import { resolveOpenClawDocsPath } from "../../docs-path.js";
 import { isTimeoutError } from "../../failover-error.js";
+import { extractLegacyTextToolCalls } from "../../legacy-exec-fallback.js";
 import { resolveModelAuthMode } from "../../model-auth.js";
 import { resolveDefaultModelForAgent } from "../../model-selection.js";
 import { createOllamaStreamFn, OLLAMA_NATIVE_BASE_URL } from "../../ollama-stream.js";
@@ -43,6 +46,7 @@ import {
   validateGeminiTurns,
 } from "../../pi-embedded-helpers.js";
 import { subscribeEmbeddedPiSession } from "../../pi-embedded-subscribe.js";
+import { isAssistantMessage } from "../../pi-embedded-utils.js";
 import {
   ensurePiCompactionReserveTokens,
   resolveCompactionReserveTokensFloor,
@@ -64,6 +68,7 @@ import {
 } from "../../skills.js";
 import { buildSystemPromptParams } from "../../system-prompt-params.js";
 import { buildSystemPromptReport } from "../../system-prompt-report.js";
+import { normalizeToolName } from "../../tool-policy.js";
 import { resolveTranscriptPolicy } from "../../transcript-policy.js";
 import { DEFAULT_BOOTSTRAP_FILENAME } from "../../workspace.js";
 import { isRunnerAbortError } from "../abort.js";
@@ -210,6 +215,209 @@ function summarizeSessionContext(messages: AgentMessage[]): {
     totalImageBlocks,
     maxMessageTextChars,
   };
+}
+
+const EMPTY_TOOL_USAGE: Usage = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  cost: {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    total: 0,
+  },
+};
+
+const MAX_LEGACY_TOOL_RECOVERY_PASSES = 4;
+
+type RecoverableLegacyToolCall = {
+  toolName: string;
+  args: Record<string, unknown>;
+};
+
+function hasStructuredToolCalls(msg: AssistantMessage | undefined): boolean {
+  return Array.isArray(msg?.content)
+    ? msg.content.some((block) =>
+        block && typeof block === "object"
+          ? (block as { type?: unknown }).type === "toolCall"
+          : false,
+      )
+    : false;
+}
+
+function inferSingleStringParamName(tool: AnyAgentTool): string | undefined {
+  const schema = tool.parameters as {
+    properties?: Record<string, { type?: unknown }>;
+    required?: string[];
+  };
+  const properties = schema.properties ?? {};
+  const entries = Object.entries(properties).filter(
+    ([, value]) => value && typeof value === "object" && value.type === "string",
+  );
+  if (entries.length === 0) {
+    return undefined;
+  }
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  const requiredEntries = entries.filter(([name]) => required.includes(name));
+  if (requiredEntries.length === 1) {
+    return requiredEntries[0]?.[0];
+  }
+  if (entries.length === 1) {
+    return entries[0]?.[0];
+  }
+  return undefined;
+}
+
+export function resolveLegacyTextToolArgs(params: {
+  tool: AnyAgentTool;
+  rawInput: string;
+  parsedArgs?: Record<string, unknown>;
+}): Record<string, unknown> | null {
+  const toolName = normalizeToolName(params.tool.name);
+  const rawInput = params.rawInput.trim();
+  if (params.parsedArgs && Object.keys(params.parsedArgs).length > 0) {
+    if (toolName === "exec") {
+      const command =
+        typeof params.parsedArgs.command === "string"
+          ? params.parsedArgs.command
+          : typeof params.parsedArgs.cmd === "string"
+            ? params.parsedArgs.cmd
+            : undefined;
+      return command ? { ...params.parsedArgs, command } : params.parsedArgs;
+    }
+    if (toolName === "apply_patch") {
+      const input =
+        typeof params.parsedArgs.input === "string"
+          ? params.parsedArgs.input
+          : typeof params.parsedArgs.patch === "string"
+            ? params.parsedArgs.patch
+            : undefined;
+      return input ? { ...params.parsedArgs, input } : params.parsedArgs;
+    }
+    return params.parsedArgs;
+  }
+  if (!rawInput) {
+    return null;
+  }
+  if (toolName === "exec") {
+    return { command: rawInput };
+  }
+  if (toolName === "apply_patch") {
+    return { input: rawInput };
+  }
+  const inferredParam = inferSingleStringParamName(params.tool);
+  return inferredParam ? { [inferredParam]: rawInput } : null;
+}
+
+export function extractRecoverableLegacyToolCalls(params: {
+  assistant: AssistantMessage | undefined;
+  tools: AnyAgentTool[];
+}): RecoverableLegacyToolCall[] {
+  if (!params.assistant || hasStructuredToolCalls(params.assistant)) {
+    return [];
+  }
+  const lastAssistantText = params.assistant.content
+    .filter(
+      (
+        block,
+      ): block is Extract<AssistantMessage["content"][number], { type: "text"; text: string }> =>
+        block?.type === "text" && typeof block.text === "string",
+    )
+    .map((block) => block.text)
+    .join("\n");
+  if (!lastAssistantText) {
+    return [];
+  }
+  const recovered = extractLegacyTextToolCalls(lastAssistantText);
+  if (recovered.calls.length === 0) {
+    return [];
+  }
+  const toolsByName = new Map(
+    params.tools.map((tool) => [normalizeToolName(tool.name), tool] as const),
+  );
+  const results: RecoverableLegacyToolCall[] = [];
+  for (const call of recovered.calls) {
+    const tool = toolsByName.get(normalizeToolName(call.toolName));
+    if (!tool) {
+      continue;
+    }
+    const args = resolveLegacyTextToolArgs({
+      tool,
+      rawInput: call.rawInput,
+      parsedArgs: call.args,
+    });
+    if (!args) {
+      continue;
+    }
+    results.push({
+      toolName: normalizeToolName(tool.name),
+      args,
+    });
+  }
+  return results;
+}
+
+function buildSyntheticAssistantToolCallMessage(params: {
+  toolCallId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  provider: string;
+  modelId: string;
+  api: AssistantMessage["api"];
+}): AssistantMessage {
+  return {
+    role: "assistant",
+    content: [
+      {
+        type: "toolCall",
+        id: params.toolCallId,
+        name: params.toolName,
+        arguments: params.args,
+      },
+    ],
+    api: params.api,
+    provider: params.provider,
+    model: params.modelId,
+    usage: EMPTY_TOOL_USAGE,
+    stopReason: "toolUse",
+    timestamp: Date.now(),
+  };
+}
+
+function buildSyntheticToolResultMessage(params: {
+  toolCallId: string;
+  toolName: string;
+  result?: { content?: ToolResultMessage["content"]; details?: unknown };
+  isError: boolean;
+  errorMessage?: string;
+}): ToolResultMessage {
+  return {
+    role: "toolResult",
+    toolCallId: params.toolCallId,
+    toolName: params.toolName,
+    content:
+      params.result?.content && params.result.content.length > 0
+        ? params.result.content
+        : [{ type: "text", text: params.errorMessage?.trim() || "(no output)" }],
+    details: params.result?.details,
+    isError: params.isError,
+    timestamp: Date.now(),
+  };
+}
+
+export function appendSyntheticAgentMessage(params: {
+  agent: { appendMessage: (message: AssistantMessage | ToolResultMessage) => void };
+  sessionManager?: {
+    appendMessage: (message: AssistantMessage | ToolResultMessage) => unknown;
+  };
+  message: AssistantMessage | ToolResultMessage;
+}) {
+  params.agent.appendMessage(params.message);
+  params.sessionManager?.appendMessage(params.message);
 }
 
 export async function runEmbeddedAttempt(
@@ -430,7 +638,11 @@ export async function runEmbeddedAttempt(
       workspaceDir: effectiveWorkspace,
       defaultThinkLevel: params.thinkLevel,
       reasoningLevel: params.reasoningLevel ?? "off",
-      extraSystemPrompt: params.extraSystemPrompt,
+      extraSystemPrompt: resolveMergedAgentSystemPrompt({
+        cfg: params.config,
+        agentId: sessionAgentId,
+        extraSystemPrompt: params.extraSystemPrompt,
+      }),
       ownerNumbers: params.ownerNumbers,
       reasoningTagHint,
       heartbeatPrompt: isDefaultAgent
@@ -760,6 +972,7 @@ export async function runEmbeddedAttempt(
         getLastToolError,
         getUsageTotals,
         getCompactionCount,
+        recordSyntheticToolExecution,
       } = subscription;
 
       const queueHandle: EmbeddedPiQueueHandle = {
@@ -899,101 +1112,200 @@ export async function runEmbeddedAttempt(
           );
         }
 
-        try {
-          // Detect and load images referenced in the prompt for vision-capable models.
-          // This eliminates the need for an explicit "view" tool call by injecting
-          // images directly into the prompt when the model supports it.
-          // Also scans conversation history to enable follow-up questions about earlier images.
-          const imageResult = await detectAndLoadPromptImages({
-            prompt: effectivePrompt,
-            workspaceDir: effectiveWorkspace,
-            model: params.model,
-            existingImages: params.images,
-            historyMessages: activeSession.messages,
-            maxBytes: MAX_IMAGE_BYTES,
-            // Enforce sandbox path restrictions when sandbox is enabled
-            sandbox:
-              sandbox?.enabled && sandbox?.fsBridge
-                ? { root: sandbox.workspaceDir, bridge: sandbox.fsBridge }
-                : undefined,
-          });
+        // Detect and load images referenced in the prompt for vision-capable models.
+        // This eliminates the need for an explicit "view" tool call by injecting
+        // images directly into the prompt when the model supports it.
+        // Also scans conversation history to enable follow-up questions about earlier images.
+        const imageResult = await detectAndLoadPromptImages({
+          prompt: effectivePrompt,
+          workspaceDir: effectiveWorkspace,
+          model: params.model,
+          existingImages: params.images,
+          historyMessages: activeSession.messages,
+          maxBytes: MAX_IMAGE_BYTES,
+          sandbox:
+            sandbox?.enabled && sandbox?.fsBridge
+              ? { root: sandbox.workspaceDir, bridge: sandbox.fsBridge }
+              : undefined,
+        });
 
-          // Inject history images into their original message positions.
-          // This ensures the model sees images in context (e.g., "compare to the first image").
-          const didMutate = injectHistoryImagesIntoMessages(
-            activeSession.messages,
-            imageResult.historyImagesByIndex,
-          );
-          if (didMutate) {
-            // Persist message mutations (e.g., injected history images) so we don't re-scan/reload.
-            activeSession.agent.replaceMessages(activeSession.messages);
-          }
+        const didMutate = injectHistoryImagesIntoMessages(
+          activeSession.messages,
+          imageResult.historyImagesByIndex,
+        );
+        if (didMutate) {
+          activeSession.agent.replaceMessages(activeSession.messages);
+        }
 
-          cacheTrace?.recordStage("prompt:images", {
-            prompt: effectivePrompt,
-            messages: activeSession.messages,
-            note: `images: prompt=${imageResult.images.length} history=${imageResult.historyImagesByIndex.size}`,
-          });
+        cacheTrace?.recordStage("prompt:images", {
+          prompt: effectivePrompt,
+          messages: activeSession.messages,
+          note: `images: prompt=${imageResult.images.length} history=${imageResult.historyImagesByIndex.size}`,
+        });
 
-          // Diagnostic: log context sizes before prompt to help debug early overflow errors.
-          if (log.isEnabled("debug")) {
-            const msgCount = activeSession.messages.length;
-            const systemLen = systemPromptText?.length ?? 0;
-            const promptLen = effectivePrompt.length;
-            const sessionSummary = summarizeSessionContext(activeSession.messages);
-            log.debug(
-              `[context-diag] pre-prompt: sessionKey=${params.sessionKey ?? params.sessionId} ` +
-                `messages=${msgCount} roleCounts=${sessionSummary.roleCounts} ` +
-                `historyTextChars=${sessionSummary.totalTextChars} ` +
-                `maxMessageTextChars=${sessionSummary.maxMessageTextChars} ` +
-                `historyImageBlocks=${sessionSummary.totalImageBlocks} ` +
-                `systemPromptChars=${systemLen} promptChars=${promptLen} ` +
-                `promptImages=${imageResult.images.length} ` +
-                `historyImageMessages=${imageResult.historyImagesByIndex.size} ` +
-                `provider=${params.provider}/${params.modelId} sessionFile=${params.sessionFile}`,
-            );
-          }
-
-          // Only pass images option if there are actually images to pass
-          // This avoids potential issues with models that don't expect the images parameter
-          if (imageResult.images.length > 0) {
-            await abortable(activeSession.prompt(effectivePrompt, { images: imageResult.images }));
-          } else {
-            await abortable(activeSession.prompt(effectivePrompt));
-          }
-        } catch (err) {
-          promptError = err;
-        } finally {
+        if (log.isEnabled("debug")) {
+          const msgCount = activeSession.messages.length;
+          const systemLen = systemPromptText?.length ?? 0;
+          const promptLen = effectivePrompt.length;
+          const sessionSummary = summarizeSessionContext(activeSession.messages);
           log.debug(
-            `embedded run prompt end: runId=${params.runId} sessionId=${params.sessionId} durationMs=${Date.now() - promptStartedAt}`,
+            `[context-diag] pre-prompt: sessionKey=${params.sessionKey ?? params.sessionId} ` +
+              `messages=${msgCount} roleCounts=${sessionSummary.roleCounts} ` +
+              `historyTextChars=${sessionSummary.totalTextChars} ` +
+              `maxMessageTextChars=${sessionSummary.maxMessageTextChars} ` +
+              `historyImageBlocks=${sessionSummary.totalImageBlocks} ` +
+              `systemPromptChars=${systemLen} promptChars=${promptLen} ` +
+              `promptImages=${imageResult.images.length} ` +
+              `historyImageMessages=${imageResult.historyImagesByIndex.size} ` +
+              `provider=${params.provider}/${params.modelId} sessionFile=${params.sessionFile}`,
           );
         }
 
-        // Capture snapshot before compaction wait so we have complete messages if timeout occurs
-        // Check compaction state before and after to avoid race condition where compaction starts during capture
-        // Use session state (not subscription) for snapshot decisions - need instantaneous compaction status
-        const wasCompactingBefore = activeSession.isCompacting;
-        const snapshot = activeSession.messages.slice();
-        const wasCompactingAfter = activeSession.isCompacting;
-        // Only trust snapshot if compaction wasn't running before or after capture
-        const preCompactionSnapshot = wasCompactingBefore || wasCompactingAfter ? null : snapshot;
-        const preCompactionSessionId = activeSession.sessionId;
+        let preCompactionSnapshot: AgentMessage[] | null = null;
+        let preCompactionSessionId = activeSession.sessionId;
+        let runMode: "prompt" | "continue" = "prompt";
+        let legacyRecoveryPasses = 0;
 
-        try {
-          await abortable(waitForCompactionRetry());
-        } catch (err) {
-          if (isRunnerAbortError(err)) {
-            if (!promptError) {
-              promptError = err;
+        while (true) {
+          promptError = null;
+          const turnStartedAt = Date.now();
+
+          try {
+            if (runMode === "prompt") {
+              if (imageResult.images.length > 0) {
+                await abortable(
+                  activeSession.prompt(effectivePrompt, { images: imageResult.images }),
+                );
+              } else {
+                await abortable(activeSession.prompt(effectivePrompt));
+              }
+            } else {
+              await abortable(activeSession.agent.continue());
             }
-            if (!isProbeSession) {
-              log.debug(
-                `compaction wait aborted: runId=${params.runId} sessionId=${params.sessionId}`,
-              );
-            }
-          } else {
-            throw err;
+          } catch (err) {
+            promptError = err;
+          } finally {
+            log.debug(
+              `embedded run ${runMode} end: runId=${params.runId} sessionId=${params.sessionId} durationMs=${Date.now() - turnStartedAt}`,
+            );
           }
+
+          const wasCompactingBefore = activeSession.isCompacting;
+          const snapshot = activeSession.messages.slice();
+          const wasCompactingAfter = activeSession.isCompacting;
+          preCompactionSnapshot = wasCompactingBefore || wasCompactingAfter ? null : snapshot;
+          preCompactionSessionId = activeSession.sessionId;
+
+          try {
+            await abortable(waitForCompactionRetry());
+          } catch (err) {
+            if (isRunnerAbortError(err)) {
+              if (!promptError) {
+                promptError = err;
+              }
+              if (!isProbeSession) {
+                log.debug(
+                  `compaction wait aborted: runId=${params.runId} sessionId=${params.sessionId}`,
+                );
+              }
+            } else {
+              throw err;
+            }
+          }
+
+          if (promptError) {
+            break;
+          }
+
+          const recoveredCalls = extractRecoverableLegacyToolCalls({
+            assistant: activeSession.messages.slice().toReversed().find(isAssistantMessage),
+            tools,
+          });
+          if (recoveredCalls.length === 0) {
+            break;
+          }
+          if (legacyRecoveryPasses >= MAX_LEGACY_TOOL_RECOVERY_PASSES) {
+            log.warn(
+              `legacy tool recovery limit reached: runId=${params.runId} sessionId=${params.sessionId} passes=${legacyRecoveryPasses}`,
+            );
+            break;
+          }
+
+          legacyRecoveryPasses += 1;
+          log.warn(
+            `recovering legacy text tool calls: runId=${params.runId} sessionId=${params.sessionId} count=${recoveredCalls.length} pass=${legacyRecoveryPasses}`,
+          );
+
+          for (const recoveredCall of recoveredCalls) {
+            const tool = tools.find(
+              (candidate) =>
+                normalizeToolName(candidate.name) === normalizeToolName(recoveredCall.toolName),
+            );
+            if (!tool) {
+              continue;
+            }
+
+            const toolCallId = `legacy${randomUUID().replace(/-/g, "")}`;
+            appendSyntheticAgentMessage({
+              agent: activeSession.agent,
+              sessionManager,
+              message: buildSyntheticAssistantToolCallMessage({
+                toolCallId,
+                toolName: normalizeToolName(tool.name),
+                args: recoveredCall.args,
+                provider: params.provider,
+                modelId: params.modelId,
+                api: params.model.api,
+              }),
+            });
+
+            let toolResultMessage: ToolResultMessage;
+            let syntheticResult: unknown;
+            let isError = false;
+            try {
+              const result = await tool.execute(
+                toolCallId,
+                recoveredCall.args,
+                runAbortController.signal,
+              );
+              syntheticResult = result;
+              toolResultMessage = buildSyntheticToolResultMessage({
+                toolCallId,
+                toolName: normalizeToolName(tool.name),
+                result,
+                isError: false,
+              });
+            } catch (err) {
+              isError = true;
+              const errorMessage = describeUnknownError(err);
+              toolResultMessage = buildSyntheticToolResultMessage({
+                toolCallId,
+                toolName: normalizeToolName(tool.name),
+                isError: true,
+                errorMessage,
+              });
+              syntheticResult = {
+                content: toolResultMessage.content,
+                isError: true,
+                error: errorMessage,
+              };
+            }
+
+            await recordSyntheticToolExecution({
+              toolCallId,
+              toolName: normalizeToolName(tool.name),
+              args: recoveredCall.args,
+              result: syntheticResult,
+              isError,
+            });
+            appendSyntheticAgentMessage({
+              agent: activeSession.agent,
+              sessionManager,
+              message: toolResultMessage,
+            });
+          }
+
+          runMode = "continue";
         }
 
         // Append cache-TTL timestamp AFTER prompt + compaction retry completes.

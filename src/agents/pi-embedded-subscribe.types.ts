@@ -38,3 +38,11 @@ export type SubscribeEmbeddedPiSessionParams = {
 };
 
 export type { BlockReplyChunking } from "./pi-embedded-block-chunker.js";
+
+export type SyntheticToolExecutionRecord = {
+  toolCallId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  result?: unknown;
+  isError: boolean;
+};

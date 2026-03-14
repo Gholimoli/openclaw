@@ -11,15 +11,17 @@ This folder is the “implementation bundle” for the secure VPS setup + `/work
 
 - Gateway binds to **loopback** by default (no public exposure). If you want the Control UI remotely, expose it privately over **Tailscale Serve**.
 - Telegram is the primary interface with **owner-allowlisted DMs** and **dedicated allowlisted groups** for `coder`, `power`, and `devops`.
-- The operator-facing `main` agent presents as **Ted** and uses `openai-codex/gpt-5.3-codex`, with `openai-codex/gpt-5.2` then `google-gemini-cli/gemini-3-pro-preview` as fallbacks.
+- The operator-facing `main` agent presents as **Ted** and uses `openai-codex/gpt-5.3-codex`, with `openai/gpt-5.4` then `google/gemini-3-pro-preview` as fallbacks.
 - A `coder` agent runs tool execution inside Docker sandbox with network enabled (for `git`, `gh`, `codex`, `gemini`, `cursor-agent`, `gcloud`, `x-cli`, `coderabbit`).
-- `coder` defaults to Codex CLI with high reasoning, retries with `gpt-5.4`, then falls back to Gemini CLI.
-- OpenClaw approvals stay in place for Ted and host execution; nested coding CLIs inside the coder sandbox are configured for full-access agent runs.
+- `coder` defaults to Codex-first runtime routing with `openai/gpt-5.4` then `google/gemini-3-pro-preview` as model fallbacks.
+- Ted stays approval-gated for host execution. The owner-only `power` lane keeps full host access without per-command exec approvals, but its system prompt requires operator consultation before high-risk production actions.
+- Telegram exec approvals are tap-first for every approval-gated agent: inline Approve/Deny buttons are the primary path, with manual `/approve ...` only as fallback.
 - A `/work` command (plugin `work`) runs **Lobster workflows** with approval gates for commit/push/merge, GitHub App-backed repo access, structured spec-packet handoff to Codex/Gemini, and merge preflight checks.
-- Unattended runs use subscription auth where the runtime supports it:
+- Unattended runs use OAuth first where the runtime supports it, then API-key fallbacks:
   - GitHub App installation tokens for repo and PR actions
   - OpenClaw `openai-codex` OAuth for Ted and other runtime `openai-codex/*` model calls
-  - OpenClaw `google-gemini-cli` OAuth plugin for runtime `google-gemini-cli/*` fallback calls
+  - `OPENAI_API_KEY` for generic `openai/*` fallback calls
+  - `GEMINI_API_KEY` for generic `google/*` fallback calls
   - Codex CLI and Gemini CLI OAuth state bind-mounted into the coder sandbox for `/work`
 - The default VPS preset avoids OpenAI API-key-dependent voice features: inbound audio uses local Whisper.cpp only, and TTS is disabled until you configure a non-keyless path yourself.
 - Manual host use stays separate from `/work` and uses `tmux`-backed one-time login sessions for `codex`, `gh`, optional `gemini`, and `agent`.
@@ -62,4 +64,4 @@ This folder is the “implementation bundle” for the secure VPS setup + `/work
 - Repo intake defaults to `~/work/repos/<owner>/<repo>`.
 - Manual CLI login is for operator sessions only. Keep unattended `/work` runs on GitHub App + service credentials rather than interactive host logins.
 - ChatGPT/Codex OAuth only covers the `openai-codex/*` provider path. It does not cover generic `openai/*` or `openrouter/*` billing.
-- Gemini CLI OAuth covers `google-gemini-cli/*` provider usage and the Gemini CLI itself after login. It does not replace generic `google/*` API-key features.
+- Generic `google/*` runtime calls use `GEMINI_API_KEY`. Gemini CLI auth remains separate and is only needed if you run the Gemini CLI directly inside the sandbox.

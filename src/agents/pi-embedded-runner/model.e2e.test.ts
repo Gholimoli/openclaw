@@ -9,6 +9,7 @@ import { buildInlineProviderModels, resolveModel } from "./model.js";
 import {
   makeModel,
   mockDiscoveredModel,
+  OPENAI_TEMPLATE_MODEL,
   OPENAI_CODEX_TEMPLATE_MODEL,
   resetMockDiscoverModels,
 } from "./model.test-harness.js";
@@ -52,6 +53,24 @@ describe("pi embedded model e2e smoke", () => {
       api: "openai-codex-responses",
       baseUrl: "https://chatgpt.com/backend-api",
       reasoning: true,
+    });
+  });
+
+  it("builds an openai forward-compat fallback for gpt-5.4", () => {
+    mockDiscoveredModel({
+      provider: "openai",
+      modelId: "gpt-5.2",
+      templateModel: OPENAI_TEMPLATE_MODEL,
+    });
+
+    const result = resolveModel("openai", "gpt-5.4", "/tmp/agent");
+    expect(result.error).toBeUndefined();
+    expect(result.model).toMatchObject({
+      provider: "openai",
+      id: "gpt-5.4",
+      api: "openai-responses",
+      reasoning: true,
+      input: ["text", "image"],
     });
   });
 

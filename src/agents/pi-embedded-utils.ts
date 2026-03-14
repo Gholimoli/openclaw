@@ -1,7 +1,7 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { stripReasoningTagsFromText } from "../shared/text/reasoning-tags.js";
-import { extractLegacyExecTextCalls } from "./legacy-exec-fallback.js";
+import { extractLegacyTextToolCalls } from "./legacy-exec-fallback.js";
 import { sanitizeUserFacingText } from "./pi-embedded-helpers.js";
 import { formatToolDetail, resolveToolDisplay } from "./tool-display.js";
 
@@ -43,8 +43,8 @@ export function stripDowngradedToolCallText(text: string): string {
   if (!text) {
     return text;
   }
-  const legacyExec = extractLegacyExecTextCalls(text);
-  const workingText = legacyExec.calls.length > 0 ? legacyExec.cleanedText : text;
+  const legacyToolCalls = extractLegacyTextToolCalls(text);
+  const workingText = legacyToolCalls.calls.length > 0 ? legacyToolCalls.cleanedText : text;
   if (!/\[Tool (?:Call|Result)/i.test(workingText) && !/\[Historical context/i.test(workingText)) {
     return workingText;
   }

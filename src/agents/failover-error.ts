@@ -2,6 +2,14 @@ import { classifyFailoverReason, type FailoverReason } from "./pi-embedded-helpe
 
 const TIMEOUT_HINT_RE = /timeout|timed out|deadline exceeded|context deadline exceeded/i;
 const ABORT_TIMEOUT_RE = /request was aborted|request aborted/i;
+const TRANSPORT_ABORT_RE =
+  /request was aborted|request aborted|operation was aborted|socket hang up|connection reset|connection aborted/i;
+const UNKNOWN_MODEL_RE = /^unknown model:/i;
+const AUTH_PROFILE_MISMATCH_RE = /^auth profile ".*" is not configured for /i;
+const NO_AVAILABLE_AUTH_PROFILE_RE = /^no available auth profile for /i;
+const TRANSIENT_STATUS_CODES = new Set([500, 502, 503, 504, 521, 522, 523, 524, 529, 530]);
+const TRANSIENT_MESSAGE_RE =
+  /temporarily unavailable|service unavailable|internal server error|gateway timeout|upstream timeout|upstream request timeout|server is down|backend error/i;
 
 export class FailoverError extends Error {
   readonly reason: FailoverReason;
@@ -139,7 +147,15 @@ export function isTimeoutError(err: unknown): boolean {
   }
   const cause = "cause" in err ? (err as { cause?: unknown }).cause : undefined;
   const reason = "reason" in err ? (err as { reason?: unknown }).reason : undefined;
-  return hasTimeoutHint(cause) || hasTimeoutHint(reason);
+  if (message && TRANSPORT_ABORT_RE.test(message)) {
+    return true;
+  }
+  return (
+    hasTimeoutHint(cause) ||
+    hasTimeoutHint(reason) ||
+    Boolean(getErrorMessage(cause) && TRANSPORT_ABORT_RE.test(getErrorMessage(cause))) ||
+    Boolean(getErrorMessage(reason) && TRANSPORT_ABORT_RE.test(getErrorMessage(reason)))
+  );
 }
 
 export function resolveFailoverReasonFromError(err: unknown): FailoverReason | null {
@@ -163,6 +179,9 @@ export function resolveFailoverReasonFromError(err: unknown): FailoverReason | n
   if (status === 400) {
     return "format";
   }
+  if (status !== undefined && TRANSIENT_STATUS_CODES.has(status)) {
+    return "timeout";
+  }
 
   const code = (getErrorCode(err) ?? "").toUpperCase();
   if (["ETIMEDOUT", "ESOCKETTIMEDOUT", "ECONNRESET", "ECONNABORTED"].includes(code)) {
@@ -175,6 +194,15 @@ export function resolveFailoverReasonFromError(err: unknown): FailoverReason | n
   const message = getErrorMessage(err);
   if (!message) {
     return null;
+  }
+  if (UNKNOWN_MODEL_RE.test(message)) {
+    return "format";
+  }
+  if (AUTH_PROFILE_MISMATCH_RE.test(message) || NO_AVAILABLE_AUTH_PROFILE_RE.test(message)) {
+    return "auth";
+  }
+  if (TRANSIENT_MESSAGE_RE.test(message) || TRANSPORT_ABORT_RE.test(message)) {
+    return "timeout";
   }
   return classifyFailoverReason(message);
 }

@@ -11,7 +11,7 @@ sudo -u openclaw bash -lc 'cd ~/openclaw-current && bash ops/vps/verify-coding-p
 Expected:
 
 - the verifier prints `OK`
-- Ted still has an approval-capable coding-pack config (`inlineButtons: "allowlist"`, Telegram allowlist, `work` enabled, mirrored exec approvals, and `main` can request `exec` approvals)
+- Ted still has an approval-capable coding-pack config (`inlineButtons: "allowlist"`, Telegram allowlist, `work` enabled, mirrored exec approvals for `main`, and `power` full-auto host exec with a consultation prompt)
 
 ## 2. Confirm the live release
 
@@ -66,6 +66,7 @@ Expected:
 
 - the originating Telegram chat shows inline Approve and Deny buttons, even when the request started in a dedicated group
 - the operator DM also receives the mirrored approval prompt
+- the approval text tells you to use the buttons below, with manual `/approve ...` only as fallback
 - tapping one resolves the approval and clears the buttons
 - non-allowlisted group members cannot resolve the approval buttons
 - the message still includes the resume token and manual `/work resume ...` fallback

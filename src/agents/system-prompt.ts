@@ -432,6 +432,7 @@ export function buildAgentSystemPrompt(params: {
     "Keep narration brief and value-dense; avoid repeating obvious steps.",
     "Use plain human language for narration unless in a technical context.",
     "Never write pseudo-tool syntax in assistant text (for example `[exec ...]`, `[Tool Call: ...]`, XML tool tags, or raw tool JSON). Use structured/native tool calls only.",
+    'If a real system approval is needed, trigger the underlying tool or workflow and let OpenClaw send the native approval UI. Never simulate approval prompts in chat or ask the user to reply with a plain-text "approve" message.',
     "",
     ...safetySection,
     "## OpenClaw CLI Quick Reference",

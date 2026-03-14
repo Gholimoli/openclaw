@@ -25,6 +25,7 @@ import JSON5 from "json5";
 
 const configPath = process.argv[2];
 const templatePath = process.argv[3];
+const approvalsPath = path.join(path.dirname(configPath), "exec-approvals.json");
 
 const readJson5 = (filePath) => JSON5.parse(fs.readFileSync(filePath, "utf8"));
 const clone = (value) => (value === undefined ? undefined : structuredClone(value));
@@ -67,6 +68,11 @@ const setPath = (obj, pathParts, value) => {
 
 const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const ENV_REF_PATTERN = /\$\{([A-Z0-9_]+)\}/g;
+const PLACEHOLDER_TELEGRAM_GROUP_IDS = new Set([
+  "-1001111111111",
+  "-1002222222222",
+  "-1003333333333",
+]);
 
 const hasMissingEnvRef = (value) => {
   if (typeof value !== "string") {
@@ -103,6 +109,14 @@ const deepMerge = (currentValue, templateValue) => {
 
 const sanitizeAgent = (agent) => {
   const nextAgent = clone(agent) ?? {};
+  if (
+    nextAgent?.id === "main" &&
+    Array.isArray(nextAgent?.tools?.alsoAllow) &&
+    nextAgent.tools.alsoAllow.length > 0 &&
+    Array.isArray(nextAgent?.tools?.allow)
+  ) {
+    delete nextAgent.tools.allow;
+  }
   const dockerConfig = nextAgent?.sandbox?.docker;
   if (!isObject(dockerConfig)) {
     return nextAgent;
@@ -126,10 +140,32 @@ const sanitizeAgent = (agent) => {
   return nextAgent;
 };
 
+const stripPlaceholderTelegramGroups = (groups) => {
+  if (!isObject(groups)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(groups).filter(([groupId]) => !PLACEHOLDER_TELEGRAM_GROUP_IDS.has(String(groupId))),
+  );
+};
+
+const isPlaceholderTelegramBinding = (binding) =>
+  binding?.match?.channel === "telegram" &&
+  binding?.match?.peer?.kind === "group" &&
+  PLACEHOLDER_TELEGRAM_GROUP_IDS.has(String(binding?.match?.peer?.id ?? ""));
+
 const current = readJson5(configPath);
 const template = readJson5(templatePath);
 const next = clone(current) ?? {};
+const readJsonIfPresent = (filePath) => {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+};
 const changes = [];
+const extraChanges = [];
 
 const assign = (pathParts, value) => {
   if (value === undefined) {
@@ -145,6 +181,8 @@ const assign = (pathParts, value) => {
 
 const currentTelegram = current?.channels?.telegram ?? {};
 const templateTelegram = template?.channels?.telegram ?? {};
+const currentTelegramGroups = stripPlaceholderTelegramGroups(currentTelegram?.groups);
+const templateTelegramGroups = stripPlaceholderTelegramGroups(templateTelegram?.groups);
 const currentGatewayAuth = current?.gateway?.auth ?? {};
 const templateGatewayAuth = template?.gateway?.auth ?? {};
 const currentWorkConfig = current?.plugins?.entries?.work?.config ?? {};
@@ -180,7 +218,7 @@ assign(
 );
 assign(
   ["channels", "telegram", "groups"],
-  isNonEmptyObject(currentTelegram?.groups) ? currentTelegram.groups : clone(templateTelegram?.groups ?? {}),
+  isNonEmptyObject(currentTelegramGroups) ? currentTelegramGroups : clone(templateTelegramGroups),
 );
 assign(
   ["channels", "telegram", "clients"],
@@ -238,7 +276,9 @@ const templateBindings = Array.isArray(template?.bindings) ? template.bindings :
 const templateBindingIds = new Set(
   templateBindings.map((binding) => String(binding?.agentId ?? "")).filter(Boolean),
 );
-const currentBindings = Array.isArray(current?.bindings) ? current.bindings : [];
+const currentBindings = Array.isArray(current?.bindings)
+  ? current.bindings.filter((binding) => !isPlaceholderTelegramBinding(binding))
+  : [];
 const mergedBindings = [];
 const seenBindings = new Set();
 for (const binding of currentBindings) {
@@ -267,7 +307,50 @@ assign(["approvals", "exec"], {
     currentExecTargets.length > 0 ? clone(currentExecTargets) : clone(templateExecApprovals?.targets ?? []),
 });
 
-if (changes.length === 0) {
+const currentApprovals = readJsonIfPresent(approvalsPath);
+const nextApprovals = clone(currentApprovals) ?? { version: 1, agents: {} };
+nextApprovals.version = 1;
+if (!isObject(nextApprovals.socket)) {
+  nextApprovals.socket = {};
+}
+if (!isObject(nextApprovals.defaults)) {
+  nextApprovals.defaults = {};
+}
+nextApprovals.defaults = {
+  ...clone(nextApprovals.defaults),
+  security: "allowlist",
+  ask: "always",
+  askFallback: "deny",
+  autoAllowSkills: false,
+};
+if (!isObject(nextApprovals.agents)) {
+  nextApprovals.agents = {};
+}
+const syncAgentApprovals = (agentId, policy) => {
+  const currentAgent = isObject(nextApprovals.agents[agentId]) ? nextApprovals.agents[agentId] : {};
+  nextApprovals.agents[agentId] = {
+    ...clone(currentAgent),
+    ...policy,
+    allowlist: Array.isArray(currentAgent.allowlist) ? clone(currentAgent.allowlist) : [],
+  };
+};
+syncAgentApprovals("main", {
+  security: "allowlist",
+  ask: "always",
+  askFallback: "deny",
+  autoAllowSkills: false,
+});
+syncAgentApprovals("power", {
+  security: "full",
+  ask: "off",
+  askFallback: "deny",
+  autoAllowSkills: false,
+});
+if (!sameJson(currentApprovals, nextApprovals)) {
+  extraChanges.push("exec-approvals");
+}
+
+if (changes.length === 0 && extraChanges.length === 0) {
   console.log(`[vps-sync] OK: ${configPath} (already aligned)`);
   process.exit(0);
 }
@@ -275,8 +358,24 @@ if (changes.length === 0) {
 const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 const backupPath = `${configPath}.bak-${timestamp}-pre-vps-sync`;
 fs.mkdirSync(path.dirname(configPath), { recursive: true });
-fs.copyFileSync(configPath, backupPath);
-fs.writeFileSync(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+if (changes.length > 0) {
+  fs.copyFileSync(configPath, backupPath);
+  fs.writeFileSync(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  try {
+    fs.chmodSync(configPath, 0o600);
+  } catch {}
+}
+if (extraChanges.includes("exec-approvals")) {
+  const approvalsBackupPath = `${approvalsPath}.bak-${timestamp}-pre-vps-sync`;
+  if (fs.existsSync(approvalsPath)) {
+    fs.copyFileSync(approvalsPath, approvalsBackupPath);
+  }
+  fs.writeFileSync(approvalsPath, `${JSON.stringify(nextApprovals, null, 2)}\n`, "utf8");
+  try {
+    fs.chmodSync(approvalsPath, 0o600);
+  } catch {}
+  console.log(`[vps-sync] approvals_backup=${approvalsBackupPath}`);
+}
 try {
   fs.chmodSync(configPath, 0o600);
 } catch {}
@@ -284,5 +383,5 @@ try {
 console.log(`[vps-sync] OK: ${configPath}`);
 console.log(`[vps-sync] backup=${backupPath}`);
 console.log(`[vps-sync] template=${templatePath}`);
-console.log(`[vps-sync] changed=${changes.join(",")}`);
+console.log(`[vps-sync] changed=${[...changes, ...extraChanges].join(",")}`);
 EOF

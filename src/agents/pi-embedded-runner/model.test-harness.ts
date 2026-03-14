@@ -24,6 +24,18 @@ export const OPENAI_CODEX_TEMPLATE_MODEL = {
   maxTokens: 128000,
 };
 
+export const OPENAI_TEMPLATE_MODEL = {
+  id: "gpt-5.2",
+  name: "GPT-5.2",
+  provider: "openai",
+  api: "openai-responses",
+  reasoning: true,
+  input: ["text", "image"] as const,
+  cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
+  contextWindow: 400000,
+  maxTokens: 128000,
+};
+
 export function resetMockDiscoverModels(): void {
   vi.mocked(discoverModels).mockReturnValue({
     find: vi.fn(() => null),

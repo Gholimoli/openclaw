@@ -36,6 +36,24 @@ type FallbackAttempt = {
   code?: string;
 };
 
+function formatAttemptSummary(attempt: FallbackAttempt): string {
+  const base = `${attempt.provider}/${attempt.model}`;
+  switch (attempt.reason) {
+    case "auth":
+      return `${base} auth unavailable`;
+    case "rate_limit":
+      return `${base} rate limited`;
+    case "billing":
+      return `${base} billing unavailable`;
+    case "timeout":
+      return `${base} temporarily unavailable`;
+    case "format":
+      return `${base} unsupported`;
+    default:
+      return `${base} failed`;
+  }
+}
+
 /**
  * Fallback abort check. Only treats explicit AbortError names as user aborts.
  * Message-based checks (e.g., "aborted") can mask timeouts and skip fallback.
@@ -314,16 +332,9 @@ export async function runWithModelFallback<T>(params: {
   }
   const summary =
     attempts.length > 0
-      ? attempts
-          .map(
-            (attempt) =>
-              `${attempt.provider}/${attempt.model}: ${attempt.error}${
-                attempt.reason ? ` (${attempt.reason})` : ""
-              }`,
-          )
-          .join(" | ")
+      ? attempts.map((attempt) => formatAttemptSummary(attempt)).join("; ")
       : "unknown";
-  throw new Error(`All models failed (${attempts.length || candidates.length}): ${summary}`, {
+  throw new Error(`All configured models failed: ${summary}`, {
     cause: lastError instanceof Error ? lastError : undefined,
   });
 }

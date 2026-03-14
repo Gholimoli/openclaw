@@ -9,6 +9,7 @@ import { buildModelAliasLines } from "../model-alias-lines.js";
 import { normalizeModelCompat } from "../model-compat.js";
 import { resolveForwardCompatModel } from "../model-forward-compat.js";
 import { normalizeProviderId } from "../model-selection.js";
+import { ensurePiAuthJsonFromAuthProfilesSync } from "../pi-auth-json.js";
 
 type InlineModelEntry = ModelDefinitionConfig & { provider: string; baseUrl?: string };
 type InlineProviderConfig = {
@@ -20,6 +21,7 @@ type InlineProviderConfig = {
 export { buildModelAliasLines };
 
 function discoverAuthStorage(agentDir: string): AuthStorage {
+  ensurePiAuthJsonFromAuthProfilesSync(agentDir);
   return new AuthStorage(path.join(agentDir, "auth.json"));
 }
 

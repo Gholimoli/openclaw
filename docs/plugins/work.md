@@ -70,7 +70,8 @@ For the full mental model of why something is blocked, see [Sandbox vs tool poli
 - Service auth available to that environment:
   - `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY` or `GITHUB_APP_PRIVATE_KEY_FILE`
   - OpenClaw `openai-codex` OAuth for runtime `openai-codex/*`
-  - OpenClaw `google-gemini-cli` OAuth for runtime `google-gemini-cli/*`
+  - `OPENAI_API_KEY` for runtime `openai/*`
+  - `GEMINI_API_KEY` for runtime `google/*`
   - Codex CLI and Gemini CLI OAuth state if you run implementation CLIs directly inside the sandbox
 
 ## Install
@@ -135,11 +136,7 @@ For a subscription-auth VPS pack, pair that with agent models like:
 ```json5
 {
   plugins: {
-    entries: {
-      "google-gemini-cli-auth": {
-        enabled: true,
-      },
-    },
+    entries: {},
   },
   agents: {
     list: [
@@ -147,14 +144,14 @@ For a subscription-auth VPS pack, pair that with agent models like:
         id: "main",
         model: {
           primary: "openai-codex/gpt-5.3-codex",
-          fallbacks: ["openai-codex/gpt-5.2", "google-gemini-cli/gemini-3-pro-preview"],
+          fallbacks: ["openai/gpt-5.4", "google/gemini-3-pro-preview"],
         },
       },
       {
         id: "coder",
         model: {
           primary: "openai-codex/gpt-5.3-codex",
-          fallbacks: ["openai/gpt-5.4", "google-gemini-cli/gemini-3-pro-preview"],
+          fallbacks: ["openai/gpt-5.4", "google/gemini-3-pro-preview"],
         },
         thinkingDefault: "high",
       },

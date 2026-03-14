@@ -74,7 +74,7 @@ Text + native (when enabled):
 - `/skill <name> [input]` (run a skill by name)
 - `/status` (show current status; includes provider usage/quota for the current model provider when available)
 - `/allowlist` (list/add/remove allowlist entries)
-- `/approve [<id> allow-once|allow-always|deny]` (resolve exec approval prompts; with no args, list pending approvals for the current session)
+- `/approve [<id> allow-once|allow-always|deny]` (resolve exec approval prompts; with no args, list pending approvals for the current session; on Telegram this is the manual fallback behind the inline approval buttons)
 - `/context [list|detail|json]` (explain “context”; `detail` shows per-file + per-tool + per-skill + system prompt size)
 - `/whoami` (show your sender id; alias: `/id`)
 - `/subagents list|kill|log|info|send|steer` (inspect, kill, log, or steer sub-agent runs for the current session)
@@ -117,6 +117,7 @@ Notes:
 - For full provider usage breakdown, use `openclaw status --usage`.
 - `/allowlist add|remove` requires `commands.config=true` and honors channel `configWrites`.
 - `/approve` with no args lists pending approval IDs for the current session and prints copyable `/approve <id> ...` commands.
+- Telegram forwarded exec approvals are tap-first: OpenClaw shows inline **Approve** / **Deny** buttons and keeps `/approve <id> ...` as fallback text.
 - `/usage` controls the per-response usage footer; `/usage cost` prints a local cost summary from OpenClaw session logs.
 - `/restart` is disabled by default; set `commands.restart: true` to enable it.
 - `/verbose` is meant for debugging and extra visibility; keep it **off** in normal use.

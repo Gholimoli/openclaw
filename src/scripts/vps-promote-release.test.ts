@@ -106,6 +106,20 @@ describe("ops/vps/promote-release.sh", () => {
         2,
       ) + "\n",
     );
+    await writeFile(
+      path.join(homeDir, ".openclaw", "exec-approvals.json"),
+      JSON.stringify(
+        {
+          version: 1,
+          defaults: { security: "allowlist", ask: "always", askFallback: "deny" },
+          agents: {
+            power: { allowlist: [{ id: "keep", pattern: "/usr/bin/echo" }] },
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+    );
     await writeExecutable(
       path.join(releaseDir, "ops", "vps", "sync-coding-pack-config.sh"),
       `#!/usr/bin/env bash
@@ -114,13 +128,42 @@ node --input-type=module <<'NODE'
 import fs from "node:fs";
 const configPath = process.env.HOME + "/.openclaw/openclaw.json";
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+const approvalsPath = process.env.HOME + "/.openclaw/exec-approvals.json";
+const approvals = JSON.parse(fs.readFileSync(approvalsPath, "utf8"));
 config.channels ??= {};
 config.channels.telegram ??= {};
 config.channels.telegram.capabilities = { inlineButtons: "allowlist" };
 config.approvals ??= {};
 config.approvals.exec ??= {};
 config.approvals.exec.mode = "both";
+config.approvals.exec.agentFilter = ["main"];
+config.agents ??= {};
+config.agents.list ??= [];
+let mainAgent = config.agents.list.find((agent) => agent?.id === "main");
+if (!mainAgent) {
+  mainAgent = { id: "main", tools: {} };
+  config.agents.list.push(mainAgent);
+}
+mainAgent.tools ??= {};
+delete mainAgent.tools.allow;
+mainAgent.tools.alsoAllow = ["read", "exec", "process"];
+const powerAgent = config.agents.list.find((agent) => agent?.id === "power");
+if (powerAgent && !powerAgent.systemPrompt) {
+  powerAgent.systemPrompt =
+    "Consult the operator before deploys, restarts, service control, git push/merge/rebase/reset/branch deletion/tagging/force operations, publish/release steps, secret/token/env/live-config changes, destructive file/data operations, or other external side effects that could break production or leak data.";
+}
 fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\\n");
+approvals.defaults = { security: "allowlist", ask: "always", askFallback: "deny" };
+approvals.agents ??= {};
+approvals.agents.main = { ...(approvals.agents.main ?? {}), security: "allowlist", ask: "always", askFallback: "deny" };
+approvals.agents.power = {
+  ...(approvals.agents.power ?? {}),
+  security: "full",
+  ask: "off",
+  askFallback: "deny",
+  allowlist: Array.isArray(approvals.agents.power?.allowlist) ? approvals.agents.power.allowlist : [],
+};
+fs.writeFileSync(approvalsPath, JSON.stringify(approvals, null, 2) + "\\n");
 NODE
 `,
     );
@@ -132,10 +175,18 @@ node --input-type=module <<'NODE'
 import fs from "node:fs";
 const configPath = process.env.HOME + "/.openclaw/openclaw.json";
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+const approvalsPath = process.env.HOME + "/.openclaw/exec-approvals.json";
+const approvals = JSON.parse(fs.readFileSync(approvalsPath, "utf8"));
 if (config?.channels?.telegram?.capabilities?.inlineButtons !== "allowlist") {
   process.exit(1);
 }
 if (config?.approvals?.exec?.mode !== "both") {
+  process.exit(1);
+}
+if (JSON.stringify(config?.approvals?.exec?.agentFilter ?? []) !== JSON.stringify(["main"])) {
+  process.exit(1);
+}
+if (approvals?.agents?.power?.security !== "full" || approvals?.agents?.power?.ask !== "off") {
   process.exit(1);
 }
 NODE
@@ -285,11 +336,18 @@ printf 'pnpm stub\\n'
     const liveConfig = JSON.parse(
       await readFile(path.join(ctx.homeDir, ".openclaw", "openclaw.json"), "utf8"),
     ) as {
-      approvals?: { exec?: { mode?: string } };
+      approvals?: { exec?: { agentFilter?: string[]; mode?: string } };
       channels?: { telegram?: { capabilities?: { inlineButtons?: string } } };
+      agents?: {
+        list?: Array<{ id?: string; tools?: { allow?: string[]; alsoAllow?: string[] } }>;
+      };
     };
     expect(liveConfig.channels?.telegram?.capabilities?.inlineButtons).toBe("allowlist");
     expect(liveConfig.approvals?.exec?.mode).toBe("both");
+    expect(liveConfig.approvals?.exec?.agentFilter).toEqual(["main"]);
+    const liveMainAgent = liveConfig.agents?.list?.find((agent) => agent?.id === "main");
+    expect(liveMainAgent?.tools?.alsoAllow).toEqual(["read", "exec", "process"]);
+    expect(liveMainAgent?.tools?.allow).toBeUndefined();
   });
 
   it("fails before cutover when live config verification fails", async () => {

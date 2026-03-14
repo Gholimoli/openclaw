@@ -5,6 +5,7 @@ import type {
   EmbeddedPiSubscribeState,
 } from "./pi-embedded-subscribe.handlers.types.js";
 import type { SubscribeEmbeddedPiSessionParams } from "./pi-embedded-subscribe.types.js";
+import type { SyntheticToolExecutionRecord } from "./pi-embedded-subscribe.types.js";
 import { parseReplyDirectives } from "../auto-reply/reply/reply-directives.js";
 import { createStreamingDirectiveAccumulator } from "../auto-reply/reply/streaming-directives.js";
 import { formatToolAggregate } from "../auto-reply/tool-meta.js";
@@ -17,6 +18,10 @@ import {
   normalizeTextForComparison,
 } from "./pi-embedded-helpers.js";
 import { createEmbeddedPiSessionEventHandler } from "./pi-embedded-subscribe.handlers.js";
+import {
+  handleToolExecutionEnd,
+  handleToolExecutionStart,
+} from "./pi-embedded-subscribe.handlers.tools.js";
 import { formatReasoningMessage, stripDowngradedToolCallText } from "./pi-embedded-utils.js";
 import { hasNonzeroUsage, normalizeUsage, type UsageLike } from "./usage.js";
 
@@ -27,6 +32,7 @@ const log = createSubsystemLogger("agent/embedded");
 export type {
   BlockReplyChunking,
   SubscribeEmbeddedPiSessionParams,
+  SyntheticToolExecutionRecord,
   ToolResultFormat,
 } from "./pi-embedded-subscribe.types.js";
 
@@ -621,6 +627,22 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
 
   const sessionUnsubscribe = params.session.subscribe(createEmbeddedPiSessionEventHandler(ctx));
 
+  const recordSyntheticToolExecution = async (record: SyntheticToolExecutionRecord) => {
+    await handleToolExecutionStart(ctx, {
+      type: "tool_execution_start",
+      toolCallId: record.toolCallId,
+      toolName: record.toolName,
+      args: record.args,
+    });
+    await handleToolExecutionEnd(ctx, {
+      type: "tool_execution_end",
+      toolCallId: record.toolCallId,
+      toolName: record.toolName,
+      result: record.result,
+      isError: record.isError,
+    });
+  };
+
   const unsubscribe = () => {
     if (state.unsubscribed) {
       return;
@@ -669,6 +691,7 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
     getLastToolError: () => (state.lastToolError ? { ...state.lastToolError } : undefined),
     getUsageTotals,
     getCompactionCount: () => compactionCount,
+    recordSyntheticToolExecution,
     waitForCompactionRetry: () => {
       // Reject after unsubscribe so callers treat it as cancellation, not success
       if (state.unsubscribed) {

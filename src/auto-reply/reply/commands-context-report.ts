@@ -1,7 +1,10 @@
 import type { SessionSystemPromptReport } from "../../config/sessions/types.js";
 import type { ReplyPayload } from "../types.js";
 import type { HandleCommandsParams } from "./commands-types.js";
-import { resolveSessionAgentIds } from "../../agents/agent-scope.js";
+import {
+  resolveMergedAgentSystemPrompt,
+  resolveSessionAgentIds,
+} from "../../agents/agent-scope.js";
 import { resolveBootstrapContextForRun } from "../../agents/bootstrap-files.js";
 import { resolveDefaultModelForAgent } from "../../agents/model-selection.js";
 import { resolveBootstrapMaxChars } from "../../agents/pi-embedded-helpers.js";
@@ -142,7 +145,10 @@ async function resolveContextReport(
     workspaceDir,
     defaultThinkLevel: params.resolvedThinkLevel,
     reasoningLevel: params.resolvedReasoningLevel,
-    extraSystemPrompt: undefined,
+    extraSystemPrompt: resolveMergedAgentSystemPrompt({
+      cfg: params.cfg,
+      agentId: sessionAgentId,
+    }),
     ownerNumbers: undefined,
     reasoningTagHint: false,
     toolNames,

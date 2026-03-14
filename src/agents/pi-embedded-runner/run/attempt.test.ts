@@ -1,65 +1,13 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { ImageContent } from "@mariozechner/pi-ai";
+import { SessionManager } from "@mariozechner/pi-coding-agent";
 import { describe, expect, it } from "vitest";
+import { guardSessionManager } from "../../session-tool-result-guard-wrapper.js";
 import {
+  appendSyntheticAgentMessage,
   extractRecoverableLegacyToolCalls,
-  injectHistoryImagesIntoMessages,
   resolveLegacyTextToolArgs,
 } from "./attempt.js";
 
-describe("injectHistoryImagesIntoMessages", () => {
-  const image: ImageContent = { type: "image", data: "abc", mimeType: "image/png" };
-
-  it("injects history images and converts string content", () => {
-    const messages: AgentMessage[] = [
-      {
-        role: "user",
-        content: "See /tmp/photo.png",
-      } as AgentMessage,
-    ];
-
-    const didMutate = injectHistoryImagesIntoMessages(messages, new Map([[0, [image]]]));
-
-    expect(didMutate).toBe(true);
-    expect(Array.isArray(messages[0]?.content)).toBe(true);
-    const content = messages[0]?.content as Array<{ type: string; text?: string; data?: string }>;
-    expect(content).toHaveLength(2);
-    expect(content[0]?.type).toBe("text");
-    expect(content[1]).toMatchObject({ type: "image", data: "abc" });
-  });
-
-  it("avoids duplicating existing image content", () => {
-    const messages: AgentMessage[] = [
-      {
-        role: "user",
-        content: [{ type: "text", text: "See /tmp/photo.png" }, { ...image }],
-      } as AgentMessage,
-    ];
-
-    const didMutate = injectHistoryImagesIntoMessages(messages, new Map([[0, [image]]]));
-
-    expect(didMutate).toBe(false);
-    const first = messages[0];
-    if (!first || !Array.isArray(first.content)) {
-      throw new Error("expected array content");
-    }
-    expect(first.content).toHaveLength(2);
-  });
-
-  it("ignores non-user messages and out-of-range indices", () => {
-    const messages: AgentMessage[] = [
-      {
-        role: "assistant",
-        content: "noop",
-      } as AgentMessage,
-    ];
-
-    const didMutate = injectHistoryImagesIntoMessages(messages, new Map([[1, [image]]]));
-
-    expect(didMutate).toBe(false);
-    expect(messages[0]?.content).toBe("noop");
-  });
-
+describe("legacy tool recovery helpers", () => {
   it("recovers exec args from leaked pseudo-tool text", () => {
     const assistant = {
       role: "assistant",
@@ -133,5 +81,51 @@ describe("injectHistoryImagesIntoMessages", () => {
     expect(args).toEqual({
       input: "*** Begin Patch\n*** Add File: note.txt\n+hello\n*** End Patch",
     });
+  });
+
+  it("persists synthetic tool call and tool result messages to the session transcript", () => {
+    const appended: Array<{ role?: string }> = [];
+    const agent = {
+      appendMessage(message: { role?: string }) {
+        appended.push(message);
+      },
+    };
+    const sessionManager = guardSessionManager(SessionManager.inMemory());
+    const assistant = {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "legacycall1", name: "apply_patch", arguments: {} }],
+      api: "openai-responses",
+      provider: "openai-codex",
+      model: "gpt-5.3-codex",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "toolUse",
+      timestamp: Date.now(),
+    };
+    const toolResult = {
+      role: "toolResult",
+      toolCallId: "legacycall1",
+      toolName: "apply_patch",
+      content: [{ type: "text", text: "ok" }],
+      isError: false,
+      timestamp: Date.now(),
+    };
+
+    appendSyntheticAgentMessage({ agent, sessionManager, message: assistant as never });
+    appendSyntheticAgentMessage({ agent, sessionManager, message: toolResult as never });
+
+    const transcriptMessages = sessionManager
+      .getEntries()
+      .filter((entry) => entry.type === "message")
+      .map((entry) => (entry as { message: { role?: string } }).message.role);
+
+    expect(appended).toHaveLength(2);
+    expect(transcriptMessages).toEqual(["assistant", "toolResult"]);
   });
 });

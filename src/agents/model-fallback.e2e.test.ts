@@ -305,7 +305,7 @@ describe("runWithModelFallback", () => {
         fallbacksOverride: ["anthropic/claude-haiku-3-5"],
         run,
       }),
-    ).rejects.toThrow("All models failed");
+    ).rejects.toThrow("All configured models failed:");
 
     expect(run.mock.calls).toEqual([
       ["anthropic", "claude-opus-4-5"],
@@ -425,6 +425,110 @@ describe("runWithModelFallback", () => {
     expect(run).toHaveBeenCalledTimes(2);
     expect(run.mock.calls[1]?.[0]).toBe("anthropic");
     expect(run.mock.calls[1]?.[1]).toBe("claude-haiku-3-5");
+  });
+
+  it("continues past an unsupported fallback model when later candidates exist", async () => {
+    const cfg = makeCfg({
+      agents: {
+        defaults: {
+          model: {
+            primary: "openai-codex/gpt-5.3-codex",
+            fallbacks: ["openai/gpt-5.4", "google/gemini-3-pro-preview"],
+          },
+        },
+      },
+    });
+    const run = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('No API key found for provider "openai-codex".'))
+      .mockRejectedValueOnce(new Error("Unknown model: openai/gpt-5.4"))
+      .mockResolvedValueOnce("ok");
+
+    const result = await runWithModelFallback({
+      cfg,
+      provider: "openai-codex",
+      model: "gpt-5.3-codex",
+      run,
+    });
+
+    expect(result.result).toBe("ok");
+    expect(run.mock.calls).toEqual([
+      ["openai-codex", "gpt-5.3-codex"],
+      ["openai", "gpt-5.4"],
+      ["google", "gemini-3-pro-preview"],
+    ]);
+    expect(result.attempts.map((attempt) => attempt.reason)).toEqual(["auth", "format"]);
+  });
+
+  it("falls through auth then invalid-openai fallback to google", async () => {
+    const cfg = makeCfg({
+      agents: {
+        defaults: {
+          model: {
+            primary: "openai-codex/gpt-5.3-codex",
+            fallbacks: ["openai/gpt-5.4", "google/gemini-3-pro-preview"],
+          },
+        },
+      },
+    });
+
+    const result = await runWithModelFallback({
+      cfg,
+      provider: "openai-codex",
+      model: "gpt-5.3-codex",
+      run: async (provider, model) => {
+        if (provider === "openai-codex") {
+          throw new Error(
+            "No available auth profile for openai-codex (all in cooldown or unavailable).",
+          );
+        }
+        if (provider === "openai" && model === "gpt-5.4") {
+          throw new Error("Unknown model: openai/gpt-5.4");
+        }
+        if (provider === "google" && model === "gemini-3-pro-preview") {
+          return "ok";
+        }
+        throw new Error(`unexpected candidate: ${provider}/${model}`);
+      },
+    });
+
+    expect(result.result).toBe("ok");
+    expect(result.provider).toBe("google");
+    expect(result.model).toBe("gemini-3-pro-preview");
+  });
+
+  it("summarizes final failures without raw provider payloads", async () => {
+    const cfg = makeCfg({
+      agents: {
+        defaults: {
+          model: {
+            primary: "openai-codex/gpt-5.3-codex",
+            fallbacks: ["openai/gpt-5.4", "google/gemini-3-pro-preview"],
+          },
+        },
+      },
+    });
+
+    await expect(
+      runWithModelFallback({
+        cfg,
+        provider: "openai-codex",
+        model: "gpt-5.3-codex",
+        run: async (provider, model) => {
+          if (provider === "openai-codex") {
+            throw new Error(
+              "No available auth profile for openai-codex (all in cooldown or unavailable).",
+            );
+          }
+          if (provider === "openai" && model === "gpt-5.4") {
+            throw new Error("Unknown model: openai/gpt-5.4");
+          }
+          throw new Error("503 internal server error from upstream cluster shard us-east-1a");
+        },
+      }),
+    ).rejects.toThrow(
+      "All configured models failed: openai-codex/gpt-5.3-codex auth unavailable; openai/gpt-5.4 unsupported; google/gemini-3-pro-preview temporarily unavailable",
+    );
   });
 
   it("falls back on lowercase credential errors", async () => {

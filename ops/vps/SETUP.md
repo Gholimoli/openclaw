@@ -125,16 +125,17 @@ bash ops/vps/verify-coding-pack-config.sh
 Key decisions in this config:
 
 - `gateway.bind: "loopback"` (private by default)
-- Telegram DMs use an owner allowlist; three dedicated worker groups are allowlisted and routed by bindings; channel-initiated config writes disabled; no partial streaming
-- `main` agent presents as `Ted`; it uses `openai-codex/gpt-5.3-codex` with `openai-codex/gpt-5.2` then Gemini CLI fallbacks
+- Telegram DMs use an owner allowlist; dedicated worker groups are optional and should only be added once you have real group IDs; channel-initiated config writes disabled; no partial streaming
+- `main` agent presents as `Ted`; it uses `openai-codex/gpt-5.3-codex` with `openai/gpt-5.4` then `google/gemini-3-pro-preview` as fallbacks
 - `coder` agent: all tool execution runs inside Docker sandbox (network enabled)
-- `coder` uses Codex CLI first with high reasoning, then GPT-5.4, then Gemini CLI, with GitHub tokens injected at runtime
+- `coder` uses OpenAI Codex first with high reasoning, then `openai/gpt-5.4`, then `google/gemini-3-pro-preview`, with GitHub tokens injected at runtime
 - Nested coding CLIs inside the `coder` sandbox run with their own full-access
-  modes enabled; Ted and host-level OpenClaw exec remain approval-gated
-- `power` agent: browser + shell access (approval-gated), file mutation tools disabled
+  modes enabled; Ted remains approval-gated for host-level OpenClaw exec
+- `power` agent: browser + direct host exec plus repo file mutation tools (`write`, `edit`, `apply_patch`) for VPS and codebase tasks, with no per-command exec approvals
+- `power.systemPrompt` forces operator consultation before deploys, restarts, service control, push/merge/rebase/reset/force operations, release steps, secret or live-config changes, destructive file/data work, and other risky external side effects
 - `devops` agent: maintenance profile with constrained tools and isolated session context
 - `work` plugin enabled with `coderSessionKey: "agent:coder:main"` and `workRoot: "~/work/repos"`
-- `google-gemini-cli-auth` bundled plugin enabled so the runtime can use Gemini CLI OAuth models
+- runtime model fallbacks stay on OpenAI Codex OAuth first, then `OPENAI_API_KEY`, then `GEMINI_API_KEY`
 - set `plugins.entries.work.config.lobsterPath` to the absolute Lobster binary in production when possible (for this Ubuntu bootstrap path, `/usr/bin/lobster`)
 - Telegram client takeover stays disabled until you add explicit `channels.telegram.clients.<peerId>` entries; operators then use `/client assign` and `/client clear` to hand a client chat to an allowlisted agent
 - Telegram client takeover rooms can enable `orchestration` so the lead agent is always on, peer agents stay room-aware through a bounded shared room log, and peers only speak on mention by default
@@ -166,7 +167,8 @@ The unattended `/work` path should use:
 
 - `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY_FILE`
 - OpenClaw `openai-codex` OAuth for runtime `openai-codex/*`
-- OpenClaw `google-gemini-cli` OAuth for runtime `google-gemini-cli/*`
+- `OPENAI_API_KEY` for runtime `openai/*`
+- `GEMINI_API_KEY` for runtime `google/*`
 - Codex CLI and Gemini CLI OAuth state from the host home bind-mounted into the sandbox
 
 This keeps repo access short-lived for automation runs and removes the normal Ted/coder dependency on OpenAI and Gemini API keys.
@@ -213,15 +215,13 @@ Do not rely on these interactive host logins for unattended automation. `/work` 
 
 ### Configure runtime OAuth for Ted
 
-Run these once as the service user:
+Run this once as the service user:
 
 ```bash
 openclaw models auth login --provider openai-codex
-openclaw plugins enable google-gemini-cli-auth
-openclaw models auth login --provider google-gemini-cli
 ```
 
-This covers Ted and the runtime model provider path.
+This covers the OAuth-primary runtime path for Ted and the other agents. Generic `openai/*` and `google/*` fallbacks still require `OPENAI_API_KEY` and `GEMINI_API_KEY`.
 
 ### Configure CLI OAuth for the coder sandbox
 
@@ -232,14 +232,14 @@ sudo bash ops/vps/login-coding-clis.sh codex
 sudo bash ops/vps/login-coding-clis.sh gemini
 ```
 
-ChatGPT/Codex OAuth in OpenClaw does not cover `openrouter/*` or generic `openai/*` billing, and Gemini CLI OAuth does not replace generic `google/*` API-key features.
+ChatGPT/Codex OAuth in OpenClaw does not cover `openrouter/*` or generic `openai/*` billing, and generic `google/*` runtime calls still require `GEMINI_API_KEY`.
 
 The default VPS preset avoids OpenAI API-key-dependent voice features:
 
 - inbound audio transcription uses local Whisper.cpp only
 - TTS is disabled until you opt into a separate configuration
 
-### Configure dedicated Telegram worker groups
+### Configure dedicated Telegram worker groups (optional)
 
 Create three private Telegram supergroups (or private group chats), add your bot,
 and use one per worker agent:
@@ -248,16 +248,7 @@ and use one per worker agent:
 - `power` group
 - `devops` group
 
-Then replace the placeholder group IDs in `~/.openclaw/openclaw.json`:
-
-- `channels.telegram.groups` keys:
-  - `-1001111111111`
-  - `-1002222222222`
-  - `-1003333333333`
-- `bindings[].match.peer.id` values for agents:
-  - `coder`
-  - `power`
-  - `devops`
+Then add the real group IDs to `~/.openclaw/openclaw.json`. The VPS preset no longer ships placeholder IDs.
 
 Reference snippet:
 
@@ -351,7 +342,7 @@ Current behavior:
 Approvals:
 
 - Lobster will ask for approvals for commit/push/merge steps and provide a resume token.
-- Telegram inline approvals render `Approve` / `Deny` buttons for both exec approval requests and `/work` Lobster checkpoints, mirror exec prompts to the operator DM, and clear those buttons once the request resolves or times out.
+- Telegram inline approvals render tap-first `Approve` / `Deny` buttons for all forwarded exec approval requests and `/work` Lobster checkpoints, mirror exec prompts to the operator DM, keep manual `/approve ...` and `/work resume ...` fallbacks available, and clear those buttons once the request resolves or times out.
 - Resume from Telegram:
 
 ```text

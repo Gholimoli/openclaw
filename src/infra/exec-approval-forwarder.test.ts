@@ -36,10 +36,23 @@ function getFirstDeliveryPayload(deliver: ReturnType<typeof vi.fn>) {
   return firstCall?.payloads?.[0];
 }
 
+function getFirstTelegramSendText(sendTelegramMessage: ReturnType<typeof vi.fn>): string {
+  return (sendTelegramMessage.mock.calls[0]?.[1] as string | undefined) ?? "";
+}
+
+function getFirstTelegramSendOpts(sendTelegramMessage: ReturnType<typeof vi.fn>) {
+  return sendTelegramMessage.mock.calls[0]?.[2] as
+    | {
+        buttons?: Array<Array<{ text: string }>>;
+      }
+    | undefined;
+}
+
 describe("exec approval forwarder", () => {
   it("defaults to telegram session forwarding when approvals config is unset", async () => {
     vi.useFakeTimers();
     const deliver = vi.fn().mockResolvedValue([]);
+    const sendTelegramMessage = vi.fn().mockResolvedValue({ messageId: "m1", chatId: "123" });
     const cfg = {
       channels: {
         telegram: {
@@ -51,17 +64,18 @@ describe("exec approval forwarder", () => {
     const forwarder = createExecApprovalForwarder({
       getConfig: () => cfg,
       deliver,
+      sendTelegramMessage,
       nowMs: () => 1000,
       resolveSessionTarget: () => ({ channel: "telegram", to: "123" }),
     });
 
     await forwarder.handleRequested(baseRequest);
-    expect(deliver).toHaveBeenCalledTimes(1);
-    const payload = getFirstDeliveryPayload(deliver) as
-      | { channelData?: { telegram?: { buttons?: Array<Array<{ text: string }>> } } }
-      | undefined;
+    expect(deliver).not.toHaveBeenCalled();
+    expect(sendTelegramMessage).toHaveBeenCalledTimes(1);
     const labels =
-      payload?.channelData?.telegram?.buttons?.flat().map((button) => button.text) ?? [];
+      getFirstTelegramSendOpts(sendTelegramMessage)
+        ?.buttons?.flat()
+        .map((button) => button.text) ?? [];
     expect(labels).toContain("Approve");
     expect(labels).toContain("Deny");
     expect(labels).toContain("Always allow");
@@ -70,6 +84,7 @@ describe("exec approval forwarder", () => {
   it("does not auto-forward non-telegram sessions when approvals config is unset", async () => {
     vi.useFakeTimers();
     const deliver = vi.fn().mockResolvedValue([]);
+    const sendTelegramMessage = vi.fn();
     const cfg = {
       channels: {
         telegram: {
@@ -81,17 +96,20 @@ describe("exec approval forwarder", () => {
     const forwarder = createExecApprovalForwarder({
       getConfig: () => cfg,
       deliver,
+      sendTelegramMessage,
       nowMs: () => 1000,
       resolveSessionTarget: () => ({ channel: "slack", to: "U1" }),
     });
 
     await forwarder.handleRequested(baseRequest);
     expect(deliver).not.toHaveBeenCalled();
+    expect(sendTelegramMessage).not.toHaveBeenCalled();
   });
 
   it("respects explicit exec approval forwarding disable", async () => {
     vi.useFakeTimers();
     const deliver = vi.fn().mockResolvedValue([]);
+    const sendTelegramMessage = vi.fn();
     const cfg = {
       channels: {
         telegram: {
@@ -108,12 +126,14 @@ describe("exec approval forwarder", () => {
     const forwarder = createExecApprovalForwarder({
       getConfig: () => cfg,
       deliver,
+      sendTelegramMessage,
       nowMs: () => 1000,
       resolveSessionTarget: () => ({ channel: "telegram", to: "123" }),
     });
 
     await forwarder.handleRequested(baseRequest);
     expect(deliver).not.toHaveBeenCalled();
+    expect(sendTelegramMessage).not.toHaveBeenCalled();
   });
 
   it("forwards to session target and resolves", async () => {
@@ -148,6 +168,10 @@ describe("exec approval forwarder", () => {
   it("forwards to explicit targets and expires", async () => {
     vi.useFakeTimers();
     const deliver = vi.fn().mockResolvedValue([]);
+    const sendTelegramMessage = vi
+      .fn()
+      .mockResolvedValueOnce({ messageId: "m1", chatId: "123" })
+      .mockResolvedValueOnce({ messageId: "m2", chatId: "123" });
     const editTelegramMessage = vi
       .fn()
       .mockResolvedValue({ ok: true, messageId: "m1", chatId: "123" });
@@ -164,22 +188,24 @@ describe("exec approval forwarder", () => {
     const forwarder = createExecApprovalForwarder({
       getConfig: () => cfg,
       deliver,
+      sendTelegramMessage,
       editTelegramMessage,
       nowMs: () => 1000,
       resolveSessionTarget: () => null,
     });
 
     await forwarder.handleRequested(baseRequest);
-    expect(deliver).toHaveBeenCalledTimes(1);
+    expect(sendTelegramMessage).toHaveBeenCalledTimes(1);
 
     await vi.runAllTimersAsync();
-    expect(deliver).toHaveBeenCalledTimes(2);
-    expect(editTelegramMessage).not.toHaveBeenCalled();
+    expect(sendTelegramMessage).toHaveBeenCalledTimes(2);
+    expect(editTelegramMessage).toHaveBeenCalledTimes(1);
   });
 
   it("formats single-line commands as inline code", async () => {
     vi.useFakeTimers();
     const deliver = vi.fn().mockResolvedValue([]);
+    const sendTelegramMessage = vi.fn().mockResolvedValue({ messageId: "m1", chatId: "123" });
     const cfg = {
       approvals: {
         exec: {
@@ -193,18 +219,20 @@ describe("exec approval forwarder", () => {
     const forwarder = createExecApprovalForwarder({
       getConfig: () => cfg,
       deliver,
+      sendTelegramMessage,
       nowMs: () => 1000,
       resolveSessionTarget: () => null,
     });
 
     await forwarder.handleRequested(baseRequest);
 
-    expect(getFirstDeliveryText(deliver)).toContain("Command: `echo hello`");
+    expect(getFirstTelegramSendText(sendTelegramMessage)).toContain("Command: `echo hello`");
   });
 
   it("attaches approval buttons for telegram direct messages", async () => {
     vi.useFakeTimers();
     const deliver = vi.fn().mockResolvedValue([]);
+    const sendTelegramMessage = vi.fn().mockResolvedValue({ messageId: "m1", chatId: "123" });
     const cfg = {
       approvals: {
         exec: {
@@ -218,20 +246,27 @@ describe("exec approval forwarder", () => {
     const forwarder = createExecApprovalForwarder({
       getConfig: () => cfg,
       deliver,
+      sendTelegramMessage,
       nowMs: () => 1000,
       resolveSessionTarget: () => null,
     });
 
     await forwarder.handleRequested(baseRequest);
-    const payload = getFirstDeliveryPayload(deliver) as
-      | { channelData?: { telegram?: { buttons?: unknown[] } } }
-      | undefined;
-    expect(payload?.channelData?.telegram?.buttons).toBeDefined();
+    expect(getFirstTelegramSendOpts(sendTelegramMessage)?.buttons).toBeDefined();
+    expect(getFirstTelegramSendText(sendTelegramMessage)).toContain(
+      "Use the buttons below to approve or deny.",
+    );
+    expect(getFirstTelegramSendText(sendTelegramMessage)).toContain(
+      "Fallback: /approve <id> allow-once|allow-always|deny",
+    );
   });
 
   it("attaches approval buttons for telegram groups", async () => {
     vi.useFakeTimers();
     const deliver = vi.fn().mockResolvedValue([]);
+    const sendTelegramMessage = vi
+      .fn()
+      .mockResolvedValue({ messageId: "m1", chatId: "-1001234567890" });
     const cfg = {
       approvals: {
         exec: {
@@ -245,20 +280,19 @@ describe("exec approval forwarder", () => {
     const forwarder = createExecApprovalForwarder({
       getConfig: () => cfg,
       deliver,
+      sendTelegramMessage,
       nowMs: () => 1000,
       resolveSessionTarget: () => null,
     });
 
     await forwarder.handleRequested(baseRequest);
-    const payload = getFirstDeliveryPayload(deliver) as
-      | { channelData?: { telegram?: { buttons?: unknown[] } } }
-      | undefined;
-    expect(payload?.channelData?.telegram?.buttons).toBeDefined();
+    expect(getFirstTelegramSendOpts(sendTelegramMessage)?.buttons).toBeDefined();
   });
 
   it("falls back to text-only when approval id cannot fit telegram callback_data", async () => {
     vi.useFakeTimers();
     const deliver = vi.fn().mockResolvedValue([]);
+    const sendTelegramMessage = vi.fn().mockResolvedValue({ messageId: "m1", chatId: "123" });
     const cfg = {
       approvals: {
         exec: {
@@ -272,6 +306,7 @@ describe("exec approval forwarder", () => {
     const forwarder = createExecApprovalForwarder({
       getConfig: () => cfg,
       deliver,
+      sendTelegramMessage,
       nowMs: () => 1000,
       resolveSessionTarget: () => null,
     });
@@ -280,15 +315,19 @@ describe("exec approval forwarder", () => {
       ...baseRequest,
       id: "x".repeat(120),
     });
-    const payload = getFirstDeliveryPayload(deliver) as
-      | { channelData?: { telegram?: { buttons?: unknown[] } } }
-      | undefined;
-    expect(payload?.channelData?.telegram?.buttons).toBeUndefined();
+    expect(getFirstTelegramSendOpts(sendTelegramMessage)?.buttons).toBeUndefined();
+    expect(getFirstTelegramSendText(sendTelegramMessage)).toContain(
+      "Reply with: /approve <id> allow-once|allow-always|deny",
+    );
   });
 
   it("mirrors telegram approvals to the session chat and explicit dm target when mode is both", async () => {
     vi.useFakeTimers();
     const deliver = vi.fn().mockResolvedValue([]);
+    const sendTelegramMessage = vi
+      .fn()
+      .mockResolvedValueOnce({ messageId: "m1", chatId: "-1001234567890" })
+      .mockResolvedValueOnce({ messageId: "m2", chatId: "123" });
     const cfg = {
       approvals: {
         exec: {
@@ -302,25 +341,29 @@ describe("exec approval forwarder", () => {
     const forwarder = createExecApprovalForwarder({
       getConfig: () => cfg,
       deliver,
+      sendTelegramMessage,
       nowMs: () => 1000,
       resolveSessionTarget: () => ({ channel: "telegram", to: "-1001234567890", threadId: "77" }),
     });
 
     await forwarder.handleRequested(baseRequest);
 
-    expect(deliver).toHaveBeenCalledTimes(2);
-    expect(deliver.mock.calls.map((call) => call[0]?.to)).toEqual(["-1001234567890", "123"]);
-    const payloads = deliver.mock.calls.map(
-      (call) =>
-        (call[0] as { payloads?: Array<{ channelData?: { telegram?: { buttons?: unknown[] } } }> })
-          .payloads?.[0],
-    );
-    expect(payloads.every((payload) => payload?.channelData?.telegram?.buttons)).toBe(true);
+    expect(sendTelegramMessage).toHaveBeenCalledTimes(2);
+    expect(sendTelegramMessage.mock.calls.map((call) => call[0])).toEqual([
+      "-1001234567890",
+      "123",
+    ]);
+    expect(
+      sendTelegramMessage.mock.calls.every(
+        (call) => Array.isArray(call[2]?.buttons) && call[2].buttons.length > 0,
+      ),
+    ).toBe(true);
   });
 
   it("formats complex commands as fenced code blocks", async () => {
     vi.useFakeTimers();
     const deliver = vi.fn().mockResolvedValue([]);
+    const sendTelegramMessage = vi.fn().mockResolvedValue({ messageId: "m1", chatId: "123" });
     const cfg = {
       approvals: {
         exec: {
@@ -334,6 +377,7 @@ describe("exec approval forwarder", () => {
     const forwarder = createExecApprovalForwarder({
       getConfig: () => cfg,
       deliver,
+      sendTelegramMessage,
       nowMs: () => 1000,
       resolveSessionTarget: () => null,
     });
@@ -346,12 +390,45 @@ describe("exec approval forwarder", () => {
       },
     });
 
-    expect(getFirstDeliveryText(deliver)).toContain("Command:\n```\necho `uname`\necho done\n```");
+    expect(getFirstTelegramSendText(sendTelegramMessage)).toContain(
+      "Command:\n```\necho `uname`\necho done\n```",
+    );
+  });
+
+  it("keeps manual approval copy for non-telegram targets", async () => {
+    vi.useFakeTimers();
+    const deliver = vi.fn().mockResolvedValue([]);
+    const cfg = {
+      approvals: {
+        exec: {
+          enabled: true,
+          mode: "targets",
+          targets: [{ channel: "slack", to: "U123" }],
+        },
+      },
+    } as OpenClawConfig;
+
+    const forwarder = createExecApprovalForwarder({
+      getConfig: () => cfg,
+      deliver,
+      nowMs: () => 1000,
+      resolveSessionTarget: () => null,
+    });
+
+    await forwarder.handleRequested(baseRequest);
+
+    expect(getFirstDeliveryText(deliver)).toContain(
+      "Reply with: /approve <id> allow-once|allow-always|deny",
+    );
+    expect(getFirstDeliveryText(deliver)).not.toContain(
+      "Use the buttons below to approve or deny.",
+    );
   });
 
   it("uses a longer fence when command already contains triple backticks", async () => {
     vi.useFakeTimers();
     const deliver = vi.fn().mockResolvedValue([]);
+    const sendTelegramMessage = vi.fn().mockResolvedValue({ messageId: "m1", chatId: "123" });
     const cfg = {
       approvals: {
         exec: {
@@ -365,6 +442,7 @@ describe("exec approval forwarder", () => {
     const forwarder = createExecApprovalForwarder({
       getConfig: () => cfg,
       deliver,
+      sendTelegramMessage,
       nowMs: () => 1000,
       resolveSessionTarget: () => null,
     });
@@ -377,12 +455,18 @@ describe("exec approval forwarder", () => {
       },
     });
 
-    expect(getFirstDeliveryText(deliver)).toContain("Command:\n````\necho ```danger```\n````");
+    expect(getFirstTelegramSendText(sendTelegramMessage)).toContain(
+      "Command:\n````\necho ```danger```\n````",
+    );
   });
 
   it("clears telegram buttons when a direct-message approval resolves elsewhere", async () => {
     vi.useFakeTimers();
     const deliver = vi.fn().mockResolvedValue([{ channel: "telegram", messageId: "42" }]);
+    const sendTelegramMessage = vi
+      .fn()
+      .mockResolvedValueOnce({ messageId: "42", chatId: "123" })
+      .mockResolvedValueOnce({ messageId: "44", chatId: "123" });
     const editTelegramMessage = vi
       .fn()
       .mockResolvedValue({ ok: true, messageId: "42", chatId: "123" });
@@ -399,6 +483,7 @@ describe("exec approval forwarder", () => {
     const forwarder = createExecApprovalForwarder({
       getConfig: () => cfg,
       deliver,
+      sendTelegramMessage,
       editTelegramMessage,
       nowMs: () => 1000,
       resolveSessionTarget: () => null,
@@ -424,6 +509,10 @@ describe("exec approval forwarder", () => {
   it("clears telegram buttons when a direct-message approval expires", async () => {
     vi.useFakeTimers();
     const deliver = vi.fn().mockResolvedValue([{ channel: "telegram", messageId: "43" }]);
+    const sendTelegramMessage = vi
+      .fn()
+      .mockResolvedValueOnce({ messageId: "43", chatId: "123" })
+      .mockResolvedValueOnce({ messageId: "45", chatId: "123" });
     const editTelegramMessage = vi
       .fn()
       .mockResolvedValue({ ok: true, messageId: "43", chatId: "123" });
@@ -440,6 +529,7 @@ describe("exec approval forwarder", () => {
     const forwarder = createExecApprovalForwarder({
       getConfig: () => cfg,
       deliver,
+      sendTelegramMessage,
       editTelegramMessage,
       nowMs: () => 1000,
       resolveSessionTarget: () => null,

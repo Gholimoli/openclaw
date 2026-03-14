@@ -115,6 +115,16 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("rewrite it in your normal assistant voice");
   });
 
+  it("tells agents to rely on native approval UI instead of simulating approvals in chat", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+    });
+
+    expect(prompt).toContain("let OpenClaw send the native approval UI");
+    expect(prompt).toContain("Never simulate approval prompts in chat");
+    expect(prompt).toContain('plain-text "approve" message');
+  });
+
   it("guides subagent workflows to avoid polling loops", () => {
     const prompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",

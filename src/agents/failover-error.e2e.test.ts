@@ -12,6 +12,8 @@ describe("failover-error", () => {
     expect(resolveFailoverReasonFromError({ status: 403 })).toBe("auth");
     expect(resolveFailoverReasonFromError({ status: 408 })).toBe("timeout");
     expect(resolveFailoverReasonFromError({ status: 400 })).toBe("format");
+    expect(resolveFailoverReasonFromError({ status: 503 })).toBe("timeout");
+    expect(resolveFailoverReasonFromError({ status: 504 })).toBe("timeout");
   });
 
   it("infers format errors from error messages", () => {
@@ -25,6 +27,22 @@ describe("failover-error", () => {
   it("infers timeout from common node error codes", () => {
     expect(resolveFailoverReasonFromError({ code: "ETIMEDOUT" })).toBe("timeout");
     expect(resolveFailoverReasonFromError({ code: "ECONNRESET" })).toBe("timeout");
+  });
+
+  it("infers timeout from transient provider messages and aborts", () => {
+    expect(resolveFailoverReasonFromError({ message: "service temporarily unavailable" })).toBe(
+      "timeout",
+    );
+    expect(resolveFailoverReasonFromError({ message: "internal server error" })).toBe("timeout");
+    expect(resolveFailoverReasonFromError({ message: "gateway timeout from upstream" })).toBe(
+      "timeout",
+    );
+    expect(
+      resolveFailoverReasonFromError({
+        name: "AbortError",
+        message: "The operation was aborted",
+      }),
+    ).toBe("timeout");
   });
 
   it("coerces failover-worthy errors into FailoverError with metadata", () => {

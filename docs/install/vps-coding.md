@@ -3,7 +3,7 @@ title: "VPS Coding Automation"
 summary: "Security-first VPS setup: loopback Gateway, Ted-led /work automation, GitHub App repo access, and Codex-first sandboxed coding workflows."
 read_when:
   - You want an always-on Gateway on a VPS without public exposure
-  - You want Telegram as the primary interface with strict approvals
+  - You want Telegram as the primary interface with tap-first approvals
   - You want coding automation driven by CLI tools (git, gh, codex, gemini, coderabbit)
 ---
 
@@ -15,7 +15,7 @@ This setup is designed for a common pattern:
 
 - You talk to OpenClaw over Telegram or the Control UI.
 - The operator-facing `main` agent presents as Ted and handles repo intake, research, specs, approvals, and orchestration.
-- Actual coding work is executed by Codex CLI inside a sandboxed `coder` agent session, with GPT-5.4 then Gemini CLI as fallback.
+- Actual coding work is executed by Codex CLI inside a sandboxed `coder` agent session, with generic OpenAI GPT-5.4 then generic Google Gemini API fallback.
 - The Gateway stays private (loopback bind) and is accessed remotely via Tailscale, not a public reverse proxy.
 
 High-level goals:
@@ -23,7 +23,8 @@ High-level goals:
 - No public Gateway exposure (bind loopback).
 - Private remote access via Tailscale.
 - Telegram bot DMs locked down (owner allowlist by default) and no groups by default.
-- Deterministic workflows with explicit approvals (sudo, commit, push, merge, deploy).
+- Deterministic workflows with explicit approvals for Ted and `/work`, plus a separate owner-only `power` lane for full-auto host exec that still consults you before high-risk actions.
+- Forwarded Telegram exec approvals are button-first for every approval-gated agent, with `/approve ...` kept as fallback text.
 
 Related:
 
@@ -43,6 +44,7 @@ Decisions:
 - The Control UI is reachable only over a private network (Tailscale Serve recommended).
 - Telegram is the primary interface (DM owner allowlist, groups disabled by default).
 - Ted plans and delegates coding tool execution to a Docker sandbox (a dedicated `coder` agent).
+- The owner-only `power` agent keeps full host exec without per-command approvals, but its system prompt requires operator consultation before risky production-affecting actions.
 - Multi-step automation uses Lobster workflows with resumable approval tokens.
 - Risky steps are approval-gated: host sudo, commits, pushes, PR creation, merges, and deploy-affecting actions.
 
@@ -146,9 +148,11 @@ Key decisions in that config:
 - Telegram DM owner allowlist, groups disabled, `configWrites: false`, and `streamMode: "off"`
 - `main` keeps its internal id for compatibility but presents as Ted
 - `main` owns repo intake, specs, approvals, CI watching, and VPS troubleshooting dispatch
-- `coder` agent runs tools in a Docker sandbox and prefers Codex CLI with high reasoning, then GPT-5.4, then Gemini CLI
+- any Telegram-forwarded exec approval from `main`, `coder`, `devops`, or future approval-gated agents uses the same native inline approval UI with `/approve ...` fallback
+- `coder` agent runs tools in a Docker sandbox and prefers OpenAI Codex first, then `openai/gpt-5.4`, then `google/gemini-3-pro-preview`
+- `power` agent keeps full host exec with `ask: "off"` and an agent-specific consultation prompt for big-risk changes
 - bundled `work` plugin enabled and wired to the `coder` session key with GitHub App token minting
-- bundled `google-gemini-cli-auth` plugin enabled for the runtime Gemini fallback path
+- runtime fallbacks stay on OpenAI Codex OAuth first, then `OPENAI_API_KEY`, then `GEMINI_API_KEY`
 
 Production note:
 
@@ -204,13 +208,13 @@ Use this when you need to:
 - do optional first-run Gemini setup
 - inspect the host-side agent CLI directly
 
-Use these once for the runtime provider side:
+Use this once for the runtime provider side:
 
 ```bash
 openclaw models auth login --provider openai-codex
-openclaw plugins enable google-gemini-cli-auth
-openclaw models auth login --provider google-gemini-cli
 ```
+
+Also set `OPENAI_API_KEY` and `GEMINI_API_KEY` in `~/.openclaw/.env` for the generic fallback providers.
 
 Use the host CLI login helpers for the sandboxed implementation CLIs:
 
@@ -285,9 +289,9 @@ Each `/work task` or `/work fix` run now:
 - records the selected CLI, available CLIs, auth mode, checks, approvals, and final outcome in the automation audit trail
 
 When a workflow needs approval, it returns a resume token.
-In Telegram DMs, `/work` also shows inline **Approve** / **Deny** buttons and
-keeps the resume token plus manual `/work resume ...` commands in the message
-as fallback.
+In Telegram DMs, `/work` shows tap-first inline **Approve** / **Deny** buttons
+and keeps the resume token plus manual `/work resume ...` commands in the
+message as fallback.
 Resume from Telegram:
 
 ```text
@@ -307,14 +311,15 @@ OpenClaw can be configured to send Telegram voice notes and to automate a real b
 Recommendations:
 
 - Keep your chat-facing `main` agent minimal.
-- Route “power tool” work to a dedicated agent (for example `power`) with a tighter allowlist and explicit approvals.
+- Route “power tool” work to a dedicated agent (for example `power`) with a tighter allowlist, full-auto host exec, and explicit consultation rules for risky actions.
 - Prefer sandboxed execution where possible. See [Sandboxing](/gateway/sandboxing).
 
 Operational pattern:
 
 - Your Telegram DM talks to the default agent (`main`).
 - When you ask for “power tool” work (browser, host exec), `main` should spawn a separate run under the `power` agent.
-- Exec approvals are forwarded back to your Telegram DM (so you can approve without opening the Control UI).
+- `power` should consult you before big-risk actions instead of waiting on per-command exec approvals.
+- Exec approvals from Ted and other approval-gated agents are forwarded back to your Telegram DM with inline buttons, so you can approve without opening the Control UI.
 
 ### Telegram voice notes (TTS)
 

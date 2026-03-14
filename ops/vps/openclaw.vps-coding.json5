@@ -28,7 +28,7 @@
     //   GITHUB_APP_PRIVATE_KEY or GITHUB_APP_PRIVATE_KEY_FILE
   },
 
-  // Telegram: owner-allowlisted DMs + dedicated agent groups, and block channel-initiated config writes.
+  // Telegram: owner-allowlisted DMs, optional dedicated agent groups, and block channel-initiated config writes.
   channels: {
     telegram: {
       enabled: true,
@@ -44,15 +44,9 @@
       //   openclaw channels status --probe
       dmPolicy: "allowlist",
       allowFrom: ["${TELEGRAM_OWNER_ID}"],
-      // Dedicated group chats are allowlisted and sender-restricted to the owner.
+      // If you later add dedicated worker groups, keep them sender-restricted to the owner.
       groupPolicy: "allowlist",
       groupAllowFrom: ["${TELEGRAM_OWNER_ID}"],
-      groups: {
-        // Replace these with your dedicated Telegram supergroup IDs.
-        "-1001111111111": { requireMention: false },
-        "-1002222222222": { requireMention: false },
-        "-1003333333333": { requireMention: false },
-      },
       // Optional phase-two client chat takeover lanes.
       // Keep these absent until you explicitly allowlist a client chat.
       // clients: {
@@ -154,7 +148,7 @@
         agentDir: "~/.openclaw/agents/main/agent",
         model: {
           primary: "openai-codex/gpt-5.3-codex",
-          fallbacks: ["openai-codex/gpt-5.2", "google-gemini-cli/gemini-3-pro-preview"],
+          fallbacks: ["openai/gpt-5.4", "google/gemini-3-pro-preview"],
         },
         workspace: "~/work/repos",
         identity: {
@@ -163,12 +157,12 @@
           theme: "operator",
         },
         // Ted owns research, repo intake, and orchestration.
-        // Host execution is approval-gated and should prefer dispatch into the power lane.
+        // Ted host execution stays approval-gated and should prefer dispatch into the power lane.
         // Nested coding CLIs inside the coder sandbox manage their own permissive agent modes.
         subagents: { allowAgents: ["coder", "power", "devops"] },
         tools: {
           profile: "minimal",
-          allow: ["read", "exec", "process"],
+          alsoAllow: ["read", "exec", "process"],
           deny: [
             "browser",
             "write",
@@ -188,7 +182,7 @@
         agentDir: "~/.openclaw/agents/coder/agent",
         model: {
           primary: "openai-codex/gpt-5.3-codex",
-          fallbacks: ["openai/gpt-5.4", "google-gemini-cli/gemini-3-pro-preview"],
+          fallbacks: ["openai/gpt-5.4", "google/gemini-3-pro-preview"],
         },
         workspace: "~/work/repos",
         // Run all tool execution for this agent in Docker.
@@ -246,60 +240,58 @@
         },
       },
       {
-        // "Super powers" agent: browser + shell access with strict approvals/allowlists.
-        // Keep file mutation tools disabled; use approvals-gated exec for any side effects.
+        // "Super powers" agent: browser + direct host access for repo + VPS tasks.
+        // This lane is intentionally capable of code edits, apply_patch, and unrestricted host exec.
+        // Keep it owner-only and full-auto, but require operator consultation before big-risk actions.
         id: "power",
         agentDir: "~/.openclaw/agents/power/agent",
-        workspace: "~/.openclaw/workspace/power",
+        model: {
+          primary: "openai-codex/gpt-5.3-codex",
+          fallbacks: ["openai/gpt-5.4", "google/gemini-3-pro-preview"],
+        },
+        workspace: "~/work/repos",
+        systemPrompt: "Consult the operator before deploys, restarts, service control, git push/merge/rebase/reset/branch deletion/tagging/force operations, publish/release steps, secret/token/env/live-config changes, destructive file/data operations, or other external side effects that could break production or leak data.",
         tools: {
-          profile: "minimal",
-          allow: ["browser", "exec", "process", "read"],
-          deny: [
-            "write",
-            "edit",
-            "apply_patch",
-            "canvas",
-            "nodes",
-            "cron",
-            "gateway",
-            "sessions_spawn",
-            "sessions_send",
-          ],
+          profile: "full",
+          allow: ["browser", "exec", "process", "read", "write", "edit", "apply_patch"],
+          deny: ["canvas", "nodes", "cron", "gateway", "sessions_spawn", "sessions_send"],
+          exec: {
+            host: "gateway",
+            security: "full",
+            ask: "off",
+            applyPatch: {
+              enabled: true,
+              workspaceOnly: false,
+            },
+          },
+          fs: {
+            workspaceOnly: false,
+          },
         },
       },
       {
         id: "devops",
         agentDir: "~/.openclaw/agents/devops/agent",
+        model: {
+          primary: "openai-codex/gpt-5.3-codex",
+          fallbacks: ["openai/gpt-5.4", "google/gemini-3-pro-preview"],
+        },
         workspace: "~/.openclaw/workspace/devops",
         tools: { profile: "minimal", deny: ["exec", "process"] },
       },
     ],
   },
 
-  // Dedicated Telegram group routing for worker agents.
-  // Replace peer IDs to match your real Telegram group IDs.
-  bindings: [
-    {
-      agentId: "coder",
-      match: { channel: "telegram", peer: { kind: "group", id: "-1001111111111" } },
-    },
-    {
-      agentId: "power",
-      match: { channel: "telegram", peer: { kind: "group", id: "-1002222222222" } },
-    },
-    {
-      agentId: "devops",
-      match: { channel: "telegram", peer: { kind: "group", id: "-1003333333333" } },
-    },
-  ],
+  // Add Telegram group bindings only after you have real private group IDs.
+  bindings: [],
 
-  // Forward exec approvals to your Telegram DM.
-  // Ted may run low-risk diagnostics directly; high-risk host operations still require approval.
+  // Forward exec approvals to your Telegram DM for approval-gated agents.
+  // Telegram should render tap-first inline menus; /approve remains a fallback.
   approvals: {
     exec: {
       enabled: true,
       mode: "both",
-      agentFilter: ["main", "power"],
+      agentFilter: ["main"],
       targets: [{ channel: "telegram", to: "${TELEGRAM_OWNER_ID}" }],
     },
   },

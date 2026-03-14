@@ -85,4 +85,53 @@ describe("RawBody directive parsing", () => {
       expect(prompt).not.toContain("/think:high");
     });
   });
+
+  it("appends the per-agent systemPrompt for the targeted agent", async () => {
+    await withTempHome(async (home) => {
+      agentMocks.runEmbeddedPiAgent.mockResolvedValue({
+        payloads: [{ text: "ok" }],
+        meta: {
+          durationMs: 1,
+          agentMeta: { sessionId: "s", provider: "p", model: "m" },
+        },
+      });
+
+      await getReplyFromConfig(
+        {
+          Body: "check repo status",
+          BodyForAgent: "check repo status",
+          RawBody: "check repo status",
+          SessionKey: "agent:power:main",
+          From: "+1222",
+          To: "+1222",
+          ChatType: "direct",
+          CommandAuthorized: true,
+        },
+        {},
+        {
+          ...makeReplyConfig(home),
+          agents: {
+            defaults: makeReplyConfig(home).agents.defaults,
+            list: [
+              {
+                id: "power",
+                systemPrompt:
+                  "Consult the operator before deploys, live config changes, or destructive actions.",
+              },
+            ],
+          },
+        },
+      );
+
+      const extraSystemPrompt =
+        (
+          agentMocks.runEmbeddedPiAgent.mock.calls.at(-1)?.[0] as
+            | { extraSystemPrompt?: string }
+            | undefined
+        )?.extraSystemPrompt ?? "";
+      expect(extraSystemPrompt).toContain(
+        "Consult the operator before deploys, live config changes, or destructive actions.",
+      );
+    });
+  });
 });
