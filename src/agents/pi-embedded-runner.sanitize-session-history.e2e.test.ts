@@ -96,4 +96,27 @@ describe("sanitizeSessionHistory e2e smoke", () => {
 
     expect(result).toEqual([]);
   });
+
+  it("downgrades openai reasoning blocks when the model snapshot is unchanged", async () => {
+    const sessionEntries = [
+      makeModelSnapshotEntry({
+        provider: "openai",
+        modelApi: "openai-responses",
+        modelId: "gpt-5.2-codex",
+      }),
+    ];
+    const sessionManager = makeInMemorySessionManager(sessionEntries);
+    const messages = makeReasoningAssistantMessages({ thinkingSignature: "json" });
+
+    const result = await sanitizeSessionHistory({
+      messages,
+      modelApi: "openai-responses",
+      provider: "openai",
+      modelId: "gpt-5.2-codex",
+      sessionManager,
+      sessionId: "test-session",
+    });
+
+    expect(result).toEqual([]);
+  });
 });

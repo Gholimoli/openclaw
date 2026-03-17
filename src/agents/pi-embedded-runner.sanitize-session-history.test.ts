@@ -220,7 +220,7 @@ describe("sanitizeSessionHistory", () => {
     expect(result.map((msg) => msg.role)).toEqual(["user"]);
   });
 
-  it("does not downgrade openai reasoning when the model has not changed", async () => {
+  it("downgrades openai orphan reasoning when the model has not changed", async () => {
     const sessionEntries = [
       makeModelSnapshotEntry({
         provider: "openai",
@@ -240,10 +240,10 @@ describe("sanitizeSessionHistory", () => {
       sessionId: "test-session",
     });
 
-    expect(result).toEqual(messages);
+    expect(result).toEqual([]);
   });
 
-  it("downgrades openai reasoning only when the model changes", async () => {
+  it("downgrades openai orphan reasoning when the model changes", async () => {
     const sessionEntries = [
       makeModelSnapshotEntry({
         provider: "anthropic",
@@ -264,6 +264,51 @@ describe("sanitizeSessionHistory", () => {
     });
 
     expect(result).toEqual([]);
+  });
+
+  it("keeps openai reasoning when followed by a tool call", async () => {
+    const sessionEntries = [
+      makeModelSnapshotEntry({
+        provider: "openai",
+        modelApi: "openai-responses",
+        modelId: "gpt-5.2-codex",
+      }),
+    ];
+    const sessionManager = makeInMemorySessionManager(sessionEntries);
+    const messages: AgentMessage[] = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "thinking",
+            thinking: "reasoning",
+            thinkingSignature: JSON.stringify({ id: "rs_test", type: "reasoning" }),
+          },
+          {
+            type: "toolCall",
+            id: "call_1",
+            name: "read",
+            arguments: { path: "README.md" },
+          },
+        ],
+      } as unknown as AgentMessage,
+    ];
+
+    const result = await sanitizeSessionHistory({
+      messages,
+      modelApi: "openai-responses",
+      provider: "openai",
+      modelId: "gpt-5.2-codex",
+      sessionManager,
+      sessionId: "test-session",
+    });
+
+    const assistant = result[0] as Extract<AgentMessage, { role: "assistant" }>;
+    expect(assistant?.role).toBe("assistant");
+    expect(Array.isArray(assistant?.content)).toBe(true);
+    const types = (assistant.content as Array<{ type?: string }>).map((item) => item.type);
+    expect(types).toContain("thinking");
+    expect(types).toContain("toolCall");
   });
 
   it("drops orphaned toolResult entries when switching from openai history to anthropic", async () => {
