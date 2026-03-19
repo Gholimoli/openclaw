@@ -57,7 +57,7 @@
       //     orchestration: {
       //       enabled: true,
       //       peerAgents: ["coder", "devops"],
-      //       peerReplyPolicy: "mention",
+      //       peerReplyPolicy: "addressed",
       //       historyLimit: 40,
       //       strategy: "sequential",
       //       includeAgentReplies: true,
@@ -201,10 +201,11 @@
               LANG: "C.UTF-8",
               // Auth for CLI tools inside the sandbox:
               // - GitHub access is injected at runtime by the /work pipeline.
-              // - Codex and Gemini CLI OAuth state is bind-mounted from the host.
+              // - Codex, Gemini, and Railway CLI state is bind-mounted from the host.
               // - Optional Google/X credentials remain available for supporting CLIs.
               GCLOUD_PROJECT: "${GCLOUD_PROJECT}",
               GOOGLE_APPLICATION_CREDENTIALS: "${GCLOUD_SERVICE_ACCOUNT_KEY_FILE}",
+              RAILWAY_API_TOKEN: "${RAILWAY_API_TOKEN}",
               X_API_KEY: "${X_API_KEY}",
               X_API_SECRET: "${X_API_SECRET}",
               X_BEARER_TOKEN: "${X_BEARER_TOKEN}",
@@ -217,7 +218,11 @@
               GIT_COMMITTER_NAME: "${GIT_AUTHOR_NAME}",
               GIT_COMMITTER_EMAIL: "${GIT_AUTHOR_EMAIL}",
             },
-            binds: ["${HOME}/.codex:/home/sandbox/.codex", "${HOME}/.gemini:/home/sandbox/.gemini"],
+            binds: [
+              "${HOME}/.codex:/home/sandbox/.codex",
+              "${HOME}/.gemini:/home/sandbox/.gemini",
+              "${HOME}/.railway:/home/sandbox/.railway",
+            ],
             // Keep sandbox bounded.
             pidsLimit: 256,
             memory: "4g",

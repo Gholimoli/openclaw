@@ -26,13 +26,16 @@ base_shell='export PATH="$HOME/.local/bin:$PATH:/usr/local/bin:/usr/bin:/bin"; c
 
 case "$ACTION" in
   shell)
-    BODY='echo "Interactive VPS shell for coding CLIs."; echo "Use codex login, gh auth login, gemini, or agent as needed."; exec bash -l'
+    BODY='echo "Interactive VPS shell for coding CLIs."; echo "Use codex login, gh auth login, railway login, gemini, or agent as needed."; exec bash -l'
     ;;
   codex)
     BODY='echo "Starting Codex login."; echo "This seeds ~/.codex for the coder sandbox bind mount."; codex login --device-auth || codex login; exec bash -l'
     ;;
   gh)
     BODY='echo "Starting GitHub CLI login."; echo "Preferred unattended mode remains GitHub App tokens inside /work."; gh auth login --web; exec bash -l'
+    ;;
+  railway)
+    BODY='echo "Starting Railway CLI login."; echo "This seeds ~/.railway for host exec and coder sandbox bind mounts."; railway login --browserless; exec bash -l'
     ;;
   gemini)
     BODY='echo "Starting Gemini CLI interactive shell."; echo "This seeds ~/.gemini for the coder sandbox bind mount."; gemini; exec bash -l'
@@ -41,7 +44,7 @@ case "$ACTION" in
     BODY='echo "Starting Cursor Agent shell."; agent; exec bash -l'
     ;;
   *)
-    echo "Usage: sudo bash ops/vps/login-coding-clis.sh [shell|codex|gh|gemini|agent]" >&2
+    echo "Usage: sudo bash ops/vps/login-coding-clis.sh [shell|codex|gh|railway|gemini|agent]" >&2
     exit 1
     ;;
 esac

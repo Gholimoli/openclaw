@@ -52,7 +52,9 @@ RUN install -m 0755 -d /etc/apt/keyrings \
 # - This Dockerfile uses npm for portability.
 RUN npm install -g \
   @openai/codex \
+  @railway/cli \
   @google/gemini-cli \
+  && railway --version >/dev/null 2>&1 \
   && npm cache clean --force
 
 # Cursor Agent installs per-user under ~/.local/bin. Install it for the sandbox user
@@ -61,9 +63,11 @@ RUN su sandbox -c 'export HOME=/home/sandbox PATH="$HOME/.local/bin:$PATH"; curl
   && ln -sf /home/sandbox/.local/bin/agent /usr/local/bin/agent \
   && ln -sf /home/sandbox/.local/bin/cursor-agent /usr/local/bin/cursor-agent
 
-# x-cli currently installs from source. Use pipx for an isolated Python tool install.
-RUN pipx install "git+https://github.com/INFATOSHI/x-cli.git" \
-  && ln -sf /root/.local/bin/x-cli /usr/local/bin/x-cli
+# x-cli currently installs from source. Install it for the sandbox user and
+# expose a stable symlink on PATH.
+RUN su sandbox -c 'export HOME=/home/sandbox PATH="$HOME/.local/bin:$PATH"; pipx install "git+https://github.com/INFATOSHI/x-cli.git"' \
+  && ln -sf /home/sandbox/.local/bin/x-cli /usr/local/bin/x-cli \
+  && /usr/local/bin/x-cli --help >/dev/null 2>&1
 
 # The sandbox mounts repos owned by the host service user, so treat mounted
 # worktrees as safe inside this disposable container.
@@ -71,7 +75,7 @@ RUN git config --system safe.directory '*'
 
 # Seed permissive coding-agent defaults inside the sandbox. OpenClaw approvals still
 # apply outside this container; these defaults only affect the nested coding CLIs.
-RUN install -d -m 0755 /home/sandbox/.codex /home/sandbox/.gemini/policies \
+RUN install -d -m 0755 /home/sandbox/.codex /home/sandbox/.gemini/policies /home/sandbox/.railway \
   && install -d -m 0777 /tmp/openclaw-home /tmp/openclaw-home/.config /tmp/openclaw-home/.cache /tmp/openclaw-home/.local/state \
   && printf 'approval_policy = "never"\nsandbox_mode = "danger-full-access"\nreasoning_effort = "high"\n' \
     > /home/sandbox/.codex/config.toml \
@@ -84,7 +88,7 @@ RUN install -d -m 0755 /home/sandbox/.codex /home/sandbox/.gemini/policies \
     > /usr/local/bin/agent-full \
   && chmod +x /usr/local/bin/agent-full \
   && ln -sf /usr/local/bin/agent-full /usr/local/bin/cursor-agent-full \
-  && chown -R sandbox:sandbox /home/sandbox/.codex /home/sandbox/.gemini
+  && chown -R sandbox:sandbox /home/sandbox/.codex /home/sandbox/.gemini /home/sandbox/.railway
 
 # Optional: summarize (compact diffs/logs into fix lists).
 # This is installed via Homebrew because the official distribution is shipped as a brew formula.

@@ -33,6 +33,42 @@ link_user_local_bin() {
   fi
 }
 
+write_railway_config() {
+  local token="$1"
+  local railway_dir="$PRIMARY_HOME/.railway"
+  local config_path="$railway_dir/config.json"
+  install -d -m 0700 -o "$PRIMARY_USER" -g "$PRIMARY_USER" "$railway_dir"
+  RAILWAY_CONFIG_PATH="$config_path" RAILWAY_API_TOKEN_VALUE="$token" python3 - <<'PY'
+import json
+import os
+
+path = os.environ["RAILWAY_CONFIG_PATH"]
+token = os.environ["RAILWAY_API_TOKEN_VALUE"]
+
+try:
+    with open(path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+except Exception:
+    data = {}
+
+if not isinstance(data, dict):
+    data = {}
+
+user = data.get("user")
+if not isinstance(user, dict):
+    user = {}
+
+user["token"] = token
+data["user"] = user
+
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, indent=2)
+    handle.write("\n")
+PY
+  chown "$PRIMARY_USER":"$PRIMARY_USER" "$config_path"
+  chmod 600 "$config_path"
+}
+
 write_if_missing() {
   local target_path="$1"
   local source_path="$2"
@@ -86,7 +122,7 @@ EOF
 chmod +x /usr/local/bin/gemini-yolo /usr/local/bin/agent-full
 ln -sf /usr/local/bin/agent-full /usr/local/bin/cursor-agent-full
 
-echo "[5/5] Configure optional X/Google auth"
+echo "[5/6] Configure optional X/Railway/Google auth"
 if [[ -n "${X_API_KEY:-}" && -n "${X_API_SECRET:-}" && -n "${X_BEARER_TOKEN:-}" && -n "${X_ACCESS_TOKEN:-}" && -n "${X_ACCESS_TOKEN_SECRET:-}" ]]; then
   install -d -m 0700 -o "$PRIMARY_USER" -g "$PRIMARY_USER" "$PRIMARY_HOME/.config/x-cli"
   cat > "$PRIMARY_HOME/.config/x-cli/.env" <<EOF
@@ -100,20 +136,26 @@ EOF
   chmod 600 "$PRIMARY_HOME/.config/x-cli/.env"
 fi
 
+if [[ -n "${RAILWAY_API_TOKEN:-}" ]]; then
+  write_railway_config "$RAILWAY_API_TOKEN"
+fi
+
 if command -v gcloud >/dev/null 2>&1; then
   key_file="${GCLOUD_SERVICE_ACCOUNT_KEY_FILE:-${GOOGLE_APPLICATION_CREDENTIALS:-}}"
   if [[ -n "${key_file:-}" && -f "$key_file" ]]; then
-    gcloud auth activate-service-account --key-file="$key_file" >/dev/null
+    run_as_primary_user "gcloud auth activate-service-account --key-file=\"$key_file\" >/dev/null"
   fi
   if [[ -n "${GCLOUD_PROJECT:-}" ]]; then
-    gcloud config set project "$GCLOUD_PROJECT" >/dev/null
+    run_as_primary_user "gcloud config set project \"$GCLOUD_PROJECT\" >/dev/null"
   fi
 fi
 
+echo "[6/6] Link service-user CLI binaries"
 run_as_primary_user 'export PATH="$HOME/.local/bin:$PATH"; command -v agent >/dev/null 2>&1 && agent --version >/dev/null 2>&1 || true'
 link_user_local_bin agent
 link_user_local_bin cursor-agent
 link_user_local_bin uv
 link_user_local_bin x-cli
+link_user_local_bin railway
 
 echo "Configured coding CLI defaults for $PRIMARY_USER."

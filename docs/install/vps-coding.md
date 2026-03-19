@@ -1,10 +1,10 @@
 ---
 title: "VPS Coding Automation"
-summary: "Security-first VPS setup: loopback Gateway, Ted-led /work automation, GitHub App repo access, and Codex-first sandboxed coding workflows."
+summary: "Security-first VPS setup: loopback Gateway, Ted-led /work automation, GitHub App repo access, and Codex-first sandboxed coding workflows with Railway-ready deploy tooling."
 read_when:
   - You want an always-on Gateway on a VPS without public exposure
   - You want Telegram as the primary interface with tap-first approvals
-  - You want coding automation driven by CLI tools (git, gh, codex, gemini, coderabbit)
+  - You want coding automation driven by CLI tools (git, gh, codex, gemini, railway, coderabbit)
 ---
 
 # VPS coding automation (secure by default)
@@ -83,6 +83,7 @@ You need these on the VPS:
 - OpenClaw CLI (daemon + gateway)
 - Docker (for sandboxing)
 - Lobster CLI (for workflow execution)
+- Railway CLI (for downstream app deploys)
 
 Recommended: use [Ansible](/install/ansible) for a production-grade install (firewall-first + Tailscale + systemd hardening).
 
@@ -118,6 +119,9 @@ GITHUB_APP_PRIVATE_KEY_FILE="$HOME/.openclaw/github-app.pem"
 OPENCLAW_SANDBOX_UID="$(id -u)"
 OPENCLAW_SANDBOX_GID="$(id -g)"
 CODERABBIT_API_KEY="..."
+OPENAI_API_KEY="..."
+GEMINI_API_KEY="..."
+RAILWAY_API_TOKEN="..."
 
 GIT_AUTHOR_NAME="Your Name"
 GIT_AUTHOR_EMAIL="you@example.com"
@@ -130,7 +134,8 @@ Notes:
   the bot's onboarding reply (it prints your user id). Then set `TELEGRAM_OWNER_ID` and restart the gateway.
 - `/work` prefers GitHub App auth and mints a short-lived installation token per run. Avoid a broad personal PAT for steady-state automation.
 - `OPENCLAW_SANDBOX_UID` and `OPENCLAW_SANDBOX_GID` must match the host service user so the coder container can reuse host CLI OAuth state and write mounted repos.
-- Keep interactive host logins separate from unattended `/work` runs. The runtime uses OpenClaw OAuth profiles, while the coder sandbox reuses host Codex/Gemini CLI OAuth state through bind mounts.
+- `OPENAI_API_KEY` and `GEMINI_API_KEY` are required by the pinned fallback policy in the VPS coding pack.
+- Keep interactive host logins separate from unattended `/work` runs. The runtime uses OpenClaw OAuth profiles, while the coder sandbox reuses host Codex/Gemini/Railway CLI state through bind mounts.
 
 ## Configure the Gateway
 
@@ -153,6 +158,8 @@ Key decisions in that config:
 - `power` agent keeps full host exec with `ask: "off"` and an agent-specific consultation prompt for big-risk changes
 - bundled `work` plugin enabled and wired to the `coder` session key with GitHub App token minting
 - runtime fallbacks stay on OpenAI Codex OAuth first, then `OPENAI_API_KEY`, then `GEMINI_API_KEY`
+- coder sandbox env forwards `RAILWAY_API_TOKEN` and bind-mounts host `~/.railway` for deploy-ready Railway CLI sessions
+- X CLI credentials come from `~/.config/x-cli/.env`; `x-cli` does not support browser-style X account login
 
 Production note:
 
@@ -169,7 +176,7 @@ Production note:
 The recommended execution model is:
 
 - The `coder` agent is sandboxed (Docker).
-- All CLI calls (`git`, `gh`, `codex`, `gemini`, `coderabbit`) run inside that sandbox.
+- All CLI calls (`git`, `gh`, `codex`, `gemini`, `railway`, `coderabbit`) run inside that sandbox.
 
 This repo includes a reference Dockerfile you can build on the VPS:
 
@@ -181,7 +188,7 @@ If you maintain your own image:
 
 - install the coding CLIs in the image
 - ensure they are on `PATH` for the sandbox user
-- bind host `~/.codex` and `~/.gemini` into the sandbox user home if you want CLI OAuth to survive container recreation
+- bind host `~/.codex`, `~/.gemini`, and `~/.railway` into the sandbox user home if you want CLI auth state to survive container recreation
 
 Security notes:
 
@@ -197,6 +204,7 @@ The VPS pack includes a helper that starts a `tmux` session as the primary servi
 ```bash
 sudo bash ops/vps/login-coding-clis.sh codex
 sudo bash ops/vps/login-coding-clis.sh gh
+sudo bash ops/vps/login-coding-clis.sh railway
 sudo bash ops/vps/login-coding-clis.sh gemini
 sudo bash ops/vps/login-coding-clis.sh agent
 ```
@@ -205,6 +213,7 @@ Use this when you need to:
 
 - verify Codex CLI device auth on the host
 - log `gh` into a manual operator session
+- log Railway CLI into the same account used for deploys on your Mac
 - do optional first-run Gemini setup
 - inspect the host-side agent CLI directly
 
@@ -215,15 +224,17 @@ openclaw models auth login --provider openai-codex
 ```
 
 Also set `OPENAI_API_KEY` and `GEMINI_API_KEY` in `~/.openclaw/.env` for the generic fallback providers.
+Also set `RAILWAY_API_TOKEN` in `~/.openclaw/.env` for unattended Railway deploys.
 
 Use the host CLI login helpers for the sandboxed implementation CLIs:
 
 ```bash
 sudo bash ops/vps/login-coding-clis.sh codex
+sudo bash ops/vps/login-coding-clis.sh railway
 sudo bash ops/vps/login-coding-clis.sh gemini
 ```
 
-ChatGPT/Codex OAuth does not cover `openrouter/*` or generic `openai/*` billing, and Gemini CLI OAuth does not replace generic `google/*` API-key features.
+ChatGPT/Codex OAuth does not cover `openrouter/*` or generic `openai/*` billing, Gemini CLI OAuth does not replace generic `google/*` API-key features, and `x-cli` still requires X Developer Portal credentials.
 
 The default VPS preset avoids OpenAI API-key-dependent voice features:
 

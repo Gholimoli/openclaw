@@ -12,7 +12,7 @@ This folder is the “implementation bundle” for the secure VPS setup + `/work
 - Gateway binds to **loopback** by default (no public exposure). If you want the Control UI remotely, expose it privately over **Tailscale Serve**.
 - Telegram is the primary interface with **owner-allowlisted DMs** and **dedicated allowlisted groups** for `coder`, `power`, and `devops`.
 - The operator-facing `main` agent presents as **Ted** and uses `openai-codex/gpt-5.3-codex`, with `openai/gpt-5.4` then `google/gemini-3-pro-preview` as fallbacks.
-- A `coder` agent runs tool execution inside Docker sandbox with network enabled (for `git`, `gh`, `codex`, `gemini`, `cursor-agent`, `gcloud`, `x-cli`, `coderabbit`).
+- A `coder` agent runs tool execution inside Docker sandbox with network enabled (for `git`, `gh`, `codex`, `gemini`, `railway`, `cursor-agent`, `gcloud`, `x-cli`, `coderabbit`).
 - `coder` defaults to Codex-first runtime routing with `openai/gpt-5.4` then `google/gemini-3-pro-preview` as model fallbacks.
 - Ted stays approval-gated for host execution. The owner-only `power` lane keeps full host access without per-command exec approvals, but its system prompt requires operator consultation before high-risk production actions.
 - Telegram exec approvals are tap-first for every approval-gated agent: inline Approve/Deny buttons are the primary path, with manual `/approve ...` only as fallback.
@@ -22,9 +22,11 @@ This folder is the “implementation bundle” for the secure VPS setup + `/work
   - OpenClaw `openai-codex` OAuth for Ted and other runtime `openai-codex/*` model calls
   - `OPENAI_API_KEY` for generic `openai/*` fallback calls
   - `GEMINI_API_KEY` for generic `google/*` fallback calls
-  - Codex CLI and Gemini CLI OAuth state bind-mounted into the coder sandbox for `/work`
+  - Codex CLI, Gemini CLI, and Railway CLI state bind-mounted into the coder sandbox for `/work`
+  - `RAILWAY_API_TOKEN` for unattended Railway deploys from host exec or coder sandbox runs
+  - `x-cli` reads X Developer Portal credentials from `~/.config/x-cli/.env`
 - The default VPS preset avoids OpenAI API-key-dependent voice features: inbound audio uses local Whisper.cpp only, and TTS is disabled until you configure a non-keyless path yourself.
-- Manual host use stays separate from `/work` and uses `tmux`-backed one-time login sessions for `codex`, `gh`, optional `gemini`, and `agent`.
+- Manual host use stays separate from `/work` and uses `tmux`-backed one-time login sessions for `codex`, `gh`, `railway`, optional `gemini`, and `agent`.
 - Phase-two Telegram client takeover is available through allowlisted `channels.telegram.clients` routes and the `/client` operator command.
 - Telegram client takeover rooms can now use shared-room orchestration so one lead agent stays always-on while quiet peers remain fully room-aware and only speak when mentioned.
 - Telegram worker groups can also use top-level `broadcast` fanout with the same bounded shared room log, which is useful for internal delivery rooms where multiple specialists should track the same client thread.
@@ -37,15 +39,15 @@ This folder is the “implementation bundle” for the secure VPS setup + `/work
 - `ops/vps/Dockerfile.openclaw-sandbox-coder`
   - Build as `openclaw-sandbox-coder:bookworm` and set in config.
 - `ops/vps/bootstrap-ubuntu24.sh`
-  - Idempotent-ish bootstrap to install Docker, Tailscale, OpenClaw, host Codex/Gemini/Cursor/gcloud/x-cli tooling, and build the sandbox image.
+  - Idempotent-ish bootstrap to install Docker, Tailscale, OpenClaw, host Codex/Gemini/Railway/Cursor/gcloud/x-cli tooling, and build the sandbox image.
 - `ops/vps/verify-coding-pack-config.sh`
   - Verifies the live `openclaw.json` still matches the Ted VPS coding-pack guardrails before you trust deploys or approval tests.
 - `ops/vps/sync-coding-pack-config.sh`
   - Reconciles the live `openclaw.json` with the release's VPS coding-pack guardrails while preserving operator-specific values such as Telegram ids/targets and existing bindings.
 - `ops/vps/configure-coding-clis.sh`
-  - Seeds Ted workspace guidance, Codex/Gemini full-access defaults, helper wrappers, and optional X/gcloud auth.
+  - Seeds Ted workspace guidance, Codex/Gemini full-access defaults, helper wrappers, and optional Railway/X/gcloud auth.
 - `ops/vps/login-coding-clis.sh`
-  - Starts an interactive `tmux` session as the primary service user and launches `codex login`, `gh auth login`, optional `gemini`, or `agent`.
+  - Starts an interactive `tmux` session as the primary service user and launches `codex login`, `gh auth login`, `railway login`, optional `gemini`, or `agent`.
 - `ops/vps/TED_AGENTS.md`
   - Workspace `AGENTS.md` seed that tells Ted which CLIs are installed and where the approval boundary lives.
 - `ops/vps/wake-agents.sh`
@@ -55,7 +57,7 @@ This folder is the “implementation bundle” for the secure VPS setup + `/work
 
 ## Notes
 
-- This pack assumes you run the Gateway on the VPS (single-host mode) and decommission Railway after cutover.
+- This pack assumes you run the Gateway on the VPS (single-host mode). Railway remains an optional downstream deployment target for projects that Ted or coder ship later.
 - The `/work` plugin is bundled under `extensions/work` but **disabled by default**; config enables it.
 - Treat `~/openclaw-current` as the authoritative production runtime for this VPS pack. The deploy flow promotes that symlink and rewrites the host `openclaw` shim to point there.
 - `ops/vps/promote-release.sh` auto-detects whether the live host uses a system unit such as `openclaw.service` or a user unit such as `openclaw-gateway.service`.
@@ -65,3 +67,4 @@ This folder is the “implementation bundle” for the secure VPS setup + `/work
 - Manual CLI login is for operator sessions only. Keep unattended `/work` runs on GitHub App + service credentials rather than interactive host logins.
 - ChatGPT/Codex OAuth only covers the `openai-codex/*` provider path. It does not cover generic `openai/*` or `openrouter/*` billing.
 - Generic `google/*` runtime calls use `GEMINI_API_KEY`. Gemini CLI auth remains separate and is only needed if you run the Gemini CLI directly inside the sandbox.
+- `x-cli` does not support browser-style X account login. It requires the five X Developer Portal credentials in `~/.config/x-cli/.env`.

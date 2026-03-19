@@ -99,6 +99,7 @@ These are interactive host-only flows. They are separate from unattended `/work`
 ```bash
 sudo bash ops/vps/login-coding-clis.sh codex
 sudo bash ops/vps/login-coding-clis.sh gh
+sudo bash ops/vps/login-coding-clis.sh railway
 sudo bash ops/vps/login-coding-clis.sh gemini
 sudo bash ops/vps/login-coding-clis.sh agent
 ```
@@ -107,7 +108,7 @@ Expected:
 
 - each command opens or reuses a `tmux` session
 - you can attach and complete the login in a real TTY
-- Codex, GitHub CLI, Gemini CLI, and agent stay usable after login
+- Codex, GitHub CLI, Railway CLI, Gemini CLI, and agent stay usable after login
 
 ## 8. Merge gate smoke test
 

@@ -6,6 +6,12 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
 config_path="${1:-${OPENCLAW_CONFIG_PATH:-${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/openclaw.json}}"
+env_path="${OPENCLAW_ENV_PATH:-${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/.env}"
+
+if [[ -f "$env_path" ]]; then
+  # shellcheck disable=SC1090
+  set -a && source "$env_path" && set +a
+fi
 
 if [[ ! -f "$config_path" ]]; then
   echo "[vps-verify] ERROR: config file not found: $config_path" >&2

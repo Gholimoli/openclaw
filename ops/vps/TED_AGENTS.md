@@ -9,9 +9,16 @@ trusted and run with full access:
 
 - Codex CLI: use `codex exec --full-auto ...`
 - Gemini CLI: use `gemini --approval-mode yolo ...` or `gemini-yolo ...`
+- Railway CLI: use `railway` for deploy, logs, link, and service operations
 - Cursor Agent CLI: use `agent --force ...` or `cursor-agent --force ...`
 - Google Cloud CLI: `gcloud`
-- X CLI: `x-cli`
+- X CLI: `x-cli` (requires X Developer Portal credentials in `~/.config/x-cli/.env`; no browser login flow)
+
+Persistence:
+
+- Codex CLI state: `~/.codex`
+- Railway CLI state: `~/.railway` plus `RAILWAY_API_TOKEN`
+- X CLI credentials: `~/.config/x-cli/.env`
 
 Expected boundary:
 
@@ -28,4 +35,4 @@ Default implementation policy:
 3. Fall back to the generic Google Gemini API path when Codex and OpenAI fallback both fail.
 4. Use Cursor Agent only when explicitly requested or when a task benefits from
    its agent loop.
-5. Use `gcloud` and `x-cli` as supporting CLIs, not as the primary code editor.
+5. Use `gcloud`, `railway`, and `x-cli` as supporting CLIs, not as the primary code editor.

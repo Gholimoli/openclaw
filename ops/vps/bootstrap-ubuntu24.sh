@@ -100,7 +100,7 @@ if ! command -v codex >/dev/null 2>&1 || ! command -v gemini >/dev/null 2>&1; th
   npm install -g @openai/codex @google/gemini-cli
 fi
 
-echo "[9/12] Install Cursor Agent and x-cli"
+echo "[9/12] Install Cursor Agent, x-cli, and Railway CLI"
 run_as_primary_user 'mkdir -p "$HOME/.local/bin"'
 if ! run_as_primary_user 'export PATH="$HOME/.local/bin:$PATH"; command -v agent >/dev/null 2>&1'; then
   run_as_primary_user 'curl -fsSL https://cursor.com/install | bash'
@@ -111,10 +111,14 @@ fi
 if ! run_as_primary_user 'export PATH="$HOME/.local/bin:$PATH"; command -v x-cli >/dev/null 2>&1'; then
   run_as_primary_user 'export PATH="$HOME/.local/bin:$PATH"; uv tool install --force git+https://github.com/INFATOSHI/x-cli.git'
 fi
+if ! run_as_primary_user 'export PATH="$HOME/.local/bin:$PATH"; command -v railway >/dev/null 2>&1'; then
+  run_as_primary_user 'export PATH="$HOME/.local/bin:$PATH"; npm install -g --prefix "$HOME/.local" @railway/cli'
+fi
 link_user_local_bin agent
 link_user_local_bin cursor-agent
 link_user_local_bin uv
 link_user_local_bin x-cli
+link_user_local_bin railway
 
 echo "[10/12] Install Google Cloud CLI"
 if ! command -v gcloud >/dev/null 2>&1; then
@@ -140,13 +144,7 @@ fi
 docker build -t openclaw-sandbox-coder:bookworm -f ops/vps/Dockerfile.openclaw-sandbox-coder .
 
 echo "[12/12] Host coding CLI health check"
-for cli in codex gemini agent cursor-agent gcloud x-cli; do
-  if command -v "$cli" >/dev/null 2>&1; then
-    echo "  $cli: ok"
-  else
-    echo "  $cli: missing" >&2
-  fi
-done
+run_as_primary_user 'export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"; for cli in codex gemini agent cursor-agent gcloud x-cli railway; do if command -v "$cli" >/dev/null 2>&1; then echo "  $cli: ok"; else echo "  $cli: missing" >&2; fi; done'
 
 echo "Next steps (manual)"
 cat <<'EOF'
@@ -168,6 +166,9 @@ Optional power tools:
    OPENCLAW_SANDBOX_UID=
    OPENCLAW_SANDBOX_GID=
    CODERABBIT_API_KEY=
+   OPENAI_API_KEY=
+   GEMINI_API_KEY=
+   RAILWAY_API_TOKEN=
    GCLOUD_SERVICE_ACCOUNT_KEY_FILE=
    GCLOUD_PROJECT=
    X_API_KEY=
@@ -188,6 +189,7 @@ Optional power tools:
 2c) Open an operator login shell for manual CLI auth when needed:
    sudo bash ops/vps/login-coding-clis.sh codex
    sudo bash ops/vps/login-coding-clis.sh gh
+   sudo bash ops/vps/login-coding-clis.sh railway
    sudo bash ops/vps/login-coding-clis.sh gemini
    sudo bash ops/vps/login-coding-clis.sh agent
 
