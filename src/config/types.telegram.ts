@@ -46,14 +46,15 @@ export type TelegramClientConfig = {
   orchestration?: TelegramClientOrchestrationConfig;
 };
 
-export type TelegramClientPeerReplyPolicy = "observe" | "mention" | "auto";
+export type TelegramClientPeerReplyPolicy = "observe" | "mention" | "addressed" | "auto";
+export type TelegramGroupAddressingMode = "legacy" | "addressed";
 
 export type TelegramClientOrchestrationConfig = {
   /** Enable shared-room orchestration for this Telegram client chat. */
   enabled?: boolean;
   /** Specialist peer agents that stay context-aware for this room. */
   peerAgents?: string[];
-  /** How peer agents are allowed to speak in the room. Default: "mention". */
+  /** How peer agents are allowed to speak in the room. Default: "addressed". */
   peerReplyPolicy?: TelegramClientPeerReplyPolicy;
   /** Rolling shared room log limit. Default: 40. */
   historyLimit?: number;
@@ -106,6 +107,12 @@ export type TelegramAccountConfig = {
   clients?: Record<string, TelegramClientConfig>;
   /** Optional allowlist for Telegram group senders (numeric Telegram user IDs). */
   groupAllowFrom?: Array<string | number>;
+  /**
+   * Controls how ordinary Telegram groups pick addressed peer agents:
+   * - "addressed" (default): addressed agents can join when named or directly replied to
+   * - "legacy": only the routed/default agent handles ordinary groups
+   */
+  groupAddressing?: TelegramGroupAddressingMode;
   /**
    * Controls how group messages are handled:
    * - "open": groups bypass allowFrom, only mention-gating applies

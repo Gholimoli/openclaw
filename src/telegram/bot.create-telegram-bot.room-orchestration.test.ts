@@ -196,4 +196,69 @@ describe("createTelegramBot room orchestration", () => {
     expect(secondRoundMain.UntrustedContext?.[0]).toContain("Main: [Main] main response");
     expect(secondRoundMain.UntrustedContext?.[0]).toContain("Power: [Power] power response");
   });
+
+  it("routes ordinary group reply chains back to the previously addressed agent", async () => {
+    process.env.OPENCLAW_STATE_DIR = path.join(os.tmpdir(), `openclaw-tg-room-${Date.now()}`);
+    onSpy.mockReset();
+    replySpy.mockReset();
+    sendMessageSpy.mockReset();
+    replySpy.mockImplementation(async (ctx) => ({
+      text: String((ctx as { SessionKey?: string }).SessionKey).includes("agent:power:")
+        ? "power response"
+        : "main response",
+    }));
+    loadConfig.mockReturnValue({
+      agents: {
+        list: [
+          { id: "main", identity: { name: "Main" } },
+          { id: "power", identity: { name: "Power" } },
+        ],
+      },
+      channels: {
+        telegram: {
+          groupPolicy: "open",
+          groups: {
+            "*": { requireMention: true },
+          },
+        },
+      },
+    });
+
+    createTelegramBot({ token: "tok" });
+    const handler = getOnHandler("message");
+
+    await handler(
+      makeTelegramMessageCtx({
+        chat: { id: -10099, type: "supergroup", title: "Client Build Room" },
+        from: { id: 9, username: "ada" },
+        text: "Power can you review the deploy?",
+        messageId: 1,
+      }),
+    );
+    await handler(
+      makeTelegramMessageCtx({
+        chat: { id: -10099, type: "supergroup", title: "Client Build Room" },
+        from: { id: 9, username: "ada" },
+        text: "can you ship it now?",
+        messageId: 2,
+        replyToMessage: {
+          message_id: 77,
+          from: { id: 100, is_bot: true, first_name: "OpenClaw" },
+          text: "[Power] power response",
+        },
+      }),
+    );
+
+    expect(replySpy).toHaveBeenCalledTimes(2);
+    expect(replySpy.mock.calls[0]?.[0].SessionKey).toBe("agent:power:telegram:group:-10099");
+    expect(replySpy.mock.calls[1]?.[0].SessionKey).toBe("agent:power:telegram:group:-10099");
+    expect(replySpy.mock.calls[1]?.[0].UntrustedContext?.[0]).toContain(
+      "Power: [Power] power response",
+    );
+    expect(sendMessageSpy).toHaveBeenLastCalledWith(
+      "-10099",
+      "[Power] power response",
+      expect.objectContaining({ parse_mode: "HTML" }),
+    );
+  });
 });

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { matchesMentionWithExplicit } from "./mentions.js";
+import {
+  buildAgentAddressRegexes,
+  matchesMentionPatterns,
+  matchesMentionWithExplicit,
+} from "./mentions.js";
 
 describe("matchesMentionWithExplicit", () => {
   const mentionRegexes = [/\bopenclaw\b/i];
@@ -54,5 +58,35 @@ describe("matchesMentionWithExplicit", () => {
       },
     });
     expect(result).toBe(true);
+  });
+
+  it("uses only agent-specific patterns or identity names for addressed-agent matching", () => {
+    const cfg = {
+      agents: {
+        list: [
+          {
+            id: "main",
+            identity: { name: "Ted" },
+          },
+          {
+            id: "power",
+            identity: { name: "Power" },
+          },
+        ],
+      },
+      messages: {
+        groupChat: {
+          mentionPatterns: ["\\bopenclaw\\b"],
+        },
+      },
+    };
+
+    const mainRegexes = buildAgentAddressRegexes(cfg, "main");
+    const powerRegexes = buildAgentAddressRegexes(cfg, "power");
+
+    expect(matchesMentionPatterns("Ted can you handle this?", mainRegexes)).toBe(true);
+    expect(matchesMentionPatterns("Power can you handle this?", powerRegexes)).toBe(true);
+    expect(matchesMentionPatterns("openclaw can you handle this?", mainRegexes)).toBe(false);
+    expect(matchesMentionPatterns("openclaw can you handle this?", powerRegexes)).toBe(false);
   });
 });

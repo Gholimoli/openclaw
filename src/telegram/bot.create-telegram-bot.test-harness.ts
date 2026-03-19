@@ -88,6 +88,7 @@ export const setMessageReactionSpy: AnyAsyncMock = vi.fn(async () => undefined);
 export const setMyCommandsSpy: AnyAsyncMock = vi.fn(async () => undefined);
 export const deleteMyCommandsSpy: AnyAsyncMock = vi.fn(async () => undefined);
 export const getMeSpy: AnyAsyncMock = vi.fn(async () => ({
+  id: 100,
   username: "openclaw_bot",
   has_topics_enabled: true,
 }));
@@ -188,6 +189,11 @@ export function makeTelegramMessageCtx(params: {
   date?: number;
   messageId?: number;
   messageThreadId?: number;
+  replyToMessage?: {
+    message_id: number;
+    from?: { id: number; is_bot?: boolean; first_name?: string };
+    text?: string;
+  };
 }) {
   return {
     message: {
@@ -196,11 +202,20 @@ export function makeTelegramMessageCtx(params: {
       text: params.text,
       date: params.date ?? 1736380800,
       message_id: params.messageId ?? 42,
+      ...(params.replyToMessage
+        ? {
+            reply_to_message: {
+              chat: params.chat,
+              date: params.date ?? 1736380800,
+              ...params.replyToMessage,
+            },
+          }
+        : {}),
       ...(params.messageThreadId === undefined
         ? {}
         : { message_thread_id: params.messageThreadId }),
     },
-    me: { username: "openclaw_bot" },
+    me: { id: 100, username: "openclaw_bot" },
     getFile: async () => ({ download: async () => new Uint8Array() }),
   };
 }

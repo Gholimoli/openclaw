@@ -247,7 +247,7 @@ export function resolveTelegramClientOrchestrationConfig(params: {
   const peerAgents = normalizeAgentList(params.cfg, orchestration.peerAgents, excluded);
   const peerReplyPolicy = ((): TelegramClientPeerReplyPolicy => {
     const value = orchestration.peerReplyPolicy;
-    return value === "observe" || value === "auto" ? value : "mention";
+    return value === "observe" || value === "mention" || value === "auto" ? value : "addressed";
   })();
   return {
     enabled: true,

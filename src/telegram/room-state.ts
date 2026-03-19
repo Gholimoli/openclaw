@@ -12,6 +12,7 @@ export type TelegramRoomStateEntry = {
   timestamp: number;
   messageId?: string;
   agentId?: string;
+  outboundMessageIds?: string[];
 };
 
 type TelegramRoomStateFile = {
@@ -91,6 +92,11 @@ function readEntriesSync(filePath: string): TelegramRoomStateEntry[] {
             typeof entry.agentId === "string" && entry.agentId.trim()
               ? entry.agentId.trim()
               : undefined,
+          outboundMessageIds: Array.isArray(entry.outboundMessageIds)
+            ? entry.outboundMessageIds
+                .map((value) => (typeof value === "string" ? value.trim() : ""))
+                .filter(Boolean)
+            : undefined,
         } satisfies TelegramRoomStateEntry,
       ];
     });
@@ -176,6 +182,7 @@ export async function appendTelegramRoomStateVisibleReply(params: {
   agentId: string;
   text?: string;
   mediaUrls?: string[];
+  outboundMessageIds?: string[];
 }): Promise<TelegramRoomStateEntry[] | null> {
   const body = resolveMirroredTranscriptText({
     text: params.text,
@@ -194,8 +201,28 @@ export async function appendTelegramRoomStateVisibleReply(params: {
       body,
       agentId: params.agentId,
       timestamp: Date.now(),
+      outboundMessageIds: params.outboundMessageIds?.filter(Boolean),
     },
   });
+}
+
+export function resolveTelegramRoomReplyTargetAgentId(params: {
+  entries: TelegramRoomStateEntry[];
+  replyToMessageId?: string | number | null;
+}): string | undefined {
+  const replyToMessageId =
+    params.replyToMessageId == null ? "" : String(params.replyToMessageId).trim();
+  if (!replyToMessageId) {
+    return undefined;
+  }
+  for (let idx = params.entries.length - 1; idx >= 0; idx -= 1) {
+    const entry = params.entries[idx];
+    if (!entry?.agentId || !entry.outboundMessageIds?.includes(replyToMessageId)) {
+      continue;
+    }
+    return entry.agentId;
+  }
+  return undefined;
 }
 
 export function buildTelegramRoomStateContext(params: {

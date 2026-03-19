@@ -185,6 +185,13 @@ curl "https://api.telegram.org/bot<bot_token>/getUpdates"
 
     These update session state only. Use config for persistence.
 
+    When `channels.telegram.groupAddressing` is left at its default `"addressed"`,
+    ordinary Telegram groups can also pull in specifically addressed peer agents
+    after the room is active. Peer selection uses only per-agent
+    `agents.list[].groupChat.mentionPatterns` or the agent `identity.name`.
+    Global `messages.groupChat.mentionPatterns` still help activate the room, but
+    they do not fan out to every peer.
+
     Persistent config example:
 
 ```json5
@@ -194,6 +201,18 @@ curl "https://api.telegram.org/bot<bot_token>/getUpdates"
       groups: {
         "*": { requireMention: false },
       },
+    },
+  },
+}
+```
+
+    Legacy opt-out:
+
+```json5
+{
+  channels: {
+    telegram: {
+      groupAddressing: "legacy",
     },
   },
 }
@@ -243,7 +262,7 @@ Example:
 }
 ```
 
-To turn a client room into a shared handoff room with one always-on lead agent plus quiet peers that only speak when you mention them, add `orchestration`:
+To turn a client room into a shared handoff room with one always-on lead agent plus room-aware peers, add `orchestration`:
 
 ```json5
 {
@@ -258,7 +277,7 @@ To turn a client room into a shared handoff room with one always-on lead agent p
           orchestration: {
             enabled: true,
             peerAgents: ["coder", "devops"],
-            peerReplyPolicy: "mention",
+            peerReplyPolicy: "addressed",
             historyLimit: 40,
             strategy: "sequential",
             includeAgentReplies: true,
@@ -283,7 +302,9 @@ Operational notes:
 - `/client assign` writes state under the OpenClaw state dir and survives gateway restarts.
 - If a client route is disabled in config, runtime overrides are ignored.
 - In an orchestrated client room, the lead agent replies without `@mention` even when general Telegram groups still require mention.
-- Quiet peer agents stay room-aware through a bounded shared room log, but `peerReplyPolicy: "mention"` keeps them silent until you explicitly mention them.
+- `peerReplyPolicy: "addressed"` lets peers join when you name them or when you directly reply to one of their earlier Telegram messages.
+- `peerReplyPolicy: "mention"` keeps the old behavior: peers only join on explicit name or mention matches.
+- `peerReplyPolicy: "observe"` keeps peers silent, and `peerReplyPolicy: "auto"` lets them all respond.
 - Peer mentions suppress the lead reply unless the lead is also mentioned.
 - The shared room log stores only room-visible text such as human messages and final agent replies. Tool output and internal reasoning stay private to each agent session.
 
@@ -802,8 +823,10 @@ Primary reference:
   - `channels.telegram.clients.<peer>.label`: operator-facing label for the client chat.
   - `channels.telegram.clients.<peer>.defaultAgentId`: default agent for that client chat.
   - `channels.telegram.clients.<peer>.allowedAgents`: optional allowlist of agents that `/client assign` may choose.
+  - `channels.telegram.clients.<peer>.orchestration.peerReplyPolicy`: `observe | mention | addressed | auto` (default: `addressed`).
 - `channels.telegram.groupPolicy`: `open | allowlist | disabled` (default: allowlist).
 - `channels.telegram.groupAllowFrom`: group sender allowlist (numeric Telegram user IDs). `openclaw doctor --fix` can resolve legacy `@username` entries to IDs.
+- `channels.telegram.groupAddressing`: `addressed | legacy` (default: `addressed`).
 - `channels.telegram.groups`: per-group defaults + allowlist (use `"*"` for global defaults).
   - `channels.telegram.groups.<id>.groupPolicy`: per-group override for groupPolicy (`open | allowlist | disabled`).
   - `channels.telegram.groups.<id>.requireMention`: mention gating default.

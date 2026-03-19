@@ -6,6 +6,7 @@ import {
   appendTelegramRoomStateVisibleReply,
   buildTelegramRoomStateContext,
   readTelegramRoomStateEntries,
+  resolveTelegramRoomReplyTargetAgentId,
 } from "./room-state.js";
 
 describe("telegram room state", () => {
@@ -97,6 +98,7 @@ describe("telegram room state", () => {
       actorLabel: "Coder",
       agentId: "coder",
       text: "[Coder] I will set it up.",
+      outboundMessageIds: ["77", "78"],
     });
 
     const context = buildTelegramRoomStateContext({
@@ -109,5 +111,29 @@ describe("telegram room state", () => {
     expect(context).toContain("Shared room log");
     expect(context).toContain("Coder: [Coder] I will set it up.");
     expect(context).not.toContain("Client: Need a deploy pipeline");
+  });
+
+  it("resolves the replying agent from stored outbound Telegram message ids", async () => {
+    process.env.OPENCLAW_STATE_DIR = path.join(os.tmpdir(), `openclaw-room-state-${Date.now()}`);
+    await appendTelegramRoomStateVisibleReply({
+      accountId: "default",
+      peerId: "room-3",
+      historyLimit: 4,
+      actorLabel: "Power",
+      agentId: "power",
+      text: "[Power] I own this fix.",
+      outboundMessageIds: ["91", "92"],
+    });
+
+    const entries = await readTelegramRoomStateEntries({
+      accountId: "default",
+      peerId: "room-3",
+    });
+    expect(
+      resolveTelegramRoomReplyTargetAgentId({
+        entries,
+        replyToMessageId: "92",
+      }),
+    ).toBe("power");
   });
 });

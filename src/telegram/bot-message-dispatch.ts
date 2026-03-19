@@ -297,6 +297,7 @@ export const dispatchTelegramMessage = async ({
                 agentId: route.agentId,
                 text: payload.text,
                 mediaUrls: payload.mediaUrls ?? (payload.mediaUrl ? [payload.mediaUrl] : undefined),
+                outboundMessageIds: result.messageIds,
               });
             } catch (err) {
               logVerbose(`telegram room-state reply mirror failed: ${String(err)}`);

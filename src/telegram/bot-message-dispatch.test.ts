@@ -45,7 +45,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
         return { queuedFinal: true };
       },
     );
-    deliverReplies.mockResolvedValue({ delivered: true });
+    deliverReplies.mockResolvedValue({ delivered: true, messageIds: ["77"] });
 
     const resolveBotTopicsEnabled = vi.fn().mockResolvedValue(true);
     const context = {

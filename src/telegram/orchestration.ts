@@ -4,9 +4,12 @@ import type {
   TelegramResolvedClientOrchestrationSummary,
   TelegramResolvedClientRoute,
 } from "./client-routing.js";
+import type { TelegramRoomStateEntry } from "./room-state.js";
+import { listAgentIds } from "../agents/agent-scope.js";
 import { resolveIdentityName } from "../agents/identity.js";
-import { buildMentionRegexes, matchesMentionPatterns } from "../auto-reply/reply/mentions.js";
+import { buildAgentAddressRegexes, matchesMentionPatterns } from "../auto-reply/reply/mentions.js";
 import { normalizeAgentId } from "../routing/session-key.js";
+import { resolveTelegramRoomReplyTargetAgentId } from "./room-state.js";
 
 export type TelegramRoomTarget = {
   agentId: string;
@@ -27,7 +30,7 @@ export type TelegramRoomPlan =
       targets: TelegramRoomTarget[];
     }
   | {
-      kind: "client-orchestration" | "broadcast";
+      kind: "client-orchestration" | "broadcast" | "addressed-group";
       targets: TelegramRoomTarget[];
       strategy: "sequential" | "parallel";
       roomState: TelegramRoomStateConfig;
@@ -61,8 +64,86 @@ export function detectMentionedTelegramAgents(params: {
     return [];
   }
   return normalizeAgentIds(params.cfg, params.agentIds).filter((agentId) =>
-    matchesMentionPatterns(text, buildMentionRegexes(params.cfg, agentId)),
+    matchesMentionPatterns(text, buildAgentAddressRegexes(params.cfg, agentId)),
   );
+}
+
+function resolveTelegramGroupAddressingMode(
+  telegramCfg: TelegramAccountConfig | undefined,
+): "legacy" | "addressed" {
+  return telegramCfg?.groupAddressing === "legacy" ? "legacy" : "addressed";
+}
+
+function resolveAllowedClientAgentIds(params: {
+  cfg: OpenClawConfig;
+  resolvedClientRoute: TelegramResolvedClientRoute;
+}): string[] {
+  const raw = params.resolvedClientRoute.clientConfig?.allowedAgents;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return [];
+  }
+  return normalizeAgentIds(params.cfg, raw);
+}
+
+function resolveNonOrchestratedAddressableAgents(params: {
+  cfg: OpenClawConfig;
+  resolvedClientRoute: TelegramResolvedClientRoute;
+}): string[] {
+  const leadAgentId = params.resolvedClientRoute.route.agentId;
+  const restrictedAgents = resolveAllowedClientAgentIds(params);
+  const candidates =
+    restrictedAgents.length > 0 ? [leadAgentId, ...restrictedAgents] : listAgentIds(params.cfg);
+  return normalizeAgentIds(params.cfg, candidates);
+}
+
+function detectRepliedTelegramAgent(params: {
+  roomEntries?: TelegramRoomStateEntry[];
+  message: Message;
+  agentIds: string[];
+}): string | undefined {
+  const replyTargetId = params.message.reply_to_message?.message_id;
+  if (replyTargetId == null || !params.roomEntries?.length) {
+    return undefined;
+  }
+  const agentId = resolveTelegramRoomReplyTargetAgentId({
+    entries: params.roomEntries,
+    replyToMessageId: replyTargetId,
+  });
+  return agentId && params.agentIds.includes(agentId) ? agentId : undefined;
+}
+
+function resolveAddressedTargets(params: {
+  cfg: OpenClawConfig;
+  message: Message;
+  leadAgentId: string;
+  candidateAgentIds: string[];
+  roomEntries?: TelegramRoomStateEntry[];
+}): TelegramRoomTarget[] {
+  const text = (params.message.text ?? params.message.caption ?? "").trim();
+  const mentionedAgentIds = detectMentionedTelegramAgents({
+    cfg: params.cfg,
+    text,
+    agentIds: params.candidateAgentIds,
+  });
+  const repliedAgentId = detectRepliedTelegramAgent({
+    roomEntries: params.roomEntries,
+    message: params.message,
+    agentIds: params.candidateAgentIds,
+  });
+  const addressedAgentIds = dedupeTargets(
+    [
+      ...mentionedAgentIds.map((agentId) => ({ agentId })),
+      ...(repliedAgentId ? [{ agentId: repliedAgentId }] : []),
+    ].filter((target) => params.candidateAgentIds.includes(target.agentId)),
+  ).map((target) => target.agentId);
+
+  if (addressedAgentIds.length === 0) {
+    return [{ agentId: params.leadAgentId, allowWithoutMention: true }];
+  }
+  return addressedAgentIds.map((agentId) => ({
+    agentId,
+    ...(agentId === params.leadAgentId ? { allowWithoutMention: true } : {}),
+  }));
 }
 
 function resolveRoomHistoryLimit(telegramCfg: TelegramAccountConfig | undefined): number {
@@ -91,6 +172,7 @@ export function resolveTelegramRoomPlan(params: {
   accountId?: string | null;
   message: Message;
   resolvedClientRoute: TelegramResolvedClientRoute;
+  roomEntries?: TelegramRoomStateEntry[];
 }): TelegramRoomPlan {
   const clientOrchestration = params.resolvedClientRoute.clientConfig?.orchestration;
   const summary: TelegramResolvedClientOrchestrationSummary | undefined = params.resolvedClientRoute
@@ -120,6 +202,7 @@ export function resolveTelegramRoomPlan(params: {
       message: params.message,
       resolvedClientRoute: params.resolvedClientRoute,
       orchestration: summary,
+      roomEntries: params.roomEntries,
     });
   }
 
@@ -143,6 +226,34 @@ export function resolveTelegramRoomPlan(params: {
     };
   }
 
+  const isGroup =
+    params.message.chat?.type === "group" || params.message.chat?.type === "supergroup";
+  if (isGroup && resolveTelegramGroupAddressingMode(params.telegramCfg) !== "legacy") {
+    const leadAgentId = params.resolvedClientRoute.route.agentId;
+    const candidateAgentIds = resolveNonOrchestratedAddressableAgents({
+      cfg: params.cfg,
+      resolvedClientRoute: params.resolvedClientRoute,
+    });
+    return {
+      kind: "addressed-group",
+      targets: resolveAddressedTargets({
+        cfg: params.cfg,
+        message: params.message,
+        leadAgentId,
+        candidateAgentIds,
+        roomEntries: params.roomEntries,
+      }),
+      strategy: "sequential",
+      roomState: {
+        accountId: params.accountId,
+        peerId: params.peerId,
+        historyLimit: resolveRoomHistoryLimit(params.telegramCfg),
+        includeAgentReplies: true,
+        multiSpeakerRoom: candidateAgentIds.length > 1,
+      },
+    };
+  }
+
   return {
     kind: "single",
     targets: [{ agentId: params.resolvedClientRoute.route.agentId }],
@@ -156,22 +267,19 @@ function resolveClientOrchestrationPlan(params: {
   message: Message;
   resolvedClientRoute: TelegramResolvedClientRoute;
   orchestration: TelegramResolvedClientOrchestrationSummary;
+  roomEntries?: TelegramRoomStateEntry[];
 }): TelegramRoomPlan {
   const leadAgentId =
     params.resolvedClientRoute.assignedAgentId ??
     params.resolvedClientRoute.clientConfig?.defaultAgentId ??
     params.resolvedClientRoute.route.agentId;
-  const text = (params.message.text ?? params.message.caption ?? "").trim();
   const peerAgents = params.orchestration.peerAgents.filter((id) => id !== leadAgentId);
-  const leadMentioned = detectMentionedTelegramAgents({
+  const addressedTargets = resolveAddressedTargets({
     cfg: params.cfg,
-    text,
-    agentIds: [leadAgentId],
-  }).includes(leadAgentId);
-  const mentionedPeers = detectMentionedTelegramAgents({
-    cfg: params.cfg,
-    text,
-    agentIds: peerAgents,
+    message: params.message,
+    leadAgentId,
+    candidateAgentIds: [leadAgentId, ...peerAgents],
+    roomEntries: params.roomEntries,
   });
 
   let targets: TelegramRoomTarget[];
@@ -185,7 +293,21 @@ function resolveClientOrchestrationPlan(params: {
         ...peerAgents.map((agentId) => ({ agentId })),
       ];
       break;
+    case "addressed":
+      targets = addressedTargets;
+      break;
     default:
+      const text = (params.message.text ?? params.message.caption ?? "").trim();
+      const leadMentioned = detectMentionedTelegramAgents({
+        cfg: params.cfg,
+        text,
+        agentIds: [leadAgentId],
+      }).includes(leadAgentId);
+      const mentionedPeers = detectMentionedTelegramAgents({
+        cfg: params.cfg,
+        text,
+        agentIds: peerAgents,
+      });
       if (mentionedPeers.length === 0) {
         targets = [{ agentId: leadAgentId, allowWithoutMention: true }];
       } else {

@@ -47,7 +47,7 @@ function buildResolvedClientRoute(
       orchestration: {
         enabled: true,
         peerAgents: ["power", "review"],
-        peerReplyPolicy: "mention",
+        peerReplyPolicy: "addressed",
         historyLimit: 12,
         strategy: "sequential",
       },
@@ -110,6 +110,55 @@ describe("telegram room orchestration", () => {
       throw new Error("unexpected plan kind");
     }
     expect(plan.targets).toEqual([{ agentId: "power" }]);
+  });
+
+  it("routes ordinary group replies to the addressed peer when replying to its prior message", () => {
+    const cfg = buildConfig();
+    const plan = resolveTelegramRoomPlan({
+      cfg,
+      telegramCfg: cfg.channels?.telegram,
+      peerId: "group:client",
+      accountId: "default",
+      message: {
+        chat: { id: -1001, type: "supergroup" },
+        text: "can you take this one?",
+        reply_to_message: {
+          message_id: 77,
+          from: { id: 100, is_bot: true, first_name: "OpenClaw" },
+          chat: { id: -1001, type: "supergroup" },
+          date: 1,
+        },
+        message_id: 5,
+      },
+      roomEntries: [
+        {
+          kind: "agent",
+          actorLabel: "Power",
+          body: "[Power] On it.",
+          timestamp: 4,
+          agentId: "power",
+          outboundMessageIds: ["77"],
+        },
+      ],
+      resolvedClientRoute: {
+        peerId: "group:client",
+        route: {
+          agentId: "main",
+          channel: "telegram",
+          accountId: "default",
+          sessionKey: "agent:main:telegram:group:group:client",
+          mainSessionKey: "agent:main:main",
+          matchedBy: "default",
+        },
+        overrideApplied: false,
+      },
+    });
+    expect(plan.kind).toBe("addressed-group");
+    if (plan.kind !== "addressed-group") {
+      throw new Error("unexpected plan kind");
+    }
+    expect(plan.targets).toEqual([{ agentId: "power" }]);
+    expect(plan.roomState.multiSpeakerRoom).toBe(true);
   });
 
   it("includes the lead when the lead and peers are both mentioned", () => {

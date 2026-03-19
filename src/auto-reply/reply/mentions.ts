@@ -52,8 +52,36 @@ function resolveMentionPatterns(cfg: OpenClawConfig | undefined, agentId?: strin
   return derived.length > 0 ? derived : [];
 }
 
+function resolveAgentAddressPatterns(cfg: OpenClawConfig | undefined, agentId?: string): string[] {
+  if (!cfg || !agentId) {
+    return [];
+  }
+  const agentConfig = resolveAgentConfig(cfg, agentId);
+  const agentGroupChat = agentConfig?.groupChat;
+  if (agentGroupChat && Object.hasOwn(agentGroupChat, "mentionPatterns")) {
+    return agentGroupChat.mentionPatterns ?? [];
+  }
+  return deriveMentionPatterns(agentConfig?.identity);
+}
+
 export function buildMentionRegexes(cfg: OpenClawConfig | undefined, agentId?: string): RegExp[] {
   const patterns = normalizeMentionPatterns(resolveMentionPatterns(cfg, agentId));
+  return patterns
+    .map((pattern) => {
+      try {
+        return new RegExp(pattern, "i");
+      } catch {
+        return null;
+      }
+    })
+    .filter((value): value is RegExp => Boolean(value));
+}
+
+export function buildAgentAddressRegexes(
+  cfg: OpenClawConfig | undefined,
+  agentId?: string,
+): RegExp[] {
+  const patterns = normalizeMentionPatterns(resolveAgentAddressPatterns(cfg, agentId));
   return patterns
     .map((pattern) => {
       try {

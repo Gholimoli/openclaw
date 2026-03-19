@@ -376,6 +376,10 @@ export const registerTelegramHandlers = ({
       },
       parentPeer,
     });
+    const existingRoomEntries = await readTelegramRoomStateEntries({
+      accountId,
+      peerId,
+    });
     const { groupConfig, topicConfig } = resolveTelegramGroupConfig(chatId, resolvedThreadId);
     const plan = resolveTelegramRoomPlan({
       cfg: freshCfg,
@@ -384,6 +388,7 @@ export const registerTelegramHandlers = ({
       accountId,
       message: msg,
       resolvedClientRoute,
+      roomEntries: existingRoomEntries,
     });
 
     if (plan.kind === "single") {
